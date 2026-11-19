@@ -141,6 +141,11 @@ test("auth errors, pending states, keyboard and narrow layout remain usable", as
   await page.goto("/accept-invitation");
   await expect(page.getByRole("main").getByRole("alert")).toContainText("Open the full invitation link");
   await page.getByRole("link", { name: "Back to sign in", exact: true }).click();
+  await expect(page).toHaveURL(new URL("/sign-in", fixture.baseURL).href);
+  await expect(page.getByRole("heading", { level: 1, name: "Sign in", exact: true })).toBeVisible();
+  await expect(page.getByLabel("Email", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Password", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Sign in", exact: true })).toBeEnabled();
   await checkLayout(page);
   await page.keyboard.press("Tab");
   await expect(page.getByLabel("Email", { exact: true })).toBeFocused();

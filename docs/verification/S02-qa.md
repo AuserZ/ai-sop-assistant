@@ -168,3 +168,25 @@ This independently confirms the hosted test results; QA did not launch a new wor
 Current QA disposition: assigned review and hosted verification complete, QA-01 remains CLOSED for the checked candidate, and required synthetic local/hosted checks have recorded passing evidence. Sprint acceptance remains BLOCKED by unconfigured and unobserved live Resend sender delivery. CI's injected sender does not close that gate. The existing four moderate dependency audit findings and security disposition remain recorded; a successful workflow is not a clean audit or production approval. No S03 work, deployment, production Admin provisioning or real-data processing is authorized by this report. The project-manager lead retains final sprint closure responsibility.
 
 Only this QA evidence file was edited by QA. Protected PRD integrity and `git diff --check` were rerun after the update.
+
+## Browser readiness follow-up: 19 November 2026, 14:48 UTC
+
+QA independently fetched the later hosted run metadata, job steps and decoded failure log. The earlier passing run for `1ce6fbeaa8da5d4bff1a6baf8b8896efefa04fbb` remains historical evidence for that exact commit; it does not turn this later failed run into a pass.
+
+| Candidate / check | Independent observation |
+| --- | --- |
+| Later published head | `11b53ca3410d4e6c1f736bfa7d4c920b7b47c37f`, `codex/s02-authentication` |
+| Hosted run and job | [Run 44543410142](https://github.com/AuserZ/ai-sop-assistant/actions/runs/44543410142), [job 135627451272](https://github.com/AuserZ/ai-sop-assistant/actions/runs/44543410142/job/135627451272), both completed with `failure` |
+| Run timing | Created 14:24:33 UTC; last updated 14:31:16 UTC |
+| Unit / database checks | PASS: 14/14 unit and 18/18 PostgreSQL tests in decoded logs |
+| Browser check | FAIL: first five tests pass; last test fails; summary `5 passed`, `1 failed` |
+| Failure location | `checkLayout` at `tests/e2e/auth.spec.ts:29`, called from line 144 immediately after the Back to sign in click |
+| Failure assertion | `expect(bounds?.height).toBeGreaterThanOrEqual(44)` receives a nonnumeric value because the control has no bounding box at measurement time |
+| Other declared checks / cleanup | Install, integrity, lint, types, build and Compose smoke/database steps pass; cleanup succeeds and logs show the disposable volume removed. Post-setup-node cache step is skipped after failure |
+| Reviewed working-copy fix | Only `tests/e2e/auth.spec.ts` changed; SHA-256 `2d4a0a2a2484ac955bf593d49fad9117bc8b5d35d7d811f6b914bffc0a877f5f` |
+
+The five added assertions wait for the exact `/sign-in` URL, the exact Sign in level-one heading, visible Email and Password fields, and an enabled Sign in button before calling `checkLayout`. The 44-pixel control-size assertion is unchanged. No check is removed or relaxed; no fixed sleep or retry is added. The delta changes neither application code nor runtime configuration.
+
+Verdict: ACCEPT the bounded test-readiness change for runtime verification. The failure stack and missing target-screen readiness support a client-navigation measurement race as the likely cause. This pass does not establish an application layout defect or independently prove the timing mechanism. Source review alone cannot close the failure: the engineer's focused repetition and a new hosted candidate result remain pending at this follow-up. QA did not run Docker, a build or browsers during this review.
+
+At this point, latest-head hosted verification remains failed pending the rerun, in addition to the separate live-email gate. Sender/recipient context has since been provided to the lead, but a server-side provider key, confirmed domain verification and observed authorized delivery are still missing evidence. No live provider call was made by QA. Do not advance S03 or report the latest candidate as hosted PASS until the failed check has been reverified.
