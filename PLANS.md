@@ -4,11 +4,13 @@ Source: [approved technical PRD](<AI SOP Assistant — Technical Product Req.md>
 
 ## Current state
 
-Phase 0 started with S01. The Next.js application, PostgreSQL/pgvector setup, Drizzle migration, unit and database tests and GitHub Actions workflow are implemented. Local Docker checks passed. The user selected [AuserZ/ai-sop-assistant](https://github.com/AuserZ/ai-sop-assistant) for source control and hosted CI. The workspace is connected to its existing `master` history on local review branch `codex/s01-foundation`; source candidate `b86a7e4f92e0cc3f5dd5aa3038cce8ec016cd829` is committed and publication-reviewed. Publication is BLOCKED: native Git lacks a cached login, and the GitHub connector rejected the blob write with HTTP 403 `Resource not accessible by integration`. No source branch was published and no hosted CI ran. S01 is not VERIFIED. [S01 verification report](docs/verification/S01.md)
+S01 is **VERIFIED** for candidate `59fa63f7df02489a6730b02f6cbbb2383c255503`. Local Docker evidence and [hosted run 44485878184](https://github.com/AuserZ/ai-sop-assistant/actions/runs/44485878184) passed all required foundation checks, including 3 unit tests, 3 PostgreSQL/pgvector integration tests and cleanup. The user selected [AuserZ/ai-sop-assistant](https://github.com/AuserZ/ai-sop-assistant); native Git publication succeeded after browser sign-in on branch `codex/s01-foundation`, preserving the existing `master` history/license. [S01 verification report](docs/verification/S01.md)
 
 The user authorized continued P0 development on 19 November 2026 and requested a project manager, principal fullstack engineer, security expert and QA, then added a principal DevOps engineer. The user explicitly authorizes the project manager to invoke these agents as development orchestrator. The main agent leads the four specialist roles, scheduling at most three child threads concurrently; role definitions and the execution agreement are recorded in [development team](docs/development-team.md). Current follow-ups cover orchestration instructions and bounded Docker/S01 runtime verification. Continue permitted work from the earliest unfinished acceptance item, preserving VERIFIED predecessor dependencies and every separate PRD approval gate. P1/P2 remain deferred.
 
-Earlier engineering/security review found no demonstrated S01 product defect. The missing-Docker blocker is resolved; local target-image checks passed on the unchanged candidate. Initial esbuild `ETXTBSY` did not recur on one unchanged DevOps build retry; its root cause remains unproven. Test containers/networks were removed while retaining synthetic volume/images/secrets. Local Git preserves the destination's initial license commit. Independent publication security review passed for source tree `d1bb26a55a11501b0841f8d4a2561d774cc05e22`, including byte-identical protected PRDs, unchanged license and no staged secret/build/dependency content. GitHub-side write access or local Git authentication is now required to publish and obtain hosted CI evidence. S02 has not started.
+Earlier Docker/publication blockers are resolved for native Git and the verified candidate. Initial local esbuild `ETXTBSY` did not recur on one unchanged build retry; its root cause remains unproven. Local test containers/networks were removed while retaining synthetic volume/images/secrets; hosted cleanup also removed its disposable volume. Independent publication review confirmed byte-identical protected PRDs, preserved license and excluded secrets/build/dependencies. QA independently confirmed the exact hosted candidate and all 14 successful job steps.
+
+Open dependency risk: production audit PASS with zero findings; full audit FAIL with four moderate findings in the dev-only Drizzle/esbuild tooling chain (GHSA-67mh-4wv8-2f99). Security found no demonstrated S01 serve-mode exposure and no additional mandatory S01 closure failure. Track compatible tooling remediation and re-audit under S14 before V01; do not describe the full audit as clean. The current task covers publication/S01 verification only. S02 remains PLANNED and has not started.
 
 Initial team setup verification passed: the lead and independent QA parsed the original ten agent definitions, confirmed the initial four requested roles with inherited model/permissions and the existing three-child capacity, and checked relative links and PRD gates. Strict Codex startup configuration passed. Current product checks and limitations are recorded in the 19 November [S01 recheck](docs/verification/S01.md); the two original PRD hashes remain unchanged.
 
@@ -53,7 +55,7 @@ The default execution order is S01 through S16. Each sprint depends on the VERIF
 
 | Sprint | Feature / demonstrable outcome | PRD phase | Primary mapping | Status |
 | --- | --- | --- | --- | --- |
-| S01 | Secure application runtime, database and CI foundation | 0 | ADR 01/02/09/14/15 | BLOCKED |
+| S01 | Secure application runtime, database and CI foundation | 0 | ADR 01/02/09/14/15 | VERIFIED |
 | S02 | Invitation-only sign-in and role authorization | 0 | U2/U4; U3 access enforcement | PLANNED |
 | S03 | Durable private workflow jobs and safe progress proof | 0 | ADR 08/19; D3 foundation | PLANNED |
 | S04 | Admin private SOP upload | 1 | D2; D1 upload status; ADR 03 | PLANNED |
@@ -105,7 +107,7 @@ Verify after development:
 - [x] A clean source copy installs reproducibly and the application build/start smoke test succeeds.
 - [x] Fresh database migrations and disposable PostgreSQL/pgvector integration checks pass; n8n credentials cannot modify authoritative application approvals.
 - [x] Compose resolves with synthetic configuration; internal services are not publicly exposed and no secret appears in source/client/log output.
-- [ ] CI runs its declared lint/type/build and initial unit/integration checks; record exact commands and results.
+- [x] CI runs its declared lint/type/build and initial unit/integration checks; record exact commands and results.
 
 ### S02 — invitation-only authentication and authorization
 

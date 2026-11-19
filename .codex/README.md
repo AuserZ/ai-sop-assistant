@@ -6,7 +6,7 @@ Read [AGENTS.md](../AGENTS.md), the complete [technical PRD](<../AI SOP Assistan
 
 This setup targets the installed Codex CLI 0.167.0 and the current official configuration format checked on 18 November 2026. It uses standalone custom-agent TOML files with `name`, `description`, and `developer_instructions`. No agent or project file selects an application model, provider, approval policy, or sandbox mode. Those settings stay with the user's session and managed policy.
 
-Project configuration, rules, and custom agents require the project layer to be trusted. Review the files and open a new Codex session from the workspace root; do not have an agent silently change global trust or permission settings. `project_root_markers` includes `AGENTS.md` because this folder does not yet contain Git metadata.
+Project configuration, rules, and custom agents require the project layer to be trusted. Review the files and open a new Codex session from the workspace root; do not have an agent silently change global trust or permission settings. `project_root_markers` includes `.git` and `AGENTS.md` so root discovery works before and after Git initialization.
 
 `config.toml` makes up to three child-agent threads available. Availability is not an instruction to delegate: use them when requested by the user or applicable instructions. Standalone agent files inherit the parent's permissions. Their inspect-only instructions are behavioral constraints, not separate read-only sandboxes.
 
@@ -26,7 +26,7 @@ Project configuration, rules, and custom agents require the project layer to be 
 
 Example request: “Use explorer to inspect the repository, then ask architect to review the smallest Phase 0 implementation plan. Do not implement yet.” Another: “Review these RAG changes with rag-reviewer and test-reviewer, then summarize findings.” These examples do not preauthorize unrelated implementation or external actions.
 
-The user's 19 November 2026 requests established the five-role development team and explicitly authorize the project manager to invoke the specialists as development orchestrator. Current follow-ups cover that authority and bounded Docker/S01 verification. Read the [shared agent rules and role index](../.agents/README.md) for specialties, responsibilities, workflows, do/don't rules and completion criteria. The five team Codex TOMLs reference those detailed guides. Schedule the four specialists within the existing three-child capacity. [Team ownership and continuity](../docs/development-team.md)
+The user's 19 November 2026 requests established the five-role development team and explicitly authorize the project manager to invoke the specialists as development orchestrator. Current follow-ups cover that authority, source publication and bounded S01 verification. Read the [shared agent rules and role index](../.agents/README.md) for specialties, responsibilities, workflows, do/don't rules and completion criteria. The five team Codex TOMLs reference those detailed guides. Schedule the four specialists within the existing three-child capacity. [Team ownership and continuity](../docs/development-team.md)
 
 ## Repository skills
 

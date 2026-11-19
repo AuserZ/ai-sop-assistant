@@ -4,11 +4,11 @@ S01 adds local Compose services for Next.js, PostgreSQL/pgvector and Drizzle mig
 
 ## Source repository
 
-The user selected [AuserZ/ai-sop-assistant](https://github.com/AuserZ/ai-sop-assistant) on 19 November 2026. Its default branch is `master`; preserve the existing history and Apache license. Prepare the initial source candidate on `codex/s01-foundation`, retaining the protected PRDs byte-for-byte and excluding local credentials, dependencies and build outputs through `.gitignore`.
+The user selected [AuserZ/ai-sop-assistant](https://github.com/AuserZ/ai-sop-assistant) on 19 November 2026. Its default branch is `master`; preserve the existing history and Apache license. Initial source was published on `codex/s01-foundation`, retaining the protected PRDs byte-for-byte and excluding local credentials, dependencies and build outputs through `.gitignore`.
 
 The existing `.github/workflows/ci.yml` runs project checks on pushes/pull requests. Record the exact commit and hosted run result in the S01 report before closing that sprint. Connecting or publishing source does not authorize production deployment or resolve PRD provider/policy gates.
 
-Current connection check: public reads succeed, but native Git has no cached login and the authenticated connector's blob write returned HTTP 403 `Resource not accessible by integration`. The reviewed source is committed locally; no source was uploaded. Authenticate local Git or grant the GitHub connection appropriate access to this repository before publishing the review branch. ChatGPT plugin approval-mode controls do not grant GitHub-side repository/OAuth permissions.
+Native Git publication now works after the user completed Git Credential Manager browser sign-in. Branch `codex/s01-foundation` tracks its matching origin branch, and hosted foundation run `44485878184` passed for candidate `59fa63f7df02489a6730b02f6cbbb2383c255503`. The connector's earlier HTTP 403 is historical and was not resolved or retested; publication used native Git. No master merge, image-registry publication or production deployment occurred.
 
 ## Local runtime
 
