@@ -1,0 +1,43 @@
+name: Project checks
+
+on:
+  pull_request:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  foundation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      NEXT_TELEMETRY_DISABLED: 1
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run check:prd
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+      - name: Check Compose and run application smoke and database tests
+        run: |
+          npm run dev:secrets
+          docker compose --profile verify --profile conversion config --quiet
+          docker compose --profile verify build app migrate verify-db
+          docker compose up --wait --wait-timeout 180 app
+          docker compose --profile verify run --rm --no-deps verify-db
+          curl --fail --silent --show-error http://127.0.0.1:3000/api/health/live
+          curl --fail --silent --show-error http://127.0.0.1:3000/api/health/ready
+          docker compose --profile conversion run --rm --build convert
+      - name: Stop disposable services
+        if: always()
+        run: docker compose --profile verify --profile conversion down --volumes --remove-orphans

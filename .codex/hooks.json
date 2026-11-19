@@ -1,0 +1,4 @@
+{
+  "description": "Optional project hooks. No lifecycle commands are enabled; use the documented PRD integrity check before and after changes.",
+  "hooks": {}
+}

@@ -1,0 +1,24 @@
+\getenv runtime_password APP_RUNTIME_PASSWORD
+\getenv migrator_password APP_MIGRATOR_PASSWORD
+\getenv n8n_password N8N_DB_PASSWORD
+
+CREATE ROLE sop_runtime LOGIN PASSWORD :'runtime_password';
+CREATE ROLE sop_migrator LOGIN PASSWORD :'migrator_password';
+CREATE ROLE sop_n8n LOGIN PASSWORD :'n8n_password';
+
+CREATE DATABASE sop_app;
+CREATE DATABASE sop_n8n OWNER sop_n8n;
+REVOKE ALL ON DATABASE sop_app, sop_n8n FROM PUBLIC;
+GRANT CONNECT, CREATE ON DATABASE sop_app TO sop_migrator;
+GRANT CONNECT ON DATABASE sop_app TO sop_runtime;
+
+\connect sop_app
+CREATE EXTENSION vector WITH SCHEMA public;
+REVOKE CREATE ON SCHEMA public FROM PUBLIC;
+CREATE SCHEMA app AUTHORIZATION sop_migrator;
+CREATE SCHEMA drizzle AUTHORIZATION sop_migrator;
+GRANT USAGE ON SCHEMA app TO sop_runtime;
+ALTER DEFAULT PRIVILEGES FOR ROLE sop_migrator IN SCHEMA app
+  GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO sop_runtime;
+ALTER DEFAULT PRIVILEGES FOR ROLE sop_migrator IN SCHEMA app
+  GRANT USAGE, SELECT ON SEQUENCES TO sop_runtime;

@@ -1,0 +1,58 @@
+# Prefix rules supplement the active session policy; they are not a filesystem ACL.
+# Keep read/check prefixes narrow. Do not allow whole shells or package managers.
+prefix_rule(
+    pattern = ["git", ["status", "diff", "log", "show"]],
+    decision = "allow",
+    match = ["git status --short", "git diff --stat"],
+    not_match = ["git push", "git reset --hard"],
+)
+
+prefix_rule(
+    pattern = ["rg"],
+    decision = "allow",
+    match = ["rg --files --hidden"],
+)
+
+prefix_rule(
+    pattern = ["node", ".codex/scripts/check-prd-integrity.mjs"],
+    decision = "allow",
+    match = ["node .codex/scripts/check-prd-integrity.mjs"],
+    not_match = ["node -e console.log(1)"],
+)
+
+prefix_rule(
+    pattern = ["git", "reset", "--hard"],
+    decision = "prompt",
+    justification = "Review possible loss of local work; prefer a scoped reversible change.",
+    match = ["git reset --hard HEAD"],
+    not_match = ["git status"],
+)
+
+prefix_rule(
+    pattern = ["git", "clean"],
+    decision = "prompt",
+    justification = "Inspect exact untracked paths before deleting files.",
+    match = ["git clean -fd"],
+)
+
+prefix_rule(
+    pattern = ["docker", "compose", "down", ["-v", "--volumes"]],
+    decision = "prompt",
+    justification = "Removing Compose volumes can destroy database data; inspect the target and authorization.",
+    match = ["docker compose down -v", "docker compose down --volumes"],
+    not_match = ["docker compose ps"],
+)
+
+prefix_rule(
+    pattern = ["docker", "compose", "up"],
+    decision = "prompt",
+    justification = "Confirm the target context and deployment scope; production requires the approved release gate.",
+    match = ["docker compose up -d"],
+)
+
+prefix_rule(
+    pattern = ["gh", "workflow", "run"],
+    decision = "prompt",
+    justification = "A workflow may deploy or change external state; use only within the authorized scope.",
+    match = ["gh workflow run deploy.yml"],
+)
