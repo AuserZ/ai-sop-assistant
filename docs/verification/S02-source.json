@@ -1,7 +1,8 @@
 {
   "version": 1,
-  "algorithm": "SHA-256 of JSON.stringify(files), sorted by path; raw file bytes",
-  "sha256": "461438284b9022c455f5bf87002d39db74ca849ee8f07c0016550fd6ce8c54ac",
+  "sourceCommit": "1ce6fbeaa8da5d4bff1a6baf8b8896efefa04fbb",
+  "algorithm": "SHA-256 of JSON.stringify(files), sorted by path; raw committed file bytes",
+  "sha256": "e6ad5ecb9659402107e91804860478075abe5e82eaff3be7da56832f5bf4f260",
   "files": [
     {
       "path": ".codex/scripts/check-prd-integrity.mjs",
@@ -249,7 +250,7 @@
     },
     {
       "path": "tsconfig.json",
-      "sha256": "04569496623a9a2ccc85ee42ba924fae0d59ac7fd7ab65457571b68b9aac44ae"
+      "sha256": "3a2d2d9e970868c7140a8c038745ff991a59d2103b272c45cb2cda1650ea39d6"
     }
   ]
 }

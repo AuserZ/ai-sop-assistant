@@ -14,6 +14,8 @@ Open dependency risk from S01: production audit PASS with zero findings; full au
 
 The user's latest `continue` authorizes S02 implementation, tests, fixes and verification on `codex/s02-authentication`, based on the published S01 revision `b16e2a6ffaf39cd58a14392bc56d760925b906a6` (hosted run `44487172118` also passed). Owners: principal fullstack engineer for auth/API/schema/tests/email transport, principal DevOps engineer for scoped runtime/CI support, root project-manager lead for integration/docs and auth UI/email template, independent security/QA reviewers for verification. Timebox has not been agreed; no delivery date is invented. The user chose antislop during development with existing styling; auth screens use that direction. Real sender-domain/delivery, operational recovery and production bootstrap remain open. No live provider email or later sprint is authorized by this work.
 
+S02 implementation is published as `1ce6fbeaa8da5d4bff1a6baf8b8896efefa04fbb`. [Hosted run 44542205919](https://github.com/AuserZ/ai-sop-assistant/actions/runs/44542205919) passed all 15 steps, including 14 unit, 18 PostgreSQL and six browser tests and cleanup. Local upgrade/security/QA/UI checks also pass. S02 is **BLOCKED** on required real invitation delivery: verified Resend sender/domain, secure key, approved synthetic recipient and observed delivery/link completion remain unavailable. No S03 work started. [S02 evidence](docs/verification/S02.md). The production dependency audit now also reports the four existing moderate tooling advisories through Better Auth optional peers; the final standalone image excludes those CLI packages, but the audit must not be described as clean.
+
 Initial team setup verification passed: the lead and independent QA parsed the original ten agent definitions, confirmed the initial four requested roles with inherited model/permissions and the existing three-child capacity, and checked relative links and PRD gates. Strict Codex startup configuration passed. Current product checks and limitations are recorded in the 19 November [S01 recheck](docs/verification/S01.md); the two original PRD hashes remain unchanged.
 
 Detailed specialties, jobs, workflows, do/don't rules, handoffs and completion criteria are recorded in [`.agents/README.md`](.agents/README.md) and five role guides, including the principal DevOps engineer. Five team entry points reference those guides. The project manager's delegation authority is explicit. Earlier setup validation passed for all 11 Codex definitions, five role-guide structures/references, 84 relative links, strict startup and PRD integrity; evidence and limits are recorded in [team setup evidence](docs/development-team.md). No later application sprint is started by the current configuration/verification work.
@@ -58,7 +60,7 @@ The default execution order is S01 through S16. Each sprint depends on the VERIF
 | Sprint | Feature / demonstrable outcome | PRD phase | Primary mapping | Status |
 | --- | --- | --- | --- | --- |
 | S01 | Secure application runtime, database and CI foundation | 0 | ADR 01/02/09/14/15 | VERIFIED |
-| S02 | Invitation-only sign-in and role authorization | 0 | U2/U4; U3 access enforcement | VERIFYING |
+| S02 | Invitation-only sign-in and role authorization | 0 | U2/U4; U3 access enforcement | BLOCKED |
 | S03 | Durable private workflow jobs and safe progress proof | 0 | ADR 08/19; D3 foundation | PLANNED |
 | S04 | Admin private SOP upload | 1 | D2; D1 upload status; ADR 03 | PLANNED |
 | S05 | SOP extraction, OCR, previews and indexing | 1 | D3; ADR 04/05/11/21/22 | PLANNED |
@@ -115,7 +117,7 @@ Verify after development:
 
 **Outcome:** Invited active Staff/Admin users can sign in; protected server operations enforce current access. **Depends on:** S01. **Mapping:** U2/U4, U3 enforcement, ADR 06/07. User-management menu completion belongs to S12.
 
-Kickoff: 19 November 2026, branch `codex/s02-authentication`; predecessor S01 VERIFIED. Scope is Better Auth/Drizzle identity, invitation-only acceptance, current-account/RBAC/owner guards, shared durable limits, CSRF/session safety, Resend/React Email integration and synthetic verification. Public account bootstrap, directory/status mutation UI, password reset and SSO remain deferred as defined above. Local verification passes 14 unit, 18 PostgreSQL and six Chromium tests; independent security/QA rechecked the corrected standalone origin boundary. Hosted CI is pending, and mandatory live sender delivery remains BLOCKED. [S02 report](docs/verification/S02.md). Do not advance S03 until S02 is VERIFIED.
+Kickoff: 19 November 2026, branch `codex/s02-authentication`; predecessor S01 VERIFIED. Scope is Better Auth/Drizzle identity, invitation-only acceptance, current-account/RBAC/owner guards, shared durable limits, CSRF/session safety, Resend/React Email integration and synthetic verification. Public account bootstrap, directory/status mutation UI, password reset and SSO remain deferred as defined above. Local and hosted verification pass 14 unit, 18 PostgreSQL and six Chromium tests; independent security/QA rechecked the corrected standalone origin boundary. Mandatory live sender delivery remains BLOCKED. [S02 report](docs/verification/S02.md). Do not advance S03 until S02 is VERIFIED.
 
 Development scope:
 

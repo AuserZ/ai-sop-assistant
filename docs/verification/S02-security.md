@@ -8,9 +8,9 @@
 | Requirements | U2/U4; U3 access enforcement; ADR 06/07; technical PRD sections 0, 4 and 12–14 |
 | Authorized scope | Invitation-only identity, current-account authorization, safe invitation delivery and associated synthetic checks |
 | Reviewer | Independent security specialist; implementation owned by fullstack/lead, runtime checks owned by DevOps/QA |
-| Branch and base | `codex/s02-authentication`, uncommitted changes based on `b16e2a6ffaf39cd58a14392bc56d760925b906a6` |
+| Branch and initial review base | Review began on the `codex/s02-authentication` working copy based on `b16e2a6ffaf39cd58a14392bc56d760925b906a6`; later hosted candidate is recorded below |
 | Reviewed source identifier | SHA-256 `0093760413dc1c1a8675ba7802d3ee52256e763137e3f99e9a891740ddd0db4d`, covering the 39 files listed below, including final CI configuration |
-| Result | F1 resolved against the reviewed source and rebuilt app: independent unit and actual HTTP checks PASS; lead reports six browser checks PASS. R1 remains an open moderate dependency risk. Hosted CI and live-provider evidence remain pending. No unauthorized-access bypass has been demonstrated. |
+| Result | F1 resolved against the reviewed source and rebuilt app: independent unit and actual HTTP checks PASS; lead reports six browser checks and hosted CI PASS. R1 remains an open moderate dependency risk. Live-provider evidence remains blocked. No unauthorized-access bypass has been demonstrated. |
 
 This review does not close S02, accept a production risk, or authorize deployment, provider use or real SOP processing. The lead and QA own sprint acceptance. The protected technical PRD and original product PDF were read in full during this review assignment and remain unchanged.
 
@@ -75,13 +75,17 @@ F1 is retained as a resolved defect with its failed and passing evidence. R1 rem
 | Independent post-F1 actual HTTP checks | PASS | Eight limited synthetic probes against rebuilt app `91dc4b...` passed with expected 401/403/415 and no-store. See F1 for the scenarios. |
 | Corrected actual browser run | PASS, reported | Lead reported six of six checks passed in 13.6 seconds against rebuilt app `91dc4b...`. All results are attributed, including initial fragment navigation and sign-out focus-refresh regression. |
 | Final additional browser assertion | PASS, reported | After the six-case pass, the lead added an account-loading hold assertion to the existing UI-state test and reported that affected test passing independently, one of one in 4.0 seconds. App code was unchanged. The final test file hash is recorded below. |
-| Final CI browser-step inspection | PASS, static only | Reviewed the Chromium install, synthetic fixture mount/UID/GID, injected delivery and browser command. No upload step, permission broadening or deployment was added. Hosted execution is still pending. |
-| S02 hosted CI | NOT RUN; pending handoff | No S02 hosted CI result was supplied to this reviewer. |
+| Final CI browser-step inspection | PASS, static only | Reviewed the Chromium install, synthetic fixture mount/UID/GID, injected delivery and browser command. No upload step, permission broadening or deployment was added. Subsequent hosted execution is attributed separately below. |
+| S02 hosted CI | PASS, reported | Lead identified candidate `1ce6fbeaa8da5d4bff1a6baf8b8896efefa04fbb` and [run 44542205919, job 135623234256](https://github.com/AuserZ/ai-sop-assistant/actions/runs/44542205919/job/135623234256): 15/15 steps successful, including 14 unit, 18 database and six browser checks plus cleanup. This reviewer did not independently inspect the hosted logs; QA is checking that evidence separately. |
 | Current production/full dependency audit | FAIL, reported | Four moderate records; see R1. Audit commands were run by the lead, not repeated by this reviewer. |
 | Live Resend delivery and sender-domain configuration | BLOCKED | No credentials/sender or authorized live recipient supplied. No provider call was made by this reviewer. |
 | `node .codex/scripts/check-prd-integrity.mjs` | PASS before and after report creation | Both protected source files match their original baseline. |
 
 The earlier timeout and F1's failed runtime/browser attempts are preserved rather than rewritten as clean first-run passes. No implementation or test was changed by the security reviewer.
+
+### Hosted result follow-up, 19 November 2026
+
+Recorded at 21:22 WIB after the lead supplied the successful hosted result above. Candidate `1ce6fbeaa8da5d4bff1a6baf8b8896efefa04fbb` is separate from the original working-copy manifest, which remains the identifier for the independent source review. This follow-up adds attributed CI evidence only; findings, the live Resend gate, production-policy decisions and the review's approval limits are unchanged.
 
 ### Concurrent UI correction inspected
 

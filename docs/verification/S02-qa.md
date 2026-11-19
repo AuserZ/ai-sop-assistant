@@ -1,6 +1,8 @@
 # S02 independent QA
 
-## Candidate and scope
+## Initial candidate and scope
+
+This initial review record is preserved below. The dated hosted follow-up at the end supersedes its pending-CI entries.
 
 | Field | Recorded value |
 | --- | --- |
@@ -124,7 +126,7 @@ The table preserves the initial failing run. On fixed image `91dc4b50558388079db
 
 No implementation or test assertion was changed by QA. Only this assigned evidence file is QA-owned. Review findings are not permission to waive sender-domain, recovery/MFA or production approval decisions.
 
-## Closure
+## Initial closure, before hosted follow-up
 
 | Item | Result |
 | --- | --- |
@@ -136,3 +138,33 @@ No implementation or test assertion was changed by QA. Only this assigned eviden
 | Original PRDs unchanged | PASS before and after report creation |
 | Sprint closure | BLOCKED for live sender delivery; hosted CI pending. Project-manager lead retains closure responsibility |
 | Next action | Review/publish the final CI evidence and resolve live sender evidence without starting S03 |
+
+## Hosted follow-up: 19 November 2026, 14:23 UTC
+
+QA independently read the GitHub Actions run metadata, job/step results and decoded job logs through the GitHub connector. This follow-up records evidence for published application source commit `1ce6fbeaa8da5d4bff1a6baf8b8896efefa04fbb`; it does not replace the earlier working-copy/image review or attribute a later documentation commit to this run.
+
+| Identity / result | Independently checked value |
+| --- | --- |
+| Repository and branch | `AuserZ/ai-sop-assistant`, `codex/s02-authentication` |
+| Exact source commit | `1ce6fbeaa8da5d4bff1a6baf8b8896efefa04fbb` |
+| Hosted workflow | [Project checks, run 44542205919](https://github.com/AuserZ/ai-sop-assistant/actions/runs/44542205919), push event, attempt 1 |
+| Hosted job | [foundation, job 135623234256](https://github.com/AuserZ/ai-sop-assistant/actions/runs/44542205919/job/135623234256) |
+| Run status | `completed`, `success`; created 14:17:53 UTC, last updated 14:21:36 UTC |
+| Job and steps | `completed`, `success`; 15/15 returned steps completed successfully, including browser verification and cleanup |
+| Verification mechanism | GET run `44542205919`, fetch run jobs, fetch decoded job logs; compare returned head SHA, branch, status, step conclusions and test/cleanup log lines |
+
+| Hosted check | Result | Observed log evidence |
+| --- | --- | --- |
+| Install, lint, types and production build | PASS | Corresponding job steps completed successfully; Next production compilation logged success |
+| Protected PRDs | PASS | Both source-integrity PASS lines at approximately 14:18:15 UTC |
+| Unit tests | PASS | `Test Files 3 passed (3)`, `Tests 14 passed (14)` at approximately 14:18:25 UTC |
+| PostgreSQL/pgvector integration | PASS | `Test Files 2 passed (2)`, `Tests 18 passed (18)` at approximately 14:20:08 UTC; Compose smoke/database step succeeded |
+| Browser journeys | PASS | All six named invitation/sign-in/role/logout-race/mobile/error tests passed; `6 passed (7.9s)` at approximately 14:21:30 UTC |
+| Fixture/provider boundary | PASS within synthetic scope | Log explicitly states delivery was injected and no email provider was called |
+| Disposable cleanup | PASS | Cleanup step succeeded; logs show app, migrator and PostgreSQL containers, both project networks and `ai-sop-assistant_postgres-data` volume removed by approximately 14:21:31 UTC |
+
+This independently confirms the hosted test results; QA did not launch a new workflow, rerun tests, operate Docker or change application/test code during the follow-up. The earlier lack of a browser CI step is resolved for this published candidate. The initial 9/12 HTTP failure and first six-test browser failure remain historical evidence; the fixed local HTTP pass and this passing hosted run provide the subsequent verification.
+
+Current QA disposition: assigned review and hosted verification complete, QA-01 remains CLOSED for the checked candidate, and required synthetic local/hosted checks have recorded passing evidence. Sprint acceptance remains BLOCKED by unconfigured and unobserved live Resend sender delivery. CI's injected sender does not close that gate. The existing four moderate dependency audit findings and security disposition remain recorded; a successful workflow is not a clean audit or production approval. No S03 work, deployment, production Admin provisioning or real-data processing is authorized by this report. The project-manager lead retains final sprint closure responsibility.
+
+Only this QA evidence file was edited by QA. Protected PRD integrity and `git diff --check` were rerun after the update.
