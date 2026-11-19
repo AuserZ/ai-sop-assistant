@@ -8,6 +8,8 @@ The user selected [AuserZ/ai-sop-assistant](https://github.com/AuserZ/ai-sop-ass
 
 The existing `.github/workflows/ci.yml` runs project checks on pushes/pull requests. Record the exact commit and hosted run result in the S01 report before closing that sprint. Connecting or publishing source does not authorize production deployment or resolve PRD provider/policy gates.
 
+Current connection check: public reads succeed, but native Git has no cached login and the authenticated connector's blob write returned HTTP 403 `Resource not accessible by integration`. The reviewed source is committed locally; no source was uploaded. Authenticate local Git or grant the GitHub connection appropriate access to this repository before publishing the review branch. ChatGPT plugin approval-mode controls do not grant GitHub-side repository/OAuth permissions.
+
 ## Local runtime
 
 Use Docker Compose with a Linux container engine. Generate credentials for the disposable local databases and start the app.
