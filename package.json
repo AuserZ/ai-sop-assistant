@@ -2,7 +2,9 @@
   "name": "ai-sop-assistant",
   "version": "0.1.0",
   "private": true,
-  "engines": { "node": ">=24" },
+  "engines": {
+    "node": ">=24"
+  },
   "scripts": {
     "dev": "next dev --hostname 127.0.0.1",
     "build": "next build",
@@ -11,19 +13,29 @@
     "typecheck": "next typegen && tsc --noEmit",
     "test": "vitest run tests/unit",
     "test:db": "vitest run tests/integration",
+    "test:browser": "playwright test",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
+    "auth:seed:synthetic": "tsx scripts/seed-synthetic-admin.ts",
     "dev:secrets": "node scripts/local-secrets.mjs",
     "check:prd": "node .codex/scripts/check-prd-integrity.mjs"
   },
   "dependencies": {
+    "@better-auth/drizzle-adapter": "1.7.26",
+    "@hookform/resolvers": "7.0.7",
+    "@react-email/render": "2.3.1",
+    "better-auth": "1.7.26",
     "drizzle-orm": "0.45.4",
     "next": "16.4.6",
     "postgres": "4.1.1",
     "react": "19.3.1",
-    "react-dom": "19.3.1"
+    "react-dom": "19.3.1",
+    "react-hook-form": "7.92.0",
+    "resend": "6.39.0",
+    "zod": "4.6.7"
   },
   "devDependencies": {
+    "@playwright/test": "1.65.1",
     "@tailwindcss/postcss": "4.3.5",
     "@types/node": "24.19.2",
     "@types/react": "19.3.0",
@@ -32,6 +44,7 @@
     "eslint": "9.39.5",
     "eslint-config-next": "16.4.6",
     "tailwindcss": "4.3.5",
+    "tsx": "4.23.15",
     "typescript": "5.9.3",
     "vitest": "5.1.1"
   }

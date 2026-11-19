@@ -28,6 +28,20 @@ Use `docker compose down` to stop local services and retain the database volume.
 
 Only the app binds a host port, on loopback. PostgreSQL stays on the internal network. The conversion helper runs without networking or secrets. S03 will add n8n and Redis services. [Local Compose configuration](../docker-compose.yml)
 
+S02 adds `auth-secret` to `dev:secrets`; rerunning preserves all existing credential files. Compose mounts it only into app and auth verification containers, with `AUTH_BASE_URL=http://127.0.0.1:3000`. Production requires an approved HTTPS origin, a TLS proxy preserving the canonical public `Host`, and protected auth/provider secrets. Auth does not trust forwarded headers or infer its public origin from Next.js's internal bind URL. Resend sender/key are intentionally absent from local Compose; see [authentication](authentication.md) for provider setup and the unresolved live-delivery gate. Build stages need neither auth nor email credentials.
+
+For a disposable browser run, after migrations and database tests, run the fixture inside the tooling service with the ignored local directory mounted as `/browser-fixtures`:
+
+```powershell
+docker compose --profile verify run --rm --no-deps -e SOP_SYNTHETIC_AUTH=1 -e BROWSER_FIXTURE_DIRECTORY=/browser-fixtures -v "${PWD}/.local-secrets:/browser-fixtures" verify-db node --import tsx tests/e2e/seed.ts
+npx playwright install chromium
+npm run test:browser
+```
+
+Use the same `-p` project name as the running test app when isolating Compose projects. The fixture injects email delivery and writes only synthetic credentials/tokens into the ignored file; it proves no live delivery. Do not copy this file into artifacts, source or a production environment. Stop services with `down` after checks; retain volumes unless a separate disposable CI job explicitly owns their deletion.
+
+On Linux, add `--user "$(id -u):$(id -g)"` to fixture preparation so the container writes as the owner of the private bind-mounted directory. The CI browser step uses this setting; do not make the directory world-writable to bypass a UID mismatch.
+
 ## Planned environment
 
 One VPS runs the TLS reverse proxy, Next.js application, PostgreSQL/pgvector, n8n main/workers, Redis and an isolated LibreOffice conversion helper. Managed private S3-compatible storage, OpenAI, Google Document AI, Resend and encrypted offsite backups are external. Protect internal ports/networks and limit worker/conversion CPU, RAM, time and outbound access.

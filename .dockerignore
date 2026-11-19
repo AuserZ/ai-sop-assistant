@@ -7,6 +7,8 @@
 !drizzle.config.ts
 !drizzle/
 !drizzle/**
+!scripts/
+!scripts/seed-synthetic-admin.ts
 !src/
 !src/**
 !tests/

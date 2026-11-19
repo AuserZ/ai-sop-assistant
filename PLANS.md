@@ -10,7 +10,9 @@ The user authorized continued P0 development on 19 November 2026 and requested a
 
 Earlier Docker/publication blockers are resolved for native Git and the verified candidate. Initial local esbuild `ETXTBSY` did not recur on one unchanged build retry; its root cause remains unproven. Local test containers/networks were removed while retaining synthetic volume/images/secrets; hosted cleanup also removed its disposable volume. Independent publication review confirmed byte-identical protected PRDs, preserved license and excluded secrets/build/dependencies. QA independently confirmed the exact hosted candidate and all 14 successful job steps.
 
-Open dependency risk: production audit PASS with zero findings; full audit FAIL with four moderate findings in the dev-only Drizzle/esbuild tooling chain (GHSA-67mh-4wv8-2f99). Security found no demonstrated S01 serve-mode exposure and no additional mandatory S01 closure failure. Track compatible tooling remediation and re-audit under S14 before V01; do not describe the full audit as clean. The current task covers publication/S01 verification only. S02 remains PLANNED and has not started.
+Open dependency risk from S01: production audit PASS with zero findings; full audit FAIL with four moderate findings in the dev-only Drizzle/esbuild tooling chain (GHSA-67mh-4wv8-2f99). Security found no demonstrated S01 serve-mode exposure and no additional mandatory S01 closure failure. Track compatible tooling remediation and re-audit under S14 before V01; do not describe the full audit as clean.
+
+The user's latest `continue` authorizes S02 implementation, tests, fixes and verification on `codex/s02-authentication`, based on the published S01 revision `b16e2a6ffaf39cd58a14392bc56d760925b906a6` (hosted run `44487172118` also passed). Owners: principal fullstack engineer for auth/API/schema/tests/email transport, principal DevOps engineer for scoped runtime/CI support, root project-manager lead for integration/docs and auth UI/email template, independent security/QA reviewers for verification. Timebox has not been agreed; no delivery date is invented. The user chose antislop during development with existing styling; auth screens use that direction. Real sender-domain/delivery, operational recovery and production bootstrap remain open. No live provider email or later sprint is authorized by this work.
 
 Initial team setup verification passed: the lead and independent QA parsed the original ten agent definitions, confirmed the initial four requested roles with inherited model/permissions and the existing three-child capacity, and checked relative links and PRD gates. Strict Codex startup configuration passed. Current product checks and limitations are recorded in the 19 November [S01 recheck](docs/verification/S01.md); the two original PRD hashes remain unchanged.
 
@@ -56,7 +58,7 @@ The default execution order is S01 through S16. Each sprint depends on the VERIF
 | Sprint | Feature / demonstrable outcome | PRD phase | Primary mapping | Status |
 | --- | --- | --- | --- | --- |
 | S01 | Secure application runtime, database and CI foundation | 0 | ADR 01/02/09/14/15 | VERIFIED |
-| S02 | Invitation-only sign-in and role authorization | 0 | U2/U4; U3 access enforcement | PLANNED |
+| S02 | Invitation-only sign-in and role authorization | 0 | U2/U4; U3 access enforcement | VERIFYING |
 | S03 | Durable private workflow jobs and safe progress proof | 0 | ADR 08/19; D3 foundation | PLANNED |
 | S04 | Admin private SOP upload | 1 | D2; D1 upload status; ADR 03 | PLANNED |
 | S05 | SOP extraction, OCR, previews and indexing | 1 | D3; ADR 04/05/11/21/22 | PLANNED |
@@ -113,6 +115,8 @@ Verify after development:
 
 **Outcome:** Invited active Staff/Admin users can sign in; protected server operations enforce current access. **Depends on:** S01. **Mapping:** U2/U4, U3 enforcement, ADR 06/07. User-management menu completion belongs to S12.
 
+Kickoff: 19 November 2026, branch `codex/s02-authentication`; predecessor S01 VERIFIED. Scope is Better Auth/Drizzle identity, invitation-only acceptance, current-account/RBAC/owner guards, shared durable limits, CSRF/session safety, Resend/React Email integration and synthetic verification. Public account bootstrap, directory/status mutation UI, password reset and SSO remain deferred as defined above. Local verification passes 14 unit, 18 PostgreSQL and six Chromium tests; independent security/QA rechecked the corrected standalone origin boundary. Hosted CI is pending, and mandatory live sender delivery remains BLOCKED. [S02 report](docs/verification/S02.md). Do not advance S03 until S02 is VERIFIED.
+
 Development scope:
 
 - Implement Better Auth/Drizzle identity, secure sessions, login/logout, invitation acceptance and Admin-authorized invite issuance through Resend/React Email.
@@ -122,10 +126,11 @@ Development scope:
 
 Verify after development:
 
-- [ ] Intended-email invitation acceptance works; expired/reused/wrong-email/forged invitations and public signup fail.
-- [ ] Staff cannot invoke Admin operations, unauthenticated callers are denied, and ownership checks reject cross-user access.
-- [ ] Deactivation/session revocation prevents subsequent protected actions; stale role/session data cannot retain privileges.
-- [ ] Authentication cookies, CSRF/rate-limit behavior and invitation email rendering are checked. Real sender delivery remains blocked until configured and tested.
+- [x] Intended-email invitation acceptance works; expired/reused/wrong-email/forged invitations and public signup fail.
+- [x] Staff cannot invoke Admin operations, unauthenticated callers are denied, and ownership checks reject cross-user access.
+- [x] Deactivation/session revocation prevents subsequent protected actions; stale role/session data cannot retain privileges.
+- [x] Authentication cookies, CSRF/rate-limit behavior and invitation email rendering are checked with synthetic data.
+- [ ] Real sender delivery remains blocked until configured, authorized and tested; injected delivery does not close this gate.
 
 ### S03 — durable private workflow jobs and safe progress proof
 

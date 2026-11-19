@@ -1,6 +1,6 @@
 # API contract guide
 
-Authority: [technical PRD](<../AI SOP Assistant — Technical Product Req.md>), sections 7–10. **Every route and event below is a proposed baseline, not an existing implemented API.** Keep proposals visibly separate from versioned contracts established by implementation and tests.
+Authority: [technical PRD](<../AI SOP Assistant — Technical Product Req.md>), sections 7–10. S01 implements health endpoints. S02 implements the allowlisted authentication, current-account and invitation endpoints documented in [authentication](authentication.md). The document/chat/user-directory endpoints and SSE events below remain proposals.
 
 ## Browser-facing boundary
 
@@ -8,7 +8,7 @@ Next.js owns authentication, current-account checks, RBAC, ownership, input vali
 
 | Proposed endpoint | Access | Expected behavior |
 | --- | --- | --- |
-| `/api/auth/*` | Only permitted login/invite acceptance routes public | Better Auth credentials/session; no open registration |
+| `/api/auth/*` | Implemented allowlist in the authentication guide | Better Auth credentials/session; no open registration |
 | `GET /api/documents` | Active Admin/Staff | Admin lifecycle listing; Staff ACTIVE-only; title search |
 | `POST /api/documents/upload-init` | Admin | Validate metadata, issue short-lived private upload authorization |
 | `POST /api/documents/{id}/process` | Admin | Finalize actual object integrity and acknowledge an idempotent asynchronous job |
@@ -19,7 +19,7 @@ Next.js owns authentication, current-account checks, RBAC, ownership, input vali
 | `POST /api/chat/messages` | Admin/Staff + conversation owner | Backend-owned SSE progress and checked terminal outcome |
 | `GET /api/chat/conversations` | Owner | Proposed saved-conversation access; past reopening is C7/P1 |
 | `GET /api/users` | Admin | User directory |
-| `POST /api/users/invite` | Admin | Expiring, single-use, intended-email-and-role invitation |
+| `POST /api/users/invite` | Admin; implemented in S02 | Expiring, single-use, intended-email-and-role invitation; live sender gate remains open |
 | `PATCH /api/users/{id}` | Admin | Role/status changes with deactivation safeguards |
 
 Choose exact DTOs, versioning, response codes, pagination, and safe errors during implementation; do not silently present these examples as final decisions. Validate incoming metadata, callback payloads, and model outputs with Zod. Require effective deactivation on protected operations and rate-limit login, invites, upload, chat, and access-token issuance.

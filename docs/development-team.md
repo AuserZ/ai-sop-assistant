@@ -28,7 +28,7 @@ S01 remains the current sprint until its required container/database and hosted 
 
 ## Continuity
 
-The user cleared the broader development goal. The current bounded task is repository publication and S01 verification; it does not automatically start S02. Native Git publication and the exact candidate's hosted CI passed, with DevOps monitoring, independent QA acceptance review and security disposition of development-tool advisories. S01 is VERIFIED for the recorded candidate. Role files do not run a separate background process. During later authorized work, use the on-disk plan/reports to resume from the earliest unfinished acceptance item rather than restarting or treating partial checks as completion.
+The user cleared the earlier persistent development goal, then explicitly requested `continue` after S01 verification/publication. The current authorized task is S02 implementation, tests, fixes and verification. The lead has assigned backend work to the principal fullstack engineer and scoped runtime support to DevOps, with independent security/QA reviews; root owns integration/docs and the pending auth UI/email template. No new background goal or service is implied. Native Git publication and hosted CI remain available; S03 must wait for S02's required acceptance evidence, including applicable external gates.
 
 External blockers must name the missing evidence and next action. Request repository/environment names or URLs without credentials; do not invent a remote, change global permissions or claim that absent hosted tests passed. This team agreement does not replace the PRD, grant deployment approval or resolve its open decisions.
 

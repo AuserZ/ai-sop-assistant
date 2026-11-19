@@ -1,6 +1,6 @@
 # Database guide
 
-S01 adds the application database, separate n8n database and the first Drizzle migration for `app.audit_events`. The other entities below describe planned capabilities. [Technical PRD, sections 3–9](<../AI SOP Assistant — Technical Product Req.md>)
+S01 adds the application database, separate n8n database and the first Drizzle migration for `app.audit_events`. S02 adds `0001_authentication.sql`: `app.auth_users`, `auth_accounts`, `auth_sessions`, `auth_verifications`, `auth_invitations` and `auth_rate_limits`, with role/email constraints, invitation digests and access-change/session triggers. [Authentication contract](authentication.md). The remaining entities below describe planned capabilities. [Technical PRD, sections 3–9](<../AI SOP Assistant — Technical Product Req.md>)
 
 ## Ownership and entities
 
@@ -10,7 +10,7 @@ The local PostgreSQL bootstrap installs pgvector and assigns three identities. `
 
 | Proposed entity | Intent / integrity requirements |
 | --- | --- |
-| Better Auth tables (`auth_*` illustrative) | Identity, credentials, sessions, verification, role mapping, active state; reconcile actual names with the supported Better Auth adapter |
+| Better Auth tables (`app.auth_*`, implemented in S02) | Identity, credentials, sessions, verification, role/active state, invitation eligibility and shared limits; see migration 0001 |
 | `sop_documents` | Title, type, original/preview object keys, immutable hash, uploader, lifecycle, current approved snapshot and reviewer/time |
 | `sop_processing_jobs` | Document, pipeline version, stable identity, stage/state, attempts, safe error codes, timestamps |
 | `sop_extraction_pages` | Original/normalized text, meaningful page/section/layout mapping, confidence when available |

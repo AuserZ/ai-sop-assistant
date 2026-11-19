@@ -4,6 +4,8 @@ Authority: [technical PRD](<../AI SOP Assistant — Technical Product Req.md>), 
 
 ## Identity and authorization
 
+S02 implements invitation-only identity, exact-origin JSON mutations, bounded bodies, a shared PostgreSQL limiter, sanitized auth responses and fresh account/session guards. Access-change triggers revoke sessions and serialize concurrent session creation. See [authentication](authentication.md) for exact contracts and external sender/bootstrap limits. No later document/chat guard is implemented until that feature exists.
+
 Only invited active users authenticate through Better Auth. Invitations are expiring, single-use, tied to the intended email/role and sent through Resend; do not email passwords. Enforce server-side RBAC and current active-account state for every protected operation. Deactivation must block ongoing access. Conversations/messages belong to their owner; an Admin role does not imply unrestricted access to another user's chats.
 
 Staff may chat and list/open/download verified ACTIVE SOPs. Admin may manage documents, review extraction, and manage users. Only the backend activates snapshots or grants roles. Use secure HTTP-only cookies, HTTPS, appropriate CSRF protections, and rate limits for authentication, invitations, uploads, chat and token generation.

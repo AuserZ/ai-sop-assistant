@@ -38,6 +38,14 @@ jobs:
           curl --fail --silent --show-error http://127.0.0.1:3000/api/health/live
           curl --fail --silent --show-error http://127.0.0.1:3000/api/health/ready
           docker compose --profile conversion run --rm --build convert
+      - name: Verify invitation and sign-in browser journeys
+        run: |
+          npx playwright install --with-deps chromium
+          docker compose --profile verify run --rm --no-deps --user "$(id -u):$(id -g)" \
+            -e SOP_SYNTHETIC_AUTH=1 -e BROWSER_FIXTURE_DIRECTORY=/browser-fixtures \
+            -v "$PWD/.local-secrets:/browser-fixtures" verify-db \
+            node --import tsx tests/e2e/seed.ts
+          npm run test:browser
       - name: Stop disposable services
         if: always()
         run: docker compose --profile verify --profile conversion down --volumes --remove-orphans

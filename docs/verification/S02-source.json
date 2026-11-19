@@ -1,0 +1,255 @@
+{
+  "version": 1,
+  "algorithm": "SHA-256 of JSON.stringify(files), sorted by path; raw file bytes",
+  "sha256": "461438284b9022c455f5bf87002d39db74ca849ee8f07c0016550fd6ce8c54ac",
+  "files": [
+    {
+      "path": ".codex/scripts/check-prd-integrity.mjs",
+      "sha256": "3e4f26317495e81f3e5cd1db261a64fead6d9b02a2eced908f9cb8c81d34b443"
+    },
+    {
+      "path": ".dockerignore",
+      "sha256": "7a6c46185060e4f77b92a4066672845b741f9a71e9cd3a5d0052299498a4df62"
+    },
+    {
+      "path": ".github/workflows/ci.yml",
+      "sha256": "4a1ea3e08ccb44cd2d5a5a59270cea1200913e2437f9ad6476215e111b62fa5c"
+    },
+    {
+      "path": ".gitignore",
+      "sha256": "8f750ea51164aef791b4eb0b859bc93c210b061310d6ef84a2ad9fa6c23fd935"
+    },
+    {
+      "path": "Dockerfile",
+      "sha256": "2cc6beda3a113035e640ed073bde7385040e98bb4df5bbf956c13e284623893d"
+    },
+    {
+      "path": "docker-compose.yml",
+      "sha256": "45f85e27190f69f91f1aa67714f951c7f990bacdfbaa3c26cde4e5cf0ee057ca"
+    },
+    {
+      "path": "drizzle.config.ts",
+      "sha256": "c2fdaee1ff8171eb328091ce3f8a1f1269fd1f8cbfa3d3db49c1c3b286ecc020"
+    },
+    {
+      "path": "drizzle/0000_foundation.sql",
+      "sha256": "7107b0361dbc0c69618ca5746802cc5267bb3be50362676b7690562be349ce37"
+    },
+    {
+      "path": "drizzle/0001_authentication.sql",
+      "sha256": "551ad6a9eede8626108d9fefbc7fd7cfebae2c922daee3047f17eba6a0b44c05"
+    },
+    {
+      "path": "drizzle/meta/0000_snapshot.json",
+      "sha256": "d7183bfc65794c36f590c74d466fa1b4b4a53a0e2245812443a9077d4d8eb257"
+    },
+    {
+      "path": "drizzle/meta/0001_snapshot.json",
+      "sha256": "504b9fc104947d04107d7640d2dcd94961fd2a874b3a4a66138744c433e3deb5"
+    },
+    {
+      "path": "drizzle/meta/_journal.json",
+      "sha256": "515c015ee51e1c0f8ec44c1357910249a319ff4e12a987c03cc658952c99f7f4"
+    },
+    {
+      "path": "eslint.config.mjs",
+      "sha256": "58df5e80f797b174a01d3f4b64c85643d3ebc18d429b648aebab2f0072b40842"
+    },
+    {
+      "path": "infra/conversion/Dockerfile",
+      "sha256": "65445974086c44b35bf8abc35e778ee56374c5ec873e87f0ed6e657e5789d395"
+    },
+    {
+      "path": "infra/postgres/bootstrap.sql",
+      "sha256": "c872ccfcfdf96a0ee61748f0033de82882d3601762fc1a1d06745a9edb8bd263"
+    },
+    {
+      "path": "infra/postgres/init-databases.sh",
+      "sha256": "cdaff6b27419ab8b38350305a87019bff4588a6c4fa39103beacc82754f900be"
+    },
+    {
+      "path": "next.config.ts",
+      "sha256": "588a5230e8fb0195ccfff3ca8174a5a52f075c43189c53de063b01dae20ae939"
+    },
+    {
+      "path": "package-lock.json",
+      "sha256": "f99e990615822fc2848ef1067f7ff9558602adcb93ea6ff7594e5b979d242270"
+    },
+    {
+      "path": "package.json",
+      "sha256": "ad82d742ae3aca8866354fdf024879be4a0925a49105a0e6adecc4cc3417b40f"
+    },
+    {
+      "path": "playwright.config.ts",
+      "sha256": "ac34bdbf3430e7c453812cf0a955c4b773d526599cb0396c2e65dd270693ce16"
+    },
+    {
+      "path": "postcss.config.mjs",
+      "sha256": "f8ed6853d2d91797f125edbb2af4052bd0adc52ba638d0de65d696a62d1ad3f7"
+    },
+    {
+      "path": "scripts/local-secrets.mjs",
+      "sha256": "445fd8dac3451f45a3f13380df1b4c86b3cd81fe0642336a278673244bcbd4b7"
+    },
+    {
+      "path": "scripts/seed-synthetic-admin.ts",
+      "sha256": "ffa2f15832c36a5e9b38b954524f0d04f8c8968ff8ecce1809c9cfd8abbd1a55"
+    },
+    {
+      "path": "src/.gitkeep",
+      "sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+    },
+    {
+      "path": "src/app/accept-invitation/page.tsx",
+      "sha256": "6d25d961d2e3d16d6b93861d4f06eda0aa9756308522d95a797e805a979841b6"
+    },
+    {
+      "path": "src/app/api/account/route.ts",
+      "sha256": "cb76733382a9aa1a1070a7a258c05c8f80ee75c6c2d4a4006c7eae66ca2bda9d"
+    },
+    {
+      "path": "src/app/api/auth/[...all]/route.ts",
+      "sha256": "c0d71391661970159e7225c5cee161aca1837bffe7d9aacbb71abfeaab7ccdac"
+    },
+    {
+      "path": "src/app/api/health/live/route.ts",
+      "sha256": "bf2ce6db5e4327e6701abae8c6dcefb963d63d4987709ff1fc46094bbd54de19"
+    },
+    {
+      "path": "src/app/api/health/ready/route.ts",
+      "sha256": "d033ac18180d2aa0f64b1cbd107aa14fb4f9dd942d6560ac49e0a2c5c9ec35c0"
+    },
+    {
+      "path": "src/app/api/users/invite/route.ts",
+      "sha256": "4effa8e3a7cf23cc4c9da60d8de3f547232b39a7d174630c389037139d55c108"
+    },
+    {
+      "path": "src/app/globals.css",
+      "sha256": "42070e0b45bb201b2b838a52aaaa6e965f964e0b542d97f1fe517fe59c4b75a8"
+    },
+    {
+      "path": "src/app/layout.tsx",
+      "sha256": "cd8588ff8bfef46a99b7e582ea98fd2f2e7be0c85a3f968e80a7f2dc3022747a"
+    },
+    {
+      "path": "src/app/page.tsx",
+      "sha256": "a34ccc88eb555f951e2fd5731e601a564c4185e12dd434f2df75d8aafc439d65"
+    },
+    {
+      "path": "src/app/sign-in/page.tsx",
+      "sha256": "37475f7612b8508bcb8b072ef8c366143b270aec356d744abb4d5fdddf29aef9"
+    },
+    {
+      "path": "src/components/auth/client.ts",
+      "sha256": "92c576b211952709f88f52cd5b6ea89d4422f46f9c00ab101f6788eb440ed8fb"
+    },
+    {
+      "path": "src/components/auth/forms.tsx",
+      "sha256": "eea8783e1d0eec27d2225a0b0d4f8767ebf791723656aed94491c8d5701888a7"
+    },
+    {
+      "path": "src/components/auth/session-status.tsx",
+      "sha256": "35422f00101778676ec6c107f2acd40be9ab6ab5540d0dceb10838c1aa59f774"
+    },
+    {
+      "path": "src/emails/invitation.tsx",
+      "sha256": "f5cd8fc883974632089c498645653f4d4de6614ab4914f7c42b2bdb807a562ac"
+    },
+    {
+      "path": "src/server/auth/accounts.ts",
+      "sha256": "adfdcf9af78fa095f21c20b9665cafcbf73437b2c94ee9742615eedf80567055"
+    },
+    {
+      "path": "src/server/auth/authentication.ts",
+      "sha256": "183c94d1f10c88a6f4be1e4512ce3f2fc4de937868d45247e516ca3d19988e54"
+    },
+    {
+      "path": "src/server/auth/authorization.ts",
+      "sha256": "b69671c208835c83f015e12035c2af3e03c82a9ef7aa9879373d5de5a7c41010"
+    },
+    {
+      "path": "src/server/auth/config.ts",
+      "sha256": "c4957d2c8ca6bc5bf8e9f16a72ac6653aa630417ea98df87e4aa1650989ce128"
+    },
+    {
+      "path": "src/server/auth/errors.ts",
+      "sha256": "d8ea0182e3f9484088a8c3423c6c8e299ae7e07a50f989d6c159108e32076953"
+    },
+    {
+      "path": "src/server/auth/handler.ts",
+      "sha256": "07eec2d79fd779b5d1fd7eb2c45c6547941f1fac66c7d324328d1aa2f1189599"
+    },
+    {
+      "path": "src/server/auth/http.ts",
+      "sha256": "49f9e10254d4e1f98e2b1486795a707ee68088fa5ececb4575f10f031183e966"
+    },
+    {
+      "path": "src/server/auth/invitations.ts",
+      "sha256": "83016ca6149316877ada5cff6c040ad2e5b55fd1bd4dc22b81a056811f6a85e4"
+    },
+    {
+      "path": "src/server/auth/rate-limit.ts",
+      "sha256": "43d7a3309a5fa9062f6dcaf869cb31c11678f8161761d3433e7df41e9efd63c0"
+    },
+    {
+      "path": "src/server/auth/validation.ts",
+      "sha256": "38351b22674e0954a4e293dadde2b4428bfec1a0e607b5aab6bb249ec0471776"
+    },
+    {
+      "path": "src/server/db/client.ts",
+      "sha256": "32b1a3cbe8bf0109c6b40f22c05d6adba4aaeff70ca7cec5815c4c5d65396ac4"
+    },
+    {
+      "path": "src/server/db/config.ts",
+      "sha256": "1b59b7b4355e42f8ad6e7ae7f685dbdc60843463c3800064d20a43ba961f4c6e"
+    },
+    {
+      "path": "src/server/db/schema.ts",
+      "sha256": "d52b2c88a502944f7993a7671d7c35b09437c1e43de53279a6cd86da406fd29b"
+    },
+    {
+      "path": "src/server/email/invitation.ts",
+      "sha256": "799cfd5dd401d224b82c9194c0d659199c844c02118972b6e27f4cf60cd29c93"
+    },
+    {
+      "path": "tests/.gitkeep",
+      "sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+    },
+    {
+      "path": "tests/e2e/auth.spec.ts",
+      "sha256": "8a8619e5a587d447cd6f1a75172bbe4ac5ad5024ac5de8fec2e1eca73e3cc1a3"
+    },
+    {
+      "path": "tests/e2e/seed.ts",
+      "sha256": "7e057cc4438647952505b0129e3fc469a067e41f8cb915b148b9f9da853865a4"
+    },
+    {
+      "path": "tests/fixtures/auth.ts",
+      "sha256": "9949a949c777156fd46e654ce4041aa96ca359f864668409cf794cd602b380e0"
+    },
+    {
+      "path": "tests/integration/auth.test.ts",
+      "sha256": "bb8a3581e0393caa7f0641ad8e8d60069b341c92de91f19483b4eb6ad48e7aa0"
+    },
+    {
+      "path": "tests/integration/database.test.ts",
+      "sha256": "033d0df66511c7223704694c4e740a67c0b691b915830ea5bc30dc9aad2d9deb"
+    },
+    {
+      "path": "tests/unit/auth-email.test.ts",
+      "sha256": "9b33af16fcdc17a8d424a031bfb802d954b07df78f97686eb8510f6664648b7c"
+    },
+    {
+      "path": "tests/unit/auth.test.ts",
+      "sha256": "8b330775518d0e7a65b4205c2a8f5b90a5d7ae8f2d6dd05090fc247bef7f1dd3"
+    },
+    {
+      "path": "tests/unit/database-config.test.ts",
+      "sha256": "e8c81fe5a1474ce14a2ca6537205e87a9d0369596be4c4653a1c5a0a23303740"
+    },
+    {
+      "path": "tsconfig.json",
+      "sha256": "04569496623a9a2ccc85ee42ba924fae0d59ac7fd7ab65457571b68b9aac44ae"
+    }
+  ]
+}

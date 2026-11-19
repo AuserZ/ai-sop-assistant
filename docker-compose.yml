@@ -42,9 +42,12 @@ services:
     build:
       context: .
       target: runtime
-    environment: *app-db
+    environment:
+      <<: *app-db
+      AUTH_BASE_URL: http://127.0.0.1:3000
+      AUTH_SECRET_FILE: /run/secrets/auth-secret
     ports: ["127.0.0.1:3000:3000"]
-    secrets: [app-runtime]
+    secrets: [app-runtime, auth-secret]
     networks: [database, edge]
     depends_on:
       migrate:
@@ -64,7 +67,9 @@ services:
     environment:
       <<: *app-db
       WORKFLOW_DB_PASSWORD_FILE: /run/secrets/n8n-db
-    secrets: [app-runtime, n8n-db]
+      AUTH_BASE_URL: http://127.0.0.1:3000
+      AUTH_SECRET_FILE: /run/secrets/auth-secret
+    secrets: [app-runtime, n8n-db, auth-secret]
     networks: [database]
     depends_on:
       migrate:
@@ -99,3 +104,5 @@ secrets:
     file: ./.local-secrets/app-migrator
   n8n-db:
     file: ./.local-secrets/n8n-db
+  auth-secret:
+    file: ./.local-secrets/auth-secret

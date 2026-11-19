@@ -5,5 +5,6 @@ import nextTypeScript from "eslint-config-next/typescript";
 export default defineConfig([
   ...nextVitals,
   ...nextTypeScript,
+  { files: ["src/emails/**/*.tsx"], rules: { "@next/next/no-head-element": "off" } },
   globalIgnores([".next/**", "coverage/**", "next-env.d.ts"]),
 ]);
