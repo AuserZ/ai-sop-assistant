@@ -190,3 +190,25 @@ The five added assertions wait for the exact `/sign-in` URL, the exact Sign in l
 Verdict: ACCEPT the bounded test-readiness change for runtime verification. The failure stack and missing target-screen readiness support a client-navigation measurement race as the likely cause. This pass does not establish an application layout defect or independently prove the timing mechanism. Source review alone cannot close the failure: the engineer's focused repetition and a new hosted candidate result remain pending at this follow-up. QA did not run Docker, a build or browsers during this review.
 
 At this point, latest-head hosted verification remains failed pending the rerun, in addition to the separate live-email gate. Sender/recipient context has since been provided to the lead, but a server-side provider key, confirmed domain verification and observed authorized delivery are still missing evidence. No live provider call was made by QA. Do not advance S03 or report the latest candidate as hosted PASS until the failed check has been reverified.
+
+## Browser readiness re-verification: 19 November 2026, 14:55 UTC
+
+QA independently read the replacement hosted run metadata, job/step results and decoded logs after completion. The published fix is commit `964687cd111ab60bdb5af20973f9ea6cef075957` on `codex/s02-authentication`. Comparison with `11b53ca3410d4e6c1f736bfa7d4c920b7b47c37f` shows only the previously reviewed browser readiness assertions plus plan/verification documentation changes; no application or runtime configuration changed. The test file still has SHA-256 `2d4a0a2a2484ac955bf593d49fad9117bc8b5d35d7d811f6b914bffc0a877f5f`.
+
+| Check | Independently verified evidence |
+| --- | --- |
+| Exact candidate | Hosted head SHA equals `964687cd111ab60bdb5af20973f9ea6cef075957`, branch `codex/s02-authentication` |
+| Replacement hosted run | [Run 44548005713](https://github.com/AuserZ/ai-sop-assistant/actions/runs/44548005713), created 14:49:52 UTC, last updated 14:54:22 UTC; `completed`, `success` |
+| Job / step results | [Job 135643731037](https://github.com/AuserZ/ai-sop-assistant/actions/runs/44548005713/job/135643731037); `completed`, `success`; all 15 returned steps complete successfully |
+| Integrity / lint / types / build | Corresponding CI steps PASS; both protected-source integrity PASS lines present |
+| Unit tests | 3 files, 14/14 PASS in decoded logs |
+| PostgreSQL tests | 2 files, 18/18 PASS in decoded logs |
+| Browser journeys | 6/6 PASS, `6 passed (9.2s)`; the previously failing auth errors/keyboard/narrow-layout test passes, alongside Staff/Admin access, logout/focus race and both invitation viewport cases |
+| Cleanup | Cleanup step PASS; logs show app/migrator/PostgreSQL containers, database/edge networks and the disposable project volume removed |
+| Provider boundary | Fixture log explicitly states delivery was injected and no email provider was called |
+
+The lead additionally reported a focused five-repeat run PASS in 17.4 seconds from the fullstack engineer and a passing local type check. Those local commands were not executed by QA; this follow-up's independent runtime evidence is the hosted job and its logs. QA waited between status reads and did not run browsers, Docker, builds, workflow mutations or provider calls.
+
+Disposition: the browser-readiness failure is reverified as PASS for commit `964687cd111ab60bdb5af20973f9ea6cef075957`. The failed `11b53ca…` run and its stack remain preserved above, as does the earlier `1ce6fbe…` passing run. One passing rerun does not guarantee that no future intermittent test issue can occur. The latest checked source has passing declared synthetic CI checks; live Resend sender/domain/delivery evidence remains BLOCKED and no S03 or production action follows. Any later documentation commit must identify this source/test candidate explicitly rather than claim this run tested that later commit.
+
+Only this QA report was edited. The protected PRD check and `git diff --check` passed after the append.
