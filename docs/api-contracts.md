@@ -19,7 +19,7 @@ Next.js owns authentication, current-account checks, RBAC, ownership, input vali
 | `POST /api/chat/messages` | Admin/Staff + conversation owner | Backend-owned SSE progress and checked terminal outcome |
 | `GET /api/chat/conversations` | Owner | Proposed saved-conversation access; past reopening is C7/P1 |
 | `GET /api/users` | Admin | User directory |
-| `POST /api/users/invite` | Admin; implemented in S02 | Expiring, single-use, intended-email-and-role invitation; live sender gate remains open |
+| `POST /api/users/invite` | Admin; implemented in S02 | Expiring, single-use, intended-email-and-role invitation; one authorized live delivery/acceptance/sign-in verified |
 | `PATCH /api/users/{id}` | Admin | Role/status changes with deactivation safeguards |
 
 Choose exact DTOs, versioning, response codes, pagination, and safe errors during implementation; do not silently present these examples as final decisions. Validate incoming metadata, callback payloads, and model outputs with Zod. Require effective deactivation on protected operations and rate-limit login, invites, upload, chat, and access-token issuance.

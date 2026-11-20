@@ -12,7 +12,7 @@ Earlier Docker/publication blockers are resolved for native Git and the verified
 
 Open dependency risk from S01: production audit PASS with zero findings; full audit FAIL with four moderate findings in the dev-only Drizzle/esbuild tooling chain (GHSA-67mh-4wv8-2f99). Security found no demonstrated S01 serve-mode exposure and no additional mandatory S01 closure failure. Track compatible tooling remediation and re-audit under S14 before V01; do not describe the full audit as clean.
 
-The user's latest `continue` authorizes S02 implementation, tests, fixes and verification on `codex/s02-authentication`, based on the published S01 revision `b16e2a6ffaf39cd58a14392bc56d760925b906a6` (hosted run `44487172118` also passed). Owners: principal fullstack engineer for auth/API/schema/tests/email transport, principal DevOps engineer for scoped runtime/CI support, root project-manager lead for integration/docs and auth UI/email template, independent security/QA reviewers for verification. Timebox has not been agreed; no delivery date is invented. The user chose antislop during development with existing styling; auth screens use that direction. Real sender-domain/delivery, operational recovery and production bootstrap remain open. No live provider email or later sprint is authorized by this work.
+The 19 November `continue` authorized S02 on `codex/s02-authentication`, based on published S01 revision `b16e2a6ffaf39cd58a14392bc56d760925b906a6`. Fullstack implemented auth/API/schema/tests/transport; DevOps supported scoped runtime configuration; root owned UI/template/integration/docs; security/QA independently reviewed. The user chose antislop during development with existing styling. The later explicit live-email authorization and successful closure are recorded below. The latest 20 November `continue` now authorizes S03 after that prerequisite; no delivery timebox is invented.
 
 S02 is **VERIFIED** on 20 November 2026 for application source `1ce6fbeaa8da5d4bff1a6baf8b8896efefa04fbb` plus browser correction `964687cd111ab60bdb5af20973f9ea6cef075957`. [Replacement hosted run 44548005713](https://github.com/AuserZ/ai-sop-assistant/actions/runs/44548005713) passed all 15 steps, including 14 unit, 18 PostgreSQL and six browser tests and cleanup, independently checked by QA. One authorized live invitation returned HTTP201; the user confirmed receipt, acceptance and sign-in. The lead's final database read confirms consumed invitation, active STAFF account and a post-acceptance active session. No second email was sent. [S02 evidence](docs/verification/S02.md). The production dependency audit still reports four existing moderate tooling advisories through Better Auth optional peers; the standalone image excludes those CLI packages, but the audit must not be described as clean.
 
@@ -63,7 +63,7 @@ The default execution order is S01 through S16. Each sprint depends on the VERIF
 | --- | --- | --- | --- | --- |
 | S01 | Secure application runtime, database and CI foundation | 0 | ADR 01/02/09/14/15 | VERIFIED |
 | S02 | Invitation-only sign-in and role authorization | 0 | U2/U4; U3 access enforcement | VERIFIED |
-| S03 | Durable private workflow jobs and safe progress proof | 0 | ADR 08/19; D3 foundation | PLANNED |
+| S03 | Durable private workflow jobs and safe progress proof | 0 | ADR 08/19; D3 foundation | IN_PROGRESS |
 | S04 | Admin private SOP upload | 1 | D2; D1 upload status; ADR 03 | PLANNED |
 | S05 | SOP extraction, OCR, previews and indexing | 1 | D3; ADR 04/05/11/21/22 | PLANNED |
 | S06 | Assisted verification and revision-bound activation | 1 | D3; ADR 17 | PLANNED |
@@ -137,6 +137,8 @@ Verify after development:
 - [x] One authorized real invitation was received and accepted; user sign-in and active account/session were confirmed. Injected delivery alone was not used to close this gate.
 
 ### S03 — durable private workflow jobs and safe progress proof
+
+Kickoff: 20 November 2026, branch `codex/s03-workflow-jobs`, base S02 closure `14ab58698f7432a96727bb01442ec71d0fea9ad6`; S02 VERIFIED. The user's `continue` authorizes this next sprint in phase order. Begin with a synthetic job through real n8n Queue Mode and a protected progress bridge; validate security, retries/reconciliation, disconnects and proxy behavior before choosing a working contract. No actual RAG, model/OCR/storage call, new product menu, real SOP or deployment is included. Root owns integration/contracts/docs; fullstack owns assigned job/schema/API/workflow/test files, DevOps owns assigned Compose/runtime/CI scripts, security/QA independently review. Exact ownership follows inspection; no delivery timebox is invented.
 
 **Outcome:** Next.js can submit a synthetic job through n8n Queue Mode, safely receive progress, and recover duplicate/interrupted delivery. **Depends on:** S02. **Mapping:** ADR 08/19; D3 job infrastructure.
 
