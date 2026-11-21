@@ -2,7 +2,7 @@
 
 Implementation contract for ADR 08/19 and D3 job infrastructure, subordinate to the approved PRD. S02 is VERIFIED. This document defines the bounded S03 proof; it does not add another requirements baseline or close the PRD's progress-bridge gate before runtime evidence exists.
 
-Status on 20 November 2026: design reviewed; implementation and runtime verification underway. No S03 acceptance check is reported passing here.
+Status on 20 November 2026: implementation exists; unit28/28, database30/30 and actual Queue Mode/proxy browser10/10 checks pass. Final recovery/retention, independent review and hosted CI remain open; S03 is VERIFYING. The bridge remains provisional until those required gates pass. [Actual evidence](verification/S03.md)
 
 ## Outcome and bounds
 

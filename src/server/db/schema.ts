@@ -79,6 +79,59 @@ export const authRateLimits = appSchema.table("auth_rate_limits", {
   expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
 }, (table) => [index("auth_rate_limits_expiry").on(table.expiresAt)]);
 
+export const workflowJobs = appSchema.table("workflow_jobs", {
+  id: uuid().defaultRandom().primaryKey(),
+  ownerId: text("owner_id").notNull().references(() => authUsers.id),
+  requestKey: uuid("request_key").notNull(),
+  inputHash: text("input_hash").notNull(),
+  kind: text().default("synthetic_probe").notNull(),
+  scenario: text().$type<"success" | "validation_failure">().notNull(),
+  state: text().$type<"QUEUED" | "RUNNING" | "COMPLETED" | "FAILED">().default("QUEUED").notNull(),
+  attemptId: uuid("attempt_id").notNull(),
+  attemptNumber: integer("attempt_number").default(1).notNull(),
+  dispatchNonce: uuid("dispatch_nonce").notNull(),
+  dispatchCount: integer("dispatch_count").default(0).notNull(),
+  dispatchNextAt: timestamp("dispatch_next_at", { withTimezone: true }).defaultNow().notNull(),
+  dispatchLeaseToken: uuid("dispatch_lease_token"),
+  dispatchLeaseUntil: timestamp("dispatch_lease_until", { withTimezone: true }),
+  dispatchAcceptedAt: timestamp("dispatch_accepted_at", { withTimezone: true }),
+  attemptDeadline: timestamp("attempt_deadline", { withTimezone: true }).notNull(),
+  runLeaseUntil: timestamp("run_lease_until", { withTimezone: true }),
+  executionId: text("execution_id"),
+  step: integer().default(0).notNull(),
+  eventSequence: integer("event_sequence").default(0).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("workflow_jobs_owner_request").on(table.ownerId, table.requestKey),
+  index("workflow_jobs_dispatch_due").on(table.state, table.dispatchNextAt),
+  check("workflow_jobs_kind", sql`${table.kind} = 'synthetic_probe'`),
+  check("workflow_jobs_state", sql`${table.state} in ('QUEUED','RUNNING','COMPLETED','FAILED')`),
+  check("workflow_jobs_scenario", sql`${table.scenario} in ('success','validation_failure')`),
+  check("workflow_jobs_attempt_bounds", sql`${table.attemptNumber} between 1 and 3 and ${table.dispatchCount} between 0 and 3 and ${table.step} between 0 and 5`),
+]);
+
+export const workflowEvents = appSchema.table("workflow_events", {
+  id: uuid().defaultRandom().primaryKey(),
+  jobId: uuid("job_id").notNull().references(() => workflowJobs.id, { onDelete: "cascade" }),
+  attemptId: uuid("attempt_id").notNull(),
+  sequence: integer().notNull(),
+  step: integer().notNull(),
+  kind: text().$type<"accepted" | "started" | "processing" | "deterministic_pass" | "judge_stub_pass" | "synthetic_completed" | "failed" | "retrying">().notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("workflow_events_sequence").on(table.jobId, table.sequence),
+  uniqueIndex("workflow_events_attempt_step").on(table.jobId, table.attemptId, table.step),
+  check("workflow_events_kind", sql`${table.kind} in ('accepted','started','processing','deterministic_pass','judge_stub_pass','synthetic_completed','failed','retrying')`),
+]);
+
+export const workflowNonceReceipts = appSchema.table("workflow_nonce_receipts", {
+  id: text().primaryKey(),
+  jobId: uuid("job_id").notNull().references(() => workflowJobs.id, { onDelete: "cascade" }),
+  attemptId: uuid("attempt_id").notNull(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+}, (table) => [index("workflow_nonce_expiry").on(table.expiresAt)]);
+
 export const auditEvents = appSchema.table("audit_events", {
   id: uuid().defaultRandom().primaryKey(),
   actorId: text("actor_id").notNull(),

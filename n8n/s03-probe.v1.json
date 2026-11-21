@@ -1,0 +1,744 @@
+{
+  "id": "sop-s03-probe-v1",
+  "name": "S03 synthetic queue and safe progress probe",
+  "active": false,
+  "nodes": [
+    {
+      "id": "ingress",
+      "name": "Signed dispatch",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.2,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "sop-s03-probe-v1",
+        "authentication": "jwtAuth",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "credentials": {
+        "jwtAuth": {
+          "id": "sop-s03-dispatch-v1",
+          "name": "sop-s03-dispatch-v1"
+        }
+      },
+      "onError": "stopWorkflow",
+      "webhookId": "sop-s03-probe-v1"
+    },
+    {
+      "id": "gate",
+      "name": "Validate dispatch policy",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        220,
+        0
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "valid",
+              "leftValue": "={{ (() => { const p=$json.jwtPayload; const b=$json.body; const now=Math.floor(Date.now()/1000); const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i; return p && typeof p==='object' && !Array.isArray(p) && b && typeof b==='object' && !Array.isArray(b) && Object.keys(b).length===0 && Object.keys($json.query||{}).length===0 && JSON.stringify(Object.keys(p).sort())===JSON.stringify([\"v\",\"workflow\",\"purpose\",\"iss\",\"aud\",\"method\",\"path\",\"jobId\",\"attemptId\",\"attemptNumber\",\"dispatchNonce\",\"scenario\",\"jti\",\"iat\",\"nbf\",\"exp\"].sort()) && p.v===1 && p.workflow==='s03-probe-v1' && p.purpose==='dispatch' && p.iss==='sop-app' && p.aud==='sop-n8n' && p.method==='POST' && p.path==='/webhook/sop-s03-probe-v1' && uuid.test(p.jobId) && uuid.test(p.attemptId) && uuid.test(p.dispatchNonce) && p.jti===p.dispatchNonce && Number.isInteger(p.attemptNumber) && p.attemptNumber>=1 && p.attemptNumber<=3 && ['success','validation_failure'].includes(p.scenario) && [p.iat,p.nbf,p.exp].every(Number.isInteger) && p.iat<=now+3 && p.iat>=now-60 && p.nbf<=p.iat && p.nbf<=now+3 && p.exp>now-3 && p.exp>p.iat && p.exp-p.iat<=60; })() }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "onError": "stopWorkflow"
+    },
+    {
+      "id": "reject",
+      "name": "Reject invalid dispatch",
+      "type": "n8n-nodes-base.stopAndError",
+      "typeVersion": 1,
+      "position": [
+        440,
+        0
+      ],
+      "parameters": {
+        "errorType": "errorMessage",
+        "errorMessage": "INVALID_WORKFLOW_DISPATCH"
+      },
+      "onError": "stopWorkflow"
+    },
+    {
+      "id": "build-1",
+      "name": "Build claim",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        660,
+        0
+      ],
+      "parameters": {
+        "mode": "raw",
+        "includeOtherFields": false,
+        "jsonOutput": "={{ JSON.stringify((() => { const p=$('Signed dispatch').first().json.jwtPayload; const now=Math.floor(Date.now()/1000); return {v:1,workflow:'s03-probe-v1',jobId:p.jobId,attemptId:p.attemptId,attemptNumber:p.attemptNumber,dispatchNonce:p.dispatchNonce,jti:p.attemptId+':'+$execution.id+':1',iat:now,nbf:now,exp:now+30,iss:'sop-n8n',aud:'sop-app',purpose:'claim',method:'POST',path:'/api/internal/jobs/'+p.jobId+'/claim',executionId:String($execution.id),step:1,outcome:'pass'}; })()) }}",
+        "options": {}
+      },
+      "onError": "stopWorkflow"
+    },
+    {
+      "id": "sign-1",
+      "name": "Sign claim",
+      "type": "n8n-nodes-base.jwt",
+      "typeVersion": 1,
+      "position": [
+        880,
+        0
+      ],
+      "parameters": {
+        "operation": "sign",
+        "useJson": true,
+        "claimsJson": "={{ JSON.stringify($json) }}",
+        "headerClaims": "{\"typ\":\"JWT\"}",
+        "options": {
+          "algorithm": "RS256"
+        }
+      },
+      "credentials": {
+        "jwtAuth": {
+          "id": "sop-s03-callback-v1",
+          "name": "sop-s03-callback-v1"
+        }
+      },
+      "onError": "stopWorkflow"
+    },
+    {
+      "id": "send-1",
+      "name": "Send claim",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1100,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ 'http://app:3000' + $('Build claim').first().json.path }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $json.token }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "{}",
+        "options": {
+          "timeout": 5000,
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          },
+          "redirect": {
+            "redirect": {
+              "followRedirects": false
+            }
+          }
+        }
+      },
+      "onError": "stopWorkflow"
+    },
+    {
+      "id": "build-2",
+      "name": "Build processing",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1320,
+        0
+      ],
+      "parameters": {
+        "mode": "raw",
+        "includeOtherFields": false,
+        "jsonOutput": "={{ JSON.stringify((() => { const p=$('Signed dispatch').first().json.jwtPayload; const now=Math.floor(Date.now()/1000); return {v:1,workflow:'s03-probe-v1',jobId:p.jobId,attemptId:p.attemptId,attemptNumber:p.attemptNumber,dispatchNonce:p.dispatchNonce,jti:p.attemptId+':'+$execution.id+':2',iat:now,nbf:now,exp:now+30,iss:'sop-n8n',aud:'sop-app',purpose:'callback',method:'POST',path:'/api/internal/jobs/'+p.jobId+'/callback',executionId:String($execution.id),step:2,outcome:'pass'}; })()) }}",
+        "options": {}
+      },
+      "onError": "stopWorkflow"
+    },
+    {
+      "id": "sign-2",
+      "name": "Sign processing",
+      "type": "n8n-nodes-base.jwt",
+      "typeVersion": 1,
+      "position": [
+        1540,
+        0
+      ],
+      "parameters": {
+        "operation": "sign",
+        "useJson": true,
+        "claimsJson": "={{ JSON.stringify($json) }}",
+        "headerClaims": "{\"typ\":\"JWT\"}",
+        "options": {
+          "algorithm": "RS256"
+        }
+      },
+      "credentials": {
+        "jwtAuth": {
+          "id": "sop-s03-callback-v1",
+          "name": "sop-s03-callback-v1"
+        }
+      },
+      "onError": "stopWorkflow"
+    },
+    {
+      "id": "send-2",
+      "name": "Send processing",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1760,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ 'http://app:3000' + $('Build processing').first().json.path }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $json.token }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "{}",
+        "options": {
+          "timeout": 5000,
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          },
+          "redirect": {
+            "redirect": {
+              "followRedirects": false
+            }
+          }
+        }
+      },
+      "onError": "stopWorkflow"
+    },
+    {
+      "id": "build-3",
+      "name": "Build deterministic check",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1980,
+        0
+      ],
+      "parameters": {
+        "mode": "raw",
+        "includeOtherFields": false,
+        "jsonOutput": "={{ JSON.stringify((() => { const p=$('Signed dispatch').first().json.jwtPayload; const now=Math.floor(Date.now()/1000); return {v:1,workflow:'s03-probe-v1',jobId:p.jobId,attemptId:p.attemptId,attemptNumber:p.attemptNumber,dispatchNonce:p.dispatchNonce,jti:p.attemptId+':'+$execution.id+':3',iat:now,nbf:now,exp:now+30,iss:'sop-n8n',aud:'sop-app',purpose:'callback',method:'POST',path:'/api/internal/jobs/'+p.jobId+'/callback',executionId:String($execution.id),step:3,outcome:p.scenario==='validation_failure'?'fail':'pass'}; })()) }}",
+        "options": {}
+      },
+      "onError": "stopWorkflow"
+    },
+    {
+      "id": "sign-3",
+      "name": "Sign deterministic check",
+      "type": "n8n-nodes-base.jwt",
+      "typeVersion": 1,
+      "position": [
+        2200,
+        0
+      ],
+      "parameters": {
+        "operation": "sign",
+        "useJson": true,
+        "claimsJson": "={{ JSON.stringify($json) }}",
+        "headerClaims": "{\"typ\":\"JWT\"}",
+        "options": {
+          "algorithm": "RS256"
+        }
+      },
+      "credentials": {
+        "jwtAuth": {
+          "id": "sop-s03-callback-v1",
+          "name": "sop-s03-callback-v1"
+        }
+      },
+      "onError": "stopWorkflow"
+    },
+    {
+      "id": "send-3",
+      "name": "Send deterministic check",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2420,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ 'http://app:3000' + $('Build deterministic check').first().json.path }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $json.token }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "{}",
+        "options": {
+          "timeout": 5000,
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          },
+          "redirect": {
+            "redirect": {
+              "followRedirects": false
+            }
+          }
+        }
+      },
+      "onError": "stopWorkflow"
+    },
+    {
+      "id": "continue-after-check",
+      "name": "Continue only after synthetic pass",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2640,
+        0
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "valid",
+              "leftValue": "={{ $('Signed dispatch').first().json.jwtPayload.scenario === 'success' }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "onError": "stopWorkflow"
+    },
+    {
+      "id": "build-4",
+      "name": "Build judge stub",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        2860,
+        0
+      ],
+      "parameters": {
+        "mode": "raw",
+        "includeOtherFields": false,
+        "jsonOutput": "={{ JSON.stringify((() => { const p=$('Signed dispatch').first().json.jwtPayload; const now=Math.floor(Date.now()/1000); return {v:1,workflow:'s03-probe-v1',jobId:p.jobId,attemptId:p.attemptId,attemptNumber:p.attemptNumber,dispatchNonce:p.dispatchNonce,jti:p.attemptId+':'+$execution.id+':4',iat:now,nbf:now,exp:now+30,iss:'sop-n8n',aud:'sop-app',purpose:'callback',method:'POST',path:'/api/internal/jobs/'+p.jobId+'/callback',executionId:String($execution.id),step:4,outcome:'pass'}; })()) }}",
+        "options": {}
+      },
+      "onError": "stopWorkflow"
+    },
+    {
+      "id": "sign-4",
+      "name": "Sign judge stub",
+      "type": "n8n-nodes-base.jwt",
+      "typeVersion": 1,
+      "position": [
+        3080,
+        0
+      ],
+      "parameters": {
+        "operation": "sign",
+        "useJson": true,
+        "claimsJson": "={{ JSON.stringify($json) }}",
+        "headerClaims": "{\"typ\":\"JWT\"}",
+        "options": {
+          "algorithm": "RS256"
+        }
+      },
+      "credentials": {
+        "jwtAuth": {
+          "id": "sop-s03-callback-v1",
+          "name": "sop-s03-callback-v1"
+        }
+      },
+      "onError": "stopWorkflow"
+    },
+    {
+      "id": "send-4",
+      "name": "Send judge stub",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3300,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ 'http://app:3000' + $('Build judge stub').first().json.path }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $json.token }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "{}",
+        "options": {
+          "timeout": 5000,
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          },
+          "redirect": {
+            "redirect": {
+              "followRedirects": false
+            }
+          }
+        }
+      },
+      "onError": "stopWorkflow"
+    },
+    {
+      "id": "build-5",
+      "name": "Build synthetic completion",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        3520,
+        0
+      ],
+      "parameters": {
+        "mode": "raw",
+        "includeOtherFields": false,
+        "jsonOutput": "={{ JSON.stringify((() => { const p=$('Signed dispatch').first().json.jwtPayload; const now=Math.floor(Date.now()/1000); return {v:1,workflow:'s03-probe-v1',jobId:p.jobId,attemptId:p.attemptId,attemptNumber:p.attemptNumber,dispatchNonce:p.dispatchNonce,jti:p.attemptId+':'+$execution.id+':5',iat:now,nbf:now,exp:now+30,iss:'sop-n8n',aud:'sop-app',purpose:'callback',method:'POST',path:'/api/internal/jobs/'+p.jobId+'/callback',executionId:String($execution.id),step:5,outcome:'pass'}; })()) }}",
+        "options": {}
+      },
+      "onError": "stopWorkflow"
+    },
+    {
+      "id": "sign-5",
+      "name": "Sign synthetic completion",
+      "type": "n8n-nodes-base.jwt",
+      "typeVersion": 1,
+      "position": [
+        3740,
+        0
+      ],
+      "parameters": {
+        "operation": "sign",
+        "useJson": true,
+        "claimsJson": "={{ JSON.stringify($json) }}",
+        "headerClaims": "{\"typ\":\"JWT\"}",
+        "options": {
+          "algorithm": "RS256"
+        }
+      },
+      "credentials": {
+        "jwtAuth": {
+          "id": "sop-s03-callback-v1",
+          "name": "sop-s03-callback-v1"
+        }
+      },
+      "onError": "stopWorkflow"
+    },
+    {
+      "id": "send-5",
+      "name": "Send synthetic completion",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3960,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ 'http://app:3000' + $('Build synthetic completion').first().json.path }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $json.token }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "{}",
+        "options": {
+          "timeout": 5000,
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          },
+          "redirect": {
+            "redirect": {
+              "followRedirects": false
+            }
+          }
+        }
+      },
+      "onError": "stopWorkflow"
+    }
+  ],
+  "connections": {
+    "Signed dispatch": {
+      "main": [
+        [
+          {
+            "node": "Validate dispatch policy",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate dispatch policy": {
+      "main": [
+        [
+          {
+            "node": "Build claim",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Reject invalid dispatch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build claim": {
+      "main": [
+        [
+          {
+            "node": "Sign claim",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sign claim": {
+      "main": [
+        [
+          {
+            "node": "Send claim",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send claim": {
+      "main": [
+        [
+          {
+            "node": "Build processing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build processing": {
+      "main": [
+        [
+          {
+            "node": "Sign processing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sign processing": {
+      "main": [
+        [
+          {
+            "node": "Send processing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send processing": {
+      "main": [
+        [
+          {
+            "node": "Build deterministic check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build deterministic check": {
+      "main": [
+        [
+          {
+            "node": "Sign deterministic check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sign deterministic check": {
+      "main": [
+        [
+          {
+            "node": "Send deterministic check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send deterministic check": {
+      "main": [
+        [
+          {
+            "node": "Continue only after synthetic pass",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Continue only after synthetic pass": {
+      "main": [
+        [
+          {
+            "node": "Build judge stub",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build judge stub": {
+      "main": [
+        [
+          {
+            "node": "Sign judge stub",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sign judge stub": {
+      "main": [
+        [
+          {
+            "node": "Send judge stub",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send judge stub": {
+      "main": [
+        [
+          {
+            "node": "Build synthetic completion",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build synthetic completion": {
+      "main": [
+        [
+          {
+            "node": "Sign synthetic completion",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sign synthetic completion": {
+      "main": [
+        [
+          {
+            "node": "Send synthetic completion",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveDataErrorExecution": "none",
+    "saveDataSuccessExecution": "none",
+    "saveManualExecutions": false,
+    "saveExecutionProgress": false,
+    "executionTimeout": 60
+  },
+  "pinData": {},
+  "staticData": null,
+  "tags": []
+}

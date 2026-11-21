@@ -9,7 +9,7 @@ const fixture = z.object({
   staff: z.object({ email: z.email() }),
   password: z.string(),
   invitations: z.array(z.object({ email: z.email(), acceptUrl: z.string() })).length(2),
-}).parse(JSON.parse(readFileSync(".local-secrets/s02-browser-fixture.json", "utf8")));
+}).parse(JSON.parse(readFileSync(".local-secrets/browser-fixtures/s02-browser-fixture.json", "utf8")));
 
 async function signIn(page: Page, email: string) {
   await page.goto("/sign-in");

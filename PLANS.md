@@ -63,7 +63,7 @@ The default execution order is S01 through S16. Each sprint depends on the VERIF
 | --- | --- | --- | --- | --- |
 | S01 | Secure application runtime, database and CI foundation | 0 | ADR 01/02/09/14/15 | VERIFIED |
 | S02 | Invitation-only sign-in and role authorization | 0 | U2/U4; U3 access enforcement | VERIFIED |
-| S03 | Durable private workflow jobs and safe progress proof | 0 | ADR 08/19; D3 foundation | IN_PROGRESS |
+| S03 | Durable private workflow jobs and safe progress proof | 0 | ADR 08/19; D3 foundation | VERIFYING |
 | S04 | Admin private SOP upload | 1 | D2; D1 upload status; ADR 03 | PLANNED |
 | S05 | SOP extraction, OCR, previews and indexing | 1 | D3; ADR 04/05/11/21/22 | PLANNED |
 | S06 | Assisted verification and revision-bound activation | 1 | D3; ADR 17 | PLANNED |
@@ -139,6 +139,8 @@ Verify after development:
 ### S03 — durable private workflow jobs and safe progress proof
 
 Kickoff: 20 November 2026, branch `codex/s03-workflow-jobs`, base S02 closure `14ab58698f7432a96727bb01442ec71d0fea9ad6`; S02 VERIFIED. The user's `continue` authorizes this next sprint in phase order. Begin with a synthetic job through real n8n Queue Mode and a protected progress bridge; validate security, retries/reconciliation, disconnects and proxy behavior before choosing a working contract. No actual RAG, model/OCR/storage call, new product menu, real SOP or deployment is included. Root owns integration/contracts/docs; fullstack owns assigned job/schema/API/workflow/test files, DevOps owns assigned Compose/runtime/CI scripts, security/QA independently review. Exact ownership follows inspection; no delivery timebox is invented.
+
+Verification progress on 21 November: corrected units 28/28, real PostgreSQL 30/30, browser 10/10 and all six actual recovery cases PASS, including live deactivation and the real 60s proxy timeout/reconnect. Earlier database, pressure, redirect and host-verifier failures/fixes remain recorded. Independent QA proved thirteen isolated parser/cleanup cases. Native POST301/307 controls and all five published redirect settings pass. Supported one-minute recovery and unchanged normal native pruning removed the previously retained execution payloads; security and QA independently read zero direct payload/JWT/orphan counts. Source is being frozen for hosted CI. S03 stays VERIFYING until that candidate passes; S04 is not started. [Current evidence](docs/verification/S03.md)
 
 **Outcome:** Next.js can submit a synthetic job through n8n Queue Mode, safely receive progress, and recover duplicate/interrupted delivery. **Depends on:** S02. **Mapping:** ADR 08/19; D3 job infrastructure.
 
@@ -461,13 +463,15 @@ Only after P0 acceptance and an explicit request, plan separate feature sprints 
 
 ## Open gates — preserved from technical PRD section 16
 
-All entries below remain unresolved. Work around them only with reversible, provider-agnostic scaffolding and synthetic fixtures.
+These gates remain open to the extent recorded below. Partial follow-up decisions do not close missing configuration, policy or verification. Use reversible scaffolding and synthetic fixtures while those prerequisites remain unresolved.
+
+Storage follow-up decision, 21 November 2026: the user selected **Cloudflare R2**. Bucket/account endpoint, jurisdiction/location, scoped server credentials and object recovery policy are not yet supplied or approved. This records the user's selection without changing either protected PRD or starting S04 before S03 is VERIFIED.
 
 | Gate | Owner / required evidence |
 | --- | --- |
 | Company approval for confidential OpenAI/OCR processing, privacy, residency, and no model training | Product/Security approval and provider controls before real SOPs |
 | Pilot team, owner, launch date, document types and languages | Product owner confirmation |
-| S3 versus R2, region, credentials, object recovery | Engineering/Security selection |
+| Cloudflare R2 configuration and object recovery | Provider selected by user; bucket/account endpoint, jurisdiction/location, credentials and recovery policy remain open |
 | OpenAI balance, exact reranker/answer/judge models and entitlements | Authorized project catalog/billing checks; ADR 23's model name is not proof of availability |
 | Google OCR processor region, limits, allowance, table quality | Project checks and representative authorized benchmark |
 | Queue Mode progress/SSE bridge | End-to-end spike with stream-safety evidence; transport choice remains open |

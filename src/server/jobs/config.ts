@@ -1,0 +1,34 @@
+import { readServerSecret } from "../auth/config";
+
+type Environment = Readonly<Record<string, string | undefined>>;
+
+export function workflowProbeEnabled(env: Environment = process.env) {
+  if (env.SOP_WORKFLOW_PROBE_ENABLED !== "1" || !env.AUTH_BASE_URL) return false;
+  try {
+    const base = new URL(env.AUTH_BASE_URL);
+    return base.protocol === "http:" && ["127.0.0.1", "localhost", "[::1]"].includes(base.hostname);
+  } catch { return false; }
+}
+
+export function workflowDispatchUrl(env: Environment = process.env) {
+  const url = new URL(env.WORKFLOW_DISPATCH_URL ?? "");
+  if (url.username || url.password || url.search || url.hash ||
+      !["http:", "https:"].includes(url.protocol) || url.pathname !== "/webhook/sop-s03-probe-v1") {
+    throw new Error("Invalid workflow dispatch configuration.");
+  }
+  return url.toString();
+}
+
+export function dispatchPrivateKey() { return readServerSecret("WORKFLOW_DISPATCH_PRIVATE_KEY"); }
+export function callbackPublicKey() { return readServerSecret("WORKFLOW_CALLBACK_PUBLIC_KEY"); }
+
+export function probeCallbackDelayMilliseconds(env: Environment = process.env) {
+  if (!workflowProbeEnabled(env)) return 0;
+  const value = env.WORKFLOW_PROBE_CALLBACK_DELAY_MS ?? "0";
+  if (!/^\d+$/.test(value) || Number(value) > 2000) throw new Error("Invalid synthetic callback delay.");
+  return Number(value);
+}
+
+export function workflowDispatcherEnabled(env: Environment = process.env) {
+  return env.NEXT_PHASE !== "phase-production-build" && env.WORKFLOW_DISPATCH_ENABLED === "1" && workflowProbeEnabled(env);
+}

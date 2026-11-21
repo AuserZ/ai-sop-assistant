@@ -4,6 +4,56 @@ x-app-db: &app-db
   DB_HOST: postgres
   APP_DB_PASSWORD_FILE: /run/secrets/app-runtime
 
+x-n8n-environment: &n8n-environment
+  DB_TYPE: postgresdb
+  DB_POSTGRESDB_HOST: postgres
+  DB_POSTGRESDB_DATABASE: sop_n8n
+  DB_POSTGRESDB_USER: sop_n8n
+  DB_POSTGRESDB_PASSWORD_FILE: /run/secrets/n8n-db
+  N8N_ENCRYPTION_KEY_FILE: /run/secrets/n8n-encryption-key
+  EXECUTIONS_MODE: queue
+  QUEUE_BULL_REDIS_HOST: redis
+  QUEUE_BULL_REDIS_PASSWORD_FILE: /run/secrets/redis-password
+  OFFLOAD_MANUAL_EXECUTIONS_TO_WORKERS: "true"
+  N8N_EXECUTIONS_QUEUE_RECOVERY_INTERVAL: "1"
+  N8N_RUNNERS_MODE: external
+  N8N_RUNNERS_AUTH_TOKEN_FILE: /run/secrets/n8n-runners-token
+  N8N_BLOCK_ENV_ACCESS_IN_NODE: "true"
+  N8N_BLOCK_FILE_ACCESS_TO_N8N_FILES: "true"
+  N8N_RESTRICT_FILE_ACCESS_TO: /tmp/workflow-files
+  NODES_EXCLUDE: '["n8n-nodes-base.code","n8n-nodes-base.executeCommand","n8n-nodes-base.localFileTrigger","n8n-nodes-base.readWriteFile"]'
+  N8N_DIAGNOSTICS_ENABLED: "false"
+  N8N_VERSION_NOTIFICATIONS_ENABLED: "false"
+  N8N_TEMPLATES_ENABLED: "false"
+  N8N_PERSONALIZATION_ENABLED: "false"
+  N8N_DISABLED_MODULES: mcp-registry,community-packages
+  N8N_PUBLIC_API_DISABLED: "true"
+  N8N_DISABLE_UI: "true"
+  N8N_LOG_LEVEL: warn
+  EXECUTIONS_DATA_SAVE_ON_SUCCESS: none
+  EXECUTIONS_DATA_SAVE_ON_ERROR: none
+  EXECUTIONS_DATA_SAVE_ON_PROGRESS: "false"
+  EXECUTIONS_DATA_SAVE_MANUAL_EXECUTIONS: "false"
+  EXECUTIONS_DATA_PRUNE: "true"
+  EXECUTIONS_DATA_MAX_AGE: "1"
+  EXECUTIONS_DATA_PRUNE_MAX_COUNT: "100"
+
+x-n8n-runtime: &n8n-runtime
+  image: docker.n8n.io/n8nio/n8n:2.48.6@sha256:eafe48609be09a2d56dd3628b29932a12c2e81a06ac5a309205652ea36146619
+  user: "1000:1000"
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  tmpfs:
+    - /home/node/.n8n:uid=1000,gid=1000,mode=0700,size=32m
+    - /tmp:uid=1000,gid=1000,mode=0700,size=64m
+  secrets: [n8n-db, n8n-encryption-key, redis-password, n8n-runners-token]
+  networks: [database, workflow]
+  mem_limit: 768m
+  cpus: 1.0
+  pids_limit: 128
+  stop_grace_period: 45s
+
 services:
   postgres:
     image: pgvector/pgvector:0.8.3-pg18-trixie@sha256:6232c5ea178707f278d060b51747c30f310164595674e95d5f9d100f4a48b56c
@@ -46,17 +96,112 @@ services:
       <<: *app-db
       AUTH_BASE_URL: http://127.0.0.1:3000
       AUTH_SECRET_FILE: /run/secrets/auth-secret
-    ports: ["127.0.0.1:3000:3000"]
-    secrets: [app-runtime, auth-secret]
-    networks: [database, edge]
+      WORKFLOW_DISPATCH_ENABLED: "1"
+      SOP_WORKFLOW_PROBE_ENABLED: "1"
+      WORKFLOW_PROBE_CALLBACK_DELAY_MS: ${WORKFLOW_PROBE_CALLBACK_DELAY_MS:-0}
+      WORKFLOW_DISPATCH_URL: http://n8n-main:5678/webhook/sop-s03-probe-v1
+      WORKFLOW_DISPATCH_PRIVATE_KEY_FILE: /run/secrets/workflow-dispatch-private
+      WORKFLOW_CALLBACK_PUBLIC_KEY_FILE: /run/secrets/workflow-callback-public
+    secrets: [app-runtime, auth-secret, workflow-dispatch-private, workflow-callback-public]
+    networks: [database, edge, workflow]
     depends_on:
       migrate:
         condition: service_completed_successfully
+      n8n-worker:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/health/ready').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
       interval: 3s
       timeout: 4s
       retries: 20
+
+  proxy:
+    image: nginx:1.30.7-alpine3.24@sha256:bef154735288bc38d99fac41ae63730684bcc661503673a04a0f9bc526ba8598
+    user: "101:101"
+    entrypoint: [nginx, -g, "daemon off;"]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    tmpfs: ["/tmp:uid=101,gid=101,mode=0700,size=32m"]
+    volumes:
+      - ./infra/proxy/nginx.conf:/etc/nginx/nginx.conf:ro
+    ports: ["127.0.0.1:3000:8080"]
+    networks: [edge]
+    depends_on:
+      app:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--spider", "http://127.0.0.1:8080/api/health/ready"]
+      interval: 3s
+      timeout: 4s
+      retries: 20
+    mem_limit: 64m
+    cpus: 0.5
+    pids_limit: 64
+
+  redis:
+    image: redis:7.4.12-alpine3.22@sha256:7f7d30b7fdd09467bac58198a1f166dd69789d348d4fe859cccb20e0cf287fbe
+    user: redis
+    entrypoint: [sh, /opt/sop/redis-entrypoint.sh]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    tmpfs: ["/tmp:mode=1777,size=16m", "/data:mode=1777,size=16m"]
+    volumes:
+      - ./infra/n8n/redis-entrypoint.sh:/opt/sop/redis-entrypoint.sh:ro
+      - ./infra/n8n/redis-health.sh:/opt/sop/redis-health.sh:ro
+    secrets: [redis-password]
+    networks: [workflow]
+    healthcheck:
+      test: [CMD, sh, /opt/sop/redis-health.sh]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    mem_limit: 256m
+    cpus: 0.5
+    pids_limit: 64
+
+  n8n-main:
+    <<: *n8n-runtime
+    command: [start]
+    environment: *n8n-environment
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:5678/healthz/readiness').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 3s
+      timeout: 4s
+      retries: 40
+
+  n8n-bootstrap:
+    <<: *n8n-runtime
+    entrypoint: [node, /opt/sop/bootstrap.mjs]
+    environment: *n8n-environment
+    volumes:
+      - ./infra/n8n/bootstrap.mjs:/opt/sop/bootstrap.mjs:ro
+      - ./n8n:/opt/sop/workflows:ro
+    secrets: [n8n-db, n8n-encryption-key, redis-password, n8n-runners-token, workflow-dispatch-public, workflow-callback-private]
+    depends_on:
+      n8n-main:
+        condition: service_healthy
+
+  n8n-worker:
+    <<: *n8n-runtime
+    command: [worker, --concurrency=5]
+    environment:
+      <<: *n8n-environment
+      QUEUE_HEALTH_CHECK_ACTIVE: "true"
+    depends_on:
+      n8n-bootstrap:
+        condition: service_completed_successfully
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:5678/healthz/readiness').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 3s
+      timeout: 4s
+      retries: 40
 
   verify-db:
     profiles: [verify]
@@ -69,7 +214,9 @@ services:
       WORKFLOW_DB_PASSWORD_FILE: /run/secrets/n8n-db
       AUTH_BASE_URL: http://127.0.0.1:3000
       AUTH_SECRET_FILE: /run/secrets/auth-secret
-    secrets: [app-runtime, n8n-db, auth-secret]
+      WORKFLOW_DISPATCH_PRIVATE_KEY_FILE: /run/secrets/workflow-dispatch-private
+      WORKFLOW_CALLBACK_PUBLIC_KEY_FILE: /run/secrets/workflow-callback-public
+    secrets: [app-runtime, n8n-db, auth-secret, workflow-dispatch-private, workflow-callback-public]
     networks: [database]
     depends_on:
       migrate:
@@ -90,6 +237,8 @@ services:
 networks:
   database:
     internal: true
+  workflow:
+    internal: true
   edge:
 
 volumes:
@@ -106,3 +255,17 @@ secrets:
     file: ./.local-secrets/n8n-db
   auth-secret:
     file: ./.local-secrets/auth-secret
+  n8n-encryption-key:
+    file: ./.local-secrets/n8n-encryption-key
+  redis-password:
+    file: ./.local-secrets/redis-password
+  n8n-runners-token:
+    file: ./.local-secrets/n8n-runners-token
+  workflow-dispatch-private:
+    file: ./.local-secrets/workflow-dispatch-private
+  workflow-dispatch-public:
+    file: ./.local-secrets/workflow-dispatch-public
+  workflow-callback-private:
+    file: ./.local-secrets/workflow-callback-private
+  workflow-callback-public:
+    file: ./.local-secrets/workflow-callback-public

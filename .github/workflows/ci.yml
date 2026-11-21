@@ -14,6 +14,7 @@ jobs:
     timeout-minutes: 20
     env:
       NEXT_TELEMETRY_DISABLED: 1
+      WORKFLOW_PROBE_CALLBACK_DELAY_MS: "2000"
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
@@ -27,25 +28,37 @@ jobs:
       - run: npm run lint
       - run: npm run typecheck
       - run: npm test
+      - run: node --test infra/n8n/local-secrets.test.mjs
       - run: npm run build
       - name: Check Compose and run application smoke and database tests
         run: |
           npm run dev:secrets
           docker compose --profile verify --profile conversion config --quiet
           docker compose --profile verify build app migrate verify-db
-          docker compose up --wait --wait-timeout 180 app
+          docker compose up --wait --wait-timeout 180 postgres
+          docker compose run --rm --no-deps migrate
           docker compose --profile verify run --rm --no-deps verify-db
+          docker compose up --wait --wait-timeout 300 proxy
           curl --fail --silent --show-error http://127.0.0.1:3000/api/health/live
           curl --fail --silent --show-error http://127.0.0.1:3000/api/health/ready
           docker compose --profile conversion run --rm --build convert
-      - name: Verify invitation and sign-in browser journeys
+      - name: Verify authentication and workflow browser journeys
         run: |
           npx playwright install --with-deps chromium
+          install -d -m 700 .local-secrets/browser-fixtures
           docker compose --profile verify run --rm --no-deps --user "$(id -u):$(id -g)" \
             -e SOP_SYNTHETIC_AUTH=1 -e BROWSER_FIXTURE_DIRECTORY=/browser-fixtures \
-            -v "$PWD/.local-secrets:/browser-fixtures" verify-db \
+            -v "$PWD/.local-secrets/browser-fixtures:/browser-fixtures" verify-db \
             node --import tsx tests/e2e/seed.ts
           npm run test:browser
+      - name: Verify workflow recovery and proxy timeout
+        env:
+          SOP_WORKFLOW_TEST_PROJECT: ai-sop-assistant
+        run: node scripts/verify-workflow-runtime.mjs
+      - name: Verify native POST redirect controls
+        env:
+          SOP_WORKFLOW_TEST_PROJECT: ai-sop-assistant
+        run: node infra/n8n/verify-redirects.mjs
       - name: Stop disposable services
         if: always()
         run: docker compose --profile verify --profile conversion down --volumes --remove-orphans

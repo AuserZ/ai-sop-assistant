@@ -23,6 +23,7 @@ async function seedBrowserFixtures() {
     const admin = await seedSyntheticAccount(database, "ADMIN");
     const staff = await seedSyntheticAccount(database);
     const actor = await seedSyntheticSession(database, admin);
+    const workflowRevocationUser = await seedSyntheticAccount(database);
     const invitations: Array<{ email: string; acceptUrl: string }> = [];
     for (let index = 0; index < 2; index++) {
       const email = `${randomUUID()}@example.invalid`;
@@ -35,6 +36,7 @@ async function seedBrowserFixtures() {
     await mkdir(outputDirectory, { recursive: true });
     await writeFile(join(outputDirectory, "s02-browser-fixture.json"), JSON.stringify({
       version: 1, baseURL: configuration.baseURL, admin, staff, password: syntheticPassword, invitations,
+      workflowRevocationUser, workflowAdmin: actor,
     }), { mode: 0o600 });
     process.stdout.write("Synthetic browser fixtures ready. Delivery was injected; no email provider was called.\n");
   } finally {

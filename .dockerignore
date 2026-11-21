@@ -7,6 +7,8 @@
 !drizzle.config.ts
 !drizzle/
 !drizzle/**
+!n8n/
+!n8n/s03-probe.v1.json
 !scripts/
 !scripts/seed-synthetic-admin.ts
 !src/

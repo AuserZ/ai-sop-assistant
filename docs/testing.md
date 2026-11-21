@@ -1,6 +1,6 @@
 # Testing and acceptance
 
-The S01 foundation and S02 authentication provide package scripts, unit/database tests and authentication browser journeys. The matrix below also describes checks for later sprints. [Technical PRD, sections 0, 5–8, 14–16](<../AI SOP Assistant — Technical Product Req.md>)
+S01–S03 provide foundation/authentication checks, durable workflow contracts, PostgreSQL integration tests, browser journeys and scoped runtime fault checks. The matrix below also describes later sprints. Actual sprint status remains in [PLANS.md](../PLANS.md). [Technical PRD, sections 0, 5–8, 14–16](<../AI SOP Assistant — Technical Product Req.md>)
 
 ## Commands and evidence
 
@@ -19,7 +19,9 @@ The unit suite checks that application, migration and workflow credentials remai
 
 All development/CI documents are synthetic. External provider calls need authorized scope and verified configuration; mocks are the normal failure/contract-test boundary. Use real disposable PostgreSQL/pgvector for database semantics. Do not infer query filtering or transaction correctness solely from mocks.
 
-S02 uses real Better Auth handlers and PostgreSQL for invitation races/rollback, cookie and stale-session behavior, role/ownership, deactivation/login races, origin/body bounds and atomic shared limits. Email rendering/failure/timeout tests inject Resend; they do not send email. The browser suite requires a healthy local Compose app and `tests/e2e/seed.ts` run inside tooling with `SOP_SYNTHETIC_AUTH=1` and `BROWSER_FIXTURE_DIRECTORY` bound to the ignored host `.local-secrets` directory. Then run `npx playwright install chromium` and `npm run test:browser`. No public fixture route exists; no traces/videos or credential screenshots are recorded. See [authentication](authentication.md) for the fixture scope and the sprint report for actual results.
+S02 uses real Better Auth handlers and PostgreSQL for invitation races/rollback, cookie and stale-session behavior, role/ownership, deactivation/login races, origin/body bounds and atomic shared limits. Email rendering/failure/timeout tests inject Resend; they do not send email. Browser tests require a healthy local Compose proxy/app and `tests/e2e/seed.ts` run inside tooling with `SOP_SYNTHETIC_AUTH=1`. Bind only the ignored child `.local-secrets/browser-fixtures` directory as `BROWSER_FIXTURE_DIRECTORY`; the parent contains server secrets and must not be mounted into fixture tooling. Then run `npx playwright install chromium` and `npm run test:browser`. No public fixture route, traces/videos or credential screenshots exist. See [local commands](deployment.md), [authentication](authentication.md) and the sprint reports.
+
+S03 database checks run after migrations and before the dispatcher app starts, so background reconciliation cannot race test-owned jobs. The actual browser suite then exercises native n8n Queue Mode and proxy SSE. Seven targeted native WebStream regressions use mocked storage/fake time to fill smaller internal budgets and exercise timeout/abort/revocation; the real finite slow-reader case does not fill the production64KiB budget. The scoped runtime script separately pauses/kills the worker, interrupts Redis/app, deactivates a synthetic account and waits for the real60s proxy stream timeout before reconnecting. It mutates only an explicitly named local Compose project and restores touched services even after failure. Synthetic `judge_stub_pass` and the literal completion marker do not prove an LLM judge or SOP-answer grounding. [S03 contract](workflow-jobs.md) · [S03 evidence](verification/S03.md)
 
 ## Feature sprint verification
 
