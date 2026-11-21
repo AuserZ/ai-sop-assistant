@@ -1,6 +1,6 @@
 # Development team
 
-The user requested this five-role team on 19 November 2026, adding the principal DevOps engineer after the initial four roles and explicitly authorizing project-manager orchestration. S01/S02 are verified; the latest continuation authorizes S03 within the existing sprint order. Predecessor checks, external decisions and deployment approval remain required. This is an execution agreement subordinate to the [technical PRD](<../AI SOP Assistant — Technical Product Req.md>), [original product PDF](<../PRD AI SOP Assistant.pdf>) and [sprint plan](../PLANS.md).
+The user requested this five-role team on 19 November 2026, adding the principal DevOps engineer after the initial four roles and explicitly authorizing project-manager orchestration. S01–S03 are verified; the latest continuation and Cloudflare R2 selection carry S04 private uploads forward in sprint order. Predecessor checks, external decisions and deployment approval remain required. This is an execution agreement subordinate to the [technical PRD](<../AI SOP Assistant — Technical Product Req.md>), [original product PDF](<../PRD AI SOP Assistant.pdf>) and [sprint plan](../PLANS.md).
 
 | Role | Responsibility | Detailed role guide | Codex definition |
 | --- | --- | --- | --- |
@@ -24,11 +24,11 @@ The main agent acts as project manager and schedules the four specialist roles i
 4. Run post-development verification against the finished candidate. Save real evidence with the [verification template](sprint-verification-template.md), update [PLANS.md](../PLANS.md) and rerun PRD integrity. Mark VERIFIED only when all mandatory checks pass.
 5. Advance in the existing phase/sprint order. Continue authorized P0 development without asking again for each implementation, test or fix. Keep unresolved section 16 decisions and external dependencies visible; finish independent work while requesting missing information.
 
-S01 and S02 are VERIFIED against their recorded evidence. The current authorized sprint is S03 private workflow jobs and safe progress proof; later sprints still require predecessor verification. Provider-neutral scaffolding is allowed only where the existing plan permits it. P1/P2 work, production release and real company-data processing retain their explicit approval gates. V01 technical acceptance, production approval and V02 pilot acceptance remain separate outcomes.
+S01–S03 are VERIFIED against their recorded evidence. The current sprint is S04 private Admin uploads; later sprints still require predecessor verification. Provider configuration and policy decisions remain gated, with synthetic fixtures where the plan permits. P1/P2, production release and real company-data processing retain their approval gates. V01 technical acceptance, production approval and V02 pilot acceptance remain separate outcomes.
 
 ## Continuity
 
-The user cleared the earlier persistent goal and continued development through S02. After the live invitation/acceptance/sign-in result, the 20 November `continue` authorizes S03 implementation, tests, fixes and verification. The lead coordinates bounded fullstack/DevOps ownership and independent security/QA; root owns integration/contracts/docs. No new background goal is implied. Native Git publication and hosted CI remain available; S04 must wait for S03 acceptance, and unresolved provider decisions remain open.
+The earlier persistent goal was cleared; development continued through S03 acceptance on21 November for0396cf6/hosted44852222243, with closure93a71e8. The user's latest continuation and R2 choice carry S04 forward. The lead coordinates fullstack backend/schema/test ownership, DevOps fixture/config/CI ownership, independent security/QA and root UI/integration/contracts/docs. No new background goal is implied. Native Git and hosted CI remain available; S05 waits for S04 acceptance, and unresolved provider decisions remain open.
 
 External blockers must name the missing evidence and next action. Request repository/environment names or URLs without credentials; do not invent a remote, change global permissions or claim that absent hosted tests passed. This team agreement does not replace the PRD, grant deployment approval or resolve its open decisions.
 

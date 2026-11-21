@@ -66,7 +66,7 @@ The default execution order is S01 through S16. Each sprint depends on the VERIF
 | S01 | Secure application runtime, database and CI foundation | 0 | ADR 01/02/09/14/15 | VERIFIED |
 | S02 | Invitation-only sign-in and role authorization | 0 | U2/U4; U3 access enforcement | VERIFIED |
 | S03 | Durable private workflow jobs and safe progress proof | 0 | ADR 08/19; D3 foundation | VERIFIED |
-| S04 | Admin private SOP upload | 1 | D2; D1 upload status; ADR 03 | PLANNED |
+| S04 | Admin private SOP upload | 1 | D2; D1 upload status; ADR 03 | IN_PROGRESS |
 | S05 | SOP extraction, OCR, previews and indexing | 1 | D3; ADR 04/05/11/21/22 | PLANNED |
 | S06 | Assisted verification and revision-bound activation | 1 | D3; ADR 17 | PLANNED |
 | S07 | SOP library search and authorized original access | 1 | D1/D5 | PLANNED |
@@ -165,6 +165,8 @@ Verify after development:
 ## Phase 1 — document features
 
 ### S04 — Admin private SOP upload
+
+Kickoff:21 November2026 on `codex/s04-private-uploads`, base S03 closure `93a71e8b93392c7740fd5b097548b28e1747b1d3`; predecessor S03 VERIFIED for0396cf6/hosted44852222243. User continuation and R2 selection carry the next P0 slice forward. Scope is private Admin upload-init/finalization, exact-byte validation/sealing, explicit quota reservations, status UI and one parked ingestion intent; no S05 processing. Root owns contracts/UI/browser/integration, fullstack owns backend/schema/tests/root packages, DevOps owns fixture/config/CI, security/QA independently review. Timebox unset. Bucket/endpoint/scoped credentials/jurisdiction/recovery policy and live R2 evidence remain open. [Contract and tests](docs/private-uploads.md)
 
 **Outcome:** Admin can upload an accepted synthetic PDF/DOCX to private storage and start one durable ingestion job. **Depends on:** S03. **Mapping:** D2 and D1 upload-status groundwork, ADR 03. **External gate:** selected storage/project access and tested file limits; adapters can be scaffolded while this remains open.
 
