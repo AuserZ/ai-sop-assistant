@@ -1,8 +1,10 @@
 # Development plan by feature sprint
 
-Source: [approved technical PRD](<AI SOP Assistant — Technical Product Req.md>), sections 0, 14–16, and [original product PRD](<PRD AI SOP Assistant.pdf>). This plan does not change either source. Status recorded on 19 November 2026.
+Source: [approved technical PRD](<AI SOP Assistant — Technical Product Req.md>), sections 0, 14–16, and [original product PRD](<PRD AI SOP Assistant.pdf>). This plan does not change either source. Status updated on 21 November 2026.
 
 ## Current state
+
+S03 is **VERIFIED** on 21 November 2026 for published source `0396cf606b8e34a805a038b273a103687a691ce1`. [Hosted run44852222243](https://github.com/AuserZ/ai-sop-assistant/actions/runs/44852222243), job136685999286, passed all18 steps: lint/types/build, 28 unit tests, isolated secret generation, 30 PostgreSQL tests, 10 browser tests, six actual recovery/timeout cases, native POST301/307 controls and cleanup. QA independently checked the exact source and decoded logs; security confirmed the frozen41-file manifest, publication boundaries and original PRD/license/history integrity. Local native recovery/pruning removed the earlier JWT-bearing payloads under unchanged normal settings; transient payload retention remains explicit. Phase0 is complete for the recorded candidates. Next permitted sprint: S04 Admin private uploads using the user's selected Cloudflare R2; bucket/configuration and recovery-policy gates remain open. [S03 evidence](docs/verification/S03.md)
 
 S01 is **VERIFIED** for candidate `59fa63f7df02489a6730b02f6cbbb2383c255503`. Local Docker evidence and [hosted run 44485878184](https://github.com/AuserZ/ai-sop-assistant/actions/runs/44485878184) passed all required foundation checks, including 3 unit tests, 3 PostgreSQL/pgvector integration tests and cleanup. The user selected [AuserZ/ai-sop-assistant](https://github.com/AuserZ/ai-sop-assistant); native Git publication succeeded after browser sign-in on branch `codex/s01-foundation`, preserving the existing `master` history/license. [S01 verification report](docs/verification/S01.md)
 
@@ -63,7 +65,7 @@ The default execution order is S01 through S16. Each sprint depends on the VERIF
 | --- | --- | --- | --- | --- |
 | S01 | Secure application runtime, database and CI foundation | 0 | ADR 01/02/09/14/15 | VERIFIED |
 | S02 | Invitation-only sign-in and role authorization | 0 | U2/U4; U3 access enforcement | VERIFIED |
-| S03 | Durable private workflow jobs and safe progress proof | 0 | ADR 08/19; D3 foundation | VERIFYING |
+| S03 | Durable private workflow jobs and safe progress proof | 0 | ADR 08/19; D3 foundation | VERIFIED |
 | S04 | Admin private SOP upload | 1 | D2; D1 upload status; ADR 03 | PLANNED |
 | S05 | SOP extraction, OCR, previews and indexing | 1 | D3; ADR 04/05/11/21/22 | PLANNED |
 | S06 | Assisted verification and revision-bound activation | 1 | D3; ADR 17 | PLANNED |
@@ -140,7 +142,7 @@ Verify after development:
 
 Kickoff: 20 November 2026, branch `codex/s03-workflow-jobs`, base S02 closure `14ab58698f7432a96727bb01442ec71d0fea9ad6`; S02 VERIFIED. The user's `continue` authorizes this next sprint in phase order. Begin with a synthetic job through real n8n Queue Mode and a protected progress bridge; validate security, retries/reconciliation, disconnects and proxy behavior before choosing a working contract. No actual RAG, model/OCR/storage call, new product menu, real SOP or deployment is included. Root owns integration/contracts/docs; fullstack owns assigned job/schema/API/workflow/test files, DevOps owns assigned Compose/runtime/CI scripts, security/QA independently review. Exact ownership follows inspection; no delivery timebox is invented.
 
-Verification progress on 21 November: corrected units 28/28, real PostgreSQL 30/30, browser 10/10 and all six actual recovery cases PASS, including live deactivation and the real 60s proxy timeout/reconnect. Earlier database, pressure, redirect and host-verifier failures/fixes remain recorded. Independent QA proved thirteen isolated parser/cleanup cases. Native POST301/307 controls and all five published redirect settings pass. Supported one-minute recovery and unchanged normal native pruning removed the previously retained execution payloads; security and QA independently read zero direct payload/JWT/orphan counts. Source is being frozen for hosted CI. S03 stays VERIFYING until that candidate passes; S04 is not started. [Current evidence](docs/verification/S03.md)
+Verification closure on 21 November: candidate0396cf6 passes [hosted run44852222243](https://github.com/AuserZ/ai-sop-assistant/actions/runs/44852222243), all18 steps, independently checked by QA. Units 28/28, real PostgreSQL 30/30, browser 10/10 and all six actual recovery cases PASS, including live deactivation and the real60s proxy timeout/reconnect. Earlier failures/fixes remain recorded. Native POST301/307 and all five published redirect settings pass. Supported one-minute recovery and unchanged normal native pruning removed the earlier retained payloads; security and QA independently read zero direct payload/JWT/orphan counts. Transient storage under native buffering remains explicit. S03 VERIFIED; S04 may now follow. [Evidence](docs/verification/S03.md)
 
 **Outcome:** Next.js can submit a synthetic job through n8n Queue Mode, safely receive progress, and recover duplicate/interrupted delivery. **Depends on:** S02. **Mapping:** ADR 08/19; D3 job infrastructure.
 
@@ -153,10 +155,10 @@ Development scope:
 
 Verify after development:
 
-- [ ] Forged, expired, replayed and cross-job callbacks fail; duplicates do not create duplicate transitions/results.
-- [ ] Worker restart and queue interruption reconcile durable jobs without losing ownership or unbounded retries.
-- [ ] Captured browser stream contains only allowlisted progress before synthetic validation passes; no arbitrary node output or draft procedural content leaks.
-- [ ] Browser disconnect/proxy buffering/timeout paths are exercised; n8n editor, Redis and service credentials remain private.
+- [x] Forged, expired, replayed and cross-job callbacks fail; duplicates do not create duplicate transitions/results.
+- [x] Worker restart and queue interruption reconcile durable jobs without losing ownership or unbounded retries.
+- [x] Captured browser stream contains only allowlisted progress before synthetic validation passes; no arbitrary node output or draft procedural content leaks.
+- [x] Browser disconnect/proxy buffering/timeout paths are exercised; n8n editor, Redis and service credentials remain private.
 
 **Phase 0 exit:** S01–S03 VERIFIED, real executable checks in CI, protected auth/data boundaries, and evidence of a safe working progress bridge. A mocked transport alone does not close the bridge gate.
 
@@ -474,7 +476,7 @@ Storage follow-up decision, 21 November 2026: the user selected **Cloudflare R2*
 | Cloudflare R2 configuration and object recovery | Provider selected by user; bucket/account endpoint, jurisdiction/location, credentials and recovery policy remain open |
 | OpenAI balance, exact reranker/answer/judge models and entitlements | Authorized project catalog/billing checks; ADR 23's model name is not proof of availability |
 | Google OCR processor region, limits, allowance, table quality | Project checks and representative authorized benchmark |
-| Queue Mode progress/SSE bridge | End-to-end spike with stream-safety evidence; transport choice remains open |
+| Queue Mode progress/SSE bridge | RESOLVED for this implementation by VERIFIED S03: signed callbacks, durable PostgreSQL events and bounded authenticated Next.js SSE polling; production load/latency evidence remains later work |
 | Scoring rubric and p50/p95 versus latency targets | Product/QA agreement and measurement |
 | Chat/audit deletion, retention, backup expiry, Admin MFA | Security/Product policy; proposed 90-day audit and 30-day backup periods are not approved policy |
 | Account recovery and Resend sender domain | Product/Engineering operational decision |

@@ -170,3 +170,43 @@ DevOps reports the same n8n-main container `5e8e4dda…`, started on 20 November
 Local disposition: the demonstrated verifier defects have passing isolated checks and a subsequent strict six-case runtime pass. The native recovery/pruning observation now supports closing that bounded local evidence gap. This does not claim zero transient JWT storage, an exact deletion deadline, universal log absence or an approved production retention policy. Final candidate checks, security disposition and hosted S03 CI must still be recorded before sprint closure; hosted CI remains NOT RUN at this follow-up. No S04 or deployment follows from this report.
 
 Only this QA report was edited. PRD integrity and `git diff --check` were rerun after the append.
+
+## Final hosted verification: 21 November 2026
+
+QA independently fetched the terminal GitHub Actions run metadata, job steps and decoded job logs. The exact checked source is `0396cf606b8e34a805a038b273a103687a691ce1` on `codex/s03-workflow-jobs`. The report stayed unchanged while CI ran; this append records the completed result and does not attribute it to a later documentation commit.
+
+| Identity / result | Independently verified value |
+| --- | --- |
+| Hosted workflow | [Run 44852222243](https://github.com/AuserZ/ai-sop-assistant/actions/runs/44852222243), `completed`, `success` |
+| Hosted job | [foundation, job 136685999286](https://github.com/AuserZ/ai-sop-assistant/actions/runs/44852222243/job/136685999286), `completed`, `success` |
+| Exact head | `0396cf606b8e34a805a038b273a103687a691ce1`, `codex/s03-workflow-jobs` |
+| Timing | Run created 01:47:24 UTC; last updated 01:57:08 UTC |
+| Steps | 18/18 returned steps completed successfully, including fault recovery, native POST controls and cleanup |
+| Install / lint / types / build / source integrity | All declared steps PASS; both protected-source PASS messages present |
+| Unit suite | 28/28 PASS, six test files, confirmed in decoded logs |
+| Isolated secret-generation test | 1/1 PASS; zero failed, canceled or skipped tests |
+| Real PostgreSQL suite | 30/30 PASS, three test files, confirmed in decoded logs |
+| Browser suite | 10/10 PASS in 41.1 seconds, confirmed in decoded logs |
+
+The terminal logs contain six distinct successful runtime records. QA checked their actual result fields and measurements rather than inferring them from the green step name:
+
+| Hosted strict recovery check | Result | Measured duration |
+| --- | --- | --- |
+| Worker pause / queued work | PASS | 11.673 seconds |
+| In-flight worker loss / abandoned-attempt fencing | PASS | 35.518 seconds |
+| Redis interruption | PASS | 12.421 seconds |
+| App restart / reconnect cursor | PASS | 20.996 seconds |
+| Live deactivation / denied stream access | PASS | 4.911 seconds |
+| Proxy timeout / durable reconnect | PASS | 71.012 seconds |
+
+The native HTTP node control uses POST for both 301 and 307. With default redirect behavior, each source was requested once and two destination requests occurred. With redirects disabled, each source was still requested once and destination requests were zero. The synthetic forwarded-canary count was zero in both modes; no actual credential forwarding was observed in this control. The CLI control is separate from the real Queue Mode proof supplied by browser and recovery cases.
+
+Count-only CI observations retain the storage distinction: during worker pause, its native log scan explicitly reports `DEFERRED_PAUSED`. After recovery, both Docker logs and both native event files were actually scanned and all JWT/bearer/private-key marker counts were zero. The post-recovery database snapshot still contained thirteen JWT-bearing probe payload rows, including one running row; direct orphan and private-key-marker counts were zero. This is transient execution storage, not evidence of zero persistence or of native hard pruning completing within CI. The independent normal-configuration local pruning snapshot above supplies that separate proof.
+
+Cleanup logs confirm all eight owned Compose containers were removed, including the completed migration/bootstrap one-shot containers, together with all three project networks and the disposable PostgreSQL volume. This is not a claim that eight long-running healthy services existed. The temporary redirect fixture and file were cleaned by the successful control script; its deliberately inactive synthetic workflow remains only until the disposable database is removed.
+
+DevOps also reported a passing 6.74-second paused-helper integration regression, restoration to unpaused/healthy state, a final native POST repeat and a post-pruning happy browser probe, 1/1 PASS in 10.1 seconds. Those local operations were not executed by QA. The later happy probe created a new soft-deleted success payload with six JWT occurrences at 01:46:35 UTC; that new work does not invalidate the earlier zero-payload pruning snapshot or establish zero transient storage.
+
+Final QA disposition: PASS for the scoped S03 acceptance evidence on source `0396cf606b8e34a805a038b273a103687a691ce1`, ready for the project-manager lead to record VERIFIED. Earlier database, verifier and runtime failures remain preserved with their fixes/reruns. Synthetic stub gates are not a real judge or SOP answer; company-data, provider, production-policy, S04 and deployment approvals are not supplied by this result. No further code change or local fault rerun was performed by QA during hosted verification.
+
+Only this report was edited after the terminal result. Protected PRD integrity and whitespace checks were rerun afterward; application source and the checked CI candidate remain unchanged.

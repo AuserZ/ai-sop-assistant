@@ -1,8 +1,8 @@
 # S03 private workflow jobs
 
-Implementation contract for ADR 08/19 and D3 job infrastructure, subordinate to the approved PRD. S02 is VERIFIED. This document defines the bounded S03 proof; it does not add another requirements baseline or close the PRD's progress-bridge gate before runtime evidence exists.
+Implementation contract for ADR 08/19 and D3 job infrastructure, subordinate to the approved PRD. This document records the bounded, verified S03 proof and its selected progress bridge; it does not add another requirements baseline or establish later SOP-answer correctness.
 
-Status on 20 November 2026: implementation exists; unit28/28, database30/30 and actual Queue Mode/proxy browser10/10 checks pass. Final recovery/retention, independent review and hosted CI remain open; S03 is VERIFYING. The bridge remains provisional until those required gates pass. [Actual evidence](verification/S03.md)
+Status on 21 November 2026: S03 VERIFIED for0396cf6, hosted run44852222243. Units28/28, database30/30, actual Queue Mode/proxy browser10/10, six runtime faults, native POST redirect controls, normal recovery/pruning and independent scoped security/QA checks pass. The selected working bridge is signed callbacks, durable PostgreSQL events and bounded authenticated Next.js SSE polling. Production load/latency and later real evidence/judge gates remain separate. [Actual evidence](verification/S03.md)
 
 ## Outcome and bounds
 
@@ -47,9 +47,9 @@ n8n's built-in Webhook verifies the fixed credential's signature/algorithm and e
 
 The exact token field names and route DTOs are established by implementation/tests, without weakening these checks. Do not claim native verification of unsupported header fields such as `kid`; a uniquely pinned key and explicit claim policy define the scope. No credential rotation framework or generic user-controlled workflow dispatcher is included.
 
-## Provisional progress bridge
+## Progress bridge outcome
 
-The spike uses signed callbacks, durable PostgreSQL events and bounded Next.js polling. Compared with Redis pub/sub, this avoids a second application broker client and subscribe/catch-up races while retaining restart replay. It adds a bounded database polling cost and visibility delay. Keep the design provisional until actual Queue Mode, proxy bytes, interruption and stream tests pass; observed limits may require revision.
+The verified spike selects signed callbacks, durable PostgreSQL events and bounded Next.js polling. Compared with Redis pub/sub, this avoids a second application broker client and subscribe/catch-up races while retaining restart replay. It adds a bounded database polling cost and visibility delay. Actual Queue Mode, proxy bytes, interruption and stream checks pass locally and in hosted CI; production load/latency remain unmeasured and may require tuning within the confirmed architecture.
 
 SSE reads only stored safe DTOs. Worker strings, exception bodies, draft answers, tokens, URLs and arbitrary metadata never reach stream serialization. The synthetic terminal marker is emitted only after ordered, explicit synthetic checks; it is labeled as a probe result and never as a real SOP answer or independent LLM-judge result.
 
