@@ -1,11 +1,12 @@
 import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 
-// These source hashes were captured before the Codex setup was created.
+// Technical PRD: user-approved OCR-only revision, 22 November 2026.
+// Product PDF: original pre-setup baseline.
 const protectedSources = [
   {
     name: 'AI SOP Assistant — Technical Product Req.md',
-    sha256: 'd91d6eacc6e390b6f5bf4bb3018d801b2f39b4ae9f4d64f6b1097d0b7a4a2dc1',
+    sha256: '12a5c10f505ba7a02d4d48114da05ecc7e8b36a8959610f0e80cc3fa582add47',
   },
   {
     name: 'PRD AI SOP Assistant.pdf',

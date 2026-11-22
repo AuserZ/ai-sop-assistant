@@ -2,7 +2,7 @@
 
 ## Approved scope
 
-On22 November2026 the user confirmed OpenAI is ready and explicitly requested PaddleOCR instead of Google OCR for now, installed in Docker. This records that temporary follow-up decision without changing the protected technical PRD or original PDF. The original ADR22 Google choice remains visible in those sources; production OCR selection and representative quality acceptance remain open.
+On22 November2026 the user confirmed OpenAI is ready and explicitly requested PaddleOCR instead of Google OCR for now, installed in Docker. The user subsequently authorized updating only the technical PRD OCR references, and that approved revision is now recorded in the canonical document. The original product PDF remains unchanged; production OCR selection and representative quality acceptance remain open. [OCR revision record](verification/PRD-OCR-2026-11-22.md).
 
 This S05a increment supports D3 and ADR04 with a local CPU OCR worker. S04 is VERIFIED for1ef8521/hosted45018939728; its uploaded objects and parked ingestion jobs are retained. The worker is an independently exercised processing component. Full S05 still requires native PDF/DOCX extraction, scanned/mixed-page routing, derivative previews, faithful table/section mappings, chunks/embeddings, authenticated n8n orchestration and failure/idempotency evidence. A successful image smoke test does not satisfy those gates or activate any source.
 
