@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { chmod, mkdtemp, readFile, rmdir, unlink, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { basename, join, resolve } from "node:path";
 import { promisify } from "node:util";
 
 const execute = promisify(execFile);
@@ -25,6 +27,7 @@ assert.equal(imageMetadata.Config.User, "10001:10001");
 assert.deepEqual(imageMetadata.Config.Entrypoint, ["timeout", "--signal=TERM", "--kill-after=5s", "80s", "python", "/opt/ocr/cli.py"]);
 const results = [];
 let ownedContainersRemoved = 0;
+let inputDirectory;
 
 async function runCase(label, command, extra = [], expectedExitCode = 0) {
   const name = "ai-sop-s05-ocr-" + process.pid + "-" + label;
@@ -54,7 +57,14 @@ async function runCase(label, command, extra = [], expectedExitCode = 0) {
     assert.ok(configuration.HostConfig.CapDrop.includes("ALL"));
     assert.ok(configuration.HostConfig.SecurityOpt.includes("no-new-privileges:true"));
     assert.deepEqual(configuration.HostConfig.PortBindings, {});
-    assert.ok(configuration.Mounts.every((mount) => mount.Type === "tmpfs"));
+    const bindMounts = configuration.Mounts.filter((mount) => mount.Type !== "tmpfs");
+    if (label === "input-png" || label === "input-jpeg") {
+      assert.equal(bindMounts.length, 1);
+      assert.equal(bindMounts[0].Type, "bind");
+      assert.equal(bindMounts[0].Destination, "/input");
+      assert.equal(bindMounts[0].RW, false);
+      assert.equal(basename(bindMounts[0].Source), basename(inputDirectory));
+    } else assert.deepEqual(bindMounts, []);
     let output;
     try {
       output = await dockerCall(["start", "--attach", name], 100_000);
@@ -67,8 +77,9 @@ async function runCase(label, command, extra = [], expectedExitCode = 0) {
     assert.equal(completed.State.OOMKilled, false);
     assert.equal(completed.State.ExitCode, expectedExitCode);
     const payload = output ? JSON.parse(output) : null;
+    const safePayload = label === "fixture-export" ? { result: payload.result, fixtures: payload.files.length } : payload;
     results.push({ case: label, exitCode: completed.State.ExitCode,
-      milliseconds: Date.now() - started, sandbox: "PASS", payload });
+      milliseconds: Date.now() - started, sandbox: "PASS", payload: safePayload });
     return payload;
   } finally {
     if (created) {
@@ -87,9 +98,39 @@ try {
   assert.equal(positive.exactLines, 4);
   assert.equal(positive.segments, 4);
   assert.equal(positive.verificationStatus, "UNVERIFIED");
-  const bounds = await runCase("bounds", ["--verify-bounds"]);
+  const fixtures = await runCase("fixture-export", ["-c", [
+    "import base64,io,json",
+    "from engine import synthetic_image",
+    "image,_,_=synthetic_image()",
+    "files=[]",
+    "for name,format in [('page.png','PNG'),('page.jpg','JPEG')]:",
+    " output=io.BytesIO()",
+    " image.save(output,format=format,quality=95)",
+    " files.append({'name':name,'data':base64.b64encode(output.getvalue()).decode('ascii')})",
+    "print(json.dumps({'result':'PASS','files':files}))",
+  ].join("\n")], ["--entrypoint", "python"]);
+  assert.equal(fixtures.result, "PASS");
+  assert.equal(fixtures.files.length, 2);
+  inputDirectory = await mkdtemp(join(tmpdir(), "ai-sop-s05-ocr-"));
+  assert.ok(resolve(inputDirectory).startsWith(resolve(tmpdir()) + (process.platform === "win32" ? "\\" : "/")));
+  await chmod(inputDirectory, 0o755);
+  for (const [index, name] of ["page.png", "page.jpg"].entries()) {
+    assert.equal(fixtures.files[index].name, name);
+    const bytes = Buffer.from(fixtures.files[index].data, "base64");
+    assert.ok(bytes.length > 0 && bytes.length <= 4_000_000);
+    const path = join(inputDirectory, name);
+    await writeFile(path, bytes);
+    await chmod(path, 0o444);
+    const result = await runCase(index === 0 ? "input-png" : "input-jpeg", ["--input", "/input/" + name],
+      ["--mount", "type=bind,src=" + inputDirectory + ",dst=/input,readonly"]);
+    assert.equal(result.inputSha256, createHash("sha256").update(bytes).digest("hex"));
+    assert.equal(result.verificationStatus, "UNVERIFIED");
+    assert.deepEqual(result.segments.map((segment) => segment.text),
+      ["SYNTHETIC SOP TEST", "Pressure 2.5 bar", "Wait 10 minutes", "Temperature 75 C"]);
+  }
+  const bounds = await runCase("bounds", ["--verify-bounds"], ["--tmpfs", "/input:size=8m,mode=1777"]);
   assert.equal(bounds.result, "PASS");
-  assert.equal(bounds.checks.length, 10);
+  assert.equal(bounds.checks.length, 11);
   const missing = await runCase("missing-model", ["--self-test"],
     ["--tmpfs", "/opt/models:size=4k,mode=555"], 1);
   assert.equal(missing.code, "OCR_MODELS_UNAVAILABLE");
@@ -113,4 +154,13 @@ try {
       code: result.payload?.code, result: result.payload?.result,
     })) }));
   process.exitCode = 1;
+} finally {
+  if (inputDirectory) {
+    for (const name of ["page.png", "page.jpg"]) {
+      const path = join(inputDirectory, name);
+      await chmod(path, 0o600).catch((error) => { if (error.code !== "ENOENT") throw error; });
+      await unlink(path).catch((error) => { if (error.code !== "ENOENT") throw error; });
+    }
+    await rmdir(inputDirectory);
+  }
 }

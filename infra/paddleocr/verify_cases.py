@@ -1,5 +1,6 @@
 import io
 import json
+import os
 from pathlib import Path
 import signal
 import tempfile
@@ -38,6 +39,13 @@ def run_checks():
     for path in ("https://example.invalid/image.png", "/etc/passwd", "/input/../etc/passwd", "page.png"):
         rejected(lambda: read_input(path), "OCR_INPUT_PATH")
     checks.append("URL and foreign paths denied")
+    input_directory = Path("/input")
+    os.symlink("/etc/passwd", input_directory / "link.png")
+    os.mkfifo(input_directory / "pipe.png")
+    (input_directory / "directory.png").mkdir()
+    for name in ("link.png", "pipe.png", "directory.png"):
+        rejected(lambda: read_input(input_directory / name), "OCR_INPUT_PATH")
+    checks.append("symlink FIFO and directory inputs denied")
     with tempfile.TemporaryDirectory() as temporary:
         rejected(lambda: verify_models(Path(temporary)), "OCR_MODELS_UNAVAILABLE")
     checks.append("missing models denied")

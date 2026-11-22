@@ -6,7 +6,7 @@ On22 November2026 the user confirmed OpenAI is ready and explicitly requested Pa
 
 This S05a increment supports D3 and ADR04 with a local CPU OCR worker. S04 is VERIFIED for1ef8521/hosted45018939728; its uploaded objects and parked ingestion jobs are retained. The worker is an independently exercised processing component. Full S05 still requires native PDF/DOCX extraction, scanned/mixed-page routing, derivative previews, faithful table/section mappings, chunks/embeddings, authenticated n8n orchestration and failure/idempotency evidence. A successful image smoke test does not satisfy those gates or activate any source.
 
-DevOps inspected the boundaries and prepared the resolver/71-wheel lock. Its session reached a usage limit; the lead completed the worker, Docker/Compose, verifier and CI without replacing the limited agent or changing models. Independent final security/QA review remains pending. Timebox is unset.
+DevOps inspected the boundaries and prepared the resolver/71-wheel lock. Its session reached a usage limit; the lead completed code/CI without replacing the limited agent or changing models. QA independently checked source/receipts; final candidate CI and security review remain pending. Timebox is unset.
 
 ## Local execution contract
 
@@ -31,7 +31,7 @@ docker compose -f infra/paddleocr/compose.yml run --rm -T paddleocr
 node infra/paddleocr/verify.mjs
 ```
 
-This is a one-shot worker. The default command runs synthetic OCR and exits; it starts no web server. The verifier creates and removes only its five owned containers. The image/models remain available. Existing application containers and volumes are retained.
+This is a one-shot worker. The default command runs synthetic OCR and exits; it starts no web server. The verifier creates/removes eight owned containers and a dedicated temporary synthetic-input directory. The image/models remain available. Existing application containers and volumes are retained.
 
 For an operator-only synthetic PNG/JPEG check, mount only a dedicated input directory readonly at /input, then use `--input /input/page.png`. URLs, foreign paths, symlinks and nonregular files are rejected. Recognized JSON is private processing output with `verificationStatus: UNVERIFIED`, never an approved SOP.
 
@@ -39,11 +39,11 @@ Trial bounds:2GiB RAM,2 CPUs/two inference threads,128 PIDs,128MiB shared memory
 
 ## Verification and current status
 
-Local build and verification **PASS** on22 November2026. Offline inference matched all four synthetic lines, including2.5bar,10minutes and75C. The cold case including container operations took16.268s. Ten bounds/model/deadline checks and five real container cases passed; an uncooperative process was forcibly stopped, all five containers removed, and the existing R2/application runtime remained healthy.
+Local build and verification **PASS** on22 November2026. Self-test and actual PNG/JPEG file inputs each matched four literal lines, including2.5bar,10minutes and75C. Latest case times including container operations:17.028s self-test,9.160s PNG and9.321s JPEG. Eleven bounds/model/deadline checks include symlink/FIFO/directory denial. All eight containers and temporary inputs were removed; the existing R2/application runtime remained healthy.
 
-Local image ID: `sha256:1beb8c94c93276d487624c704cdc3c6f39a71a2e667e1c6ac98ff5517f5e0608`. Eight-input manifest: `00917d29de68de57d3e72654532ac4cefb22bede24b29358577bc94c51880610`. [Detailed evidence](verification/S05.md). Exact hosted CI and independent review remain pending. Full S05 stays **IN_PROGRESS**; image-only proof does not establish native extraction, tables, scanned-PDF routing, embeddings or n8n ingestion.
+Local image ID: `sha256:8bfe1e3ce933e57f429c34275252bb418b09123a9de9592dc559755f909852e5`. Eight-input manifest: `1e53ecf1775c66b2bb0818017ffcfe745c614e71051307d15263b122c533f1e7`. Each test uses this immutable image ID; its six copied runtime source files were also independently hashed inside the readonly image. [Evidence](verification/S05.md). Exact hosted CI and final independent review remain pending. Full S05 stays **IN_PROGRESS**.
 
-The user reports OpenAI ready; its secure application credential, exact embedding entitlement and vector dimensions have not been verified. Keep keys out of chat and Git. Company authorization remains required before confidential passages reach external embedding/LLM providers.
+The requested OpenAI key file is present and remains ignored. A read-only catalog check returned200 on22 November13:13:57Z, with99 entries including both embedding-3 candidates. No SOP content or inference call was sent. Billing, actual embedding inference and dimensions remain unverified. Company authorization remains required before confidential passages reach external embedding/LLM providers.
 
 ## Primary references
 
