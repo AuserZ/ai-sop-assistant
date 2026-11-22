@@ -4,7 +4,7 @@ Source: [approved technical PRD](<AI SOP Assistant — Technical Product Req.md>
 
 ## Current state
 
-S04 private Admin uploads are **VERIFYING** on22 November2026. Implementation,40 units,48 real PostgreSQL checks,15 fixture browser journeys, six recovery cases/native POST controls and live synthetic R2 PDF/DOCX/exact20MB plus exact original-byte checks pass. Final appc9c9 and lead's item-by-item UI gate pass; exact published-candidate CI and independent final closure remain mandatory. S05 has not started. Company privacy/residency, object recovery and production file-policy gates remain open. [Current S04 evidence](docs/verification/S04.md)
+S04 private Admin uploads are **VERIFIED** on22 November2026 for published source `1ef852166cda0e07c231ddd4834cf053442bb1dd`. [Hosted run45018939728](https://github.com/AuserZ/ai-sop-assistant/actions/runs/45018939728), job137197322521, passed all19 step entries: lint/types/build,40 units,48 PostgreSQL checks,15 browser journeys, native storage controls, six actual recovery cases/native POST controls and cleanup. Independent QA decoded the exact-checkout logs; security independently bound the47-source manifest/publication and final evidence. Live synthetic R2 PDF/DOCX/exact20MB, exact original bytes and the lead's final UI gate also pass. Next permitted sprint is S05. Company privacy/residency, object recovery and production file-policy gates remain open. [S04 evidence and limits](docs/verification/S04.md)
 
 S03 is **VERIFIED** on 21 November 2026 for published source `0396cf606b8e34a805a038b273a103687a691ce1`. [Hosted run44852222243](https://github.com/AuserZ/ai-sop-assistant/actions/runs/44852222243), job136685999286, passed all18 steps: lint/types/build, 28 unit tests, isolated secret generation, 30 PostgreSQL tests, 10 browser tests, six actual recovery/timeout cases, native POST301/307 controls and cleanup. QA independently checked the exact source and decoded logs; security confirmed the frozen41-file manifest, publication boundaries and original PRD/license/history integrity. Local native recovery/pruning removed the earlier JWT-bearing payloads under unchanged normal settings; transient payload retention remains explicit. Phase0 is complete for the recorded candidates. Next permitted sprint: S04 Admin private uploads using the user's selected Cloudflare R2; bucket/configuration and recovery-policy gates remain open. [S03 evidence](docs/verification/S03.md)
 
@@ -68,7 +68,7 @@ The default execution order is S01 through S16. Each sprint depends on the VERIF
 | S01 | Secure application runtime, database and CI foundation | 0 | ADR 01/02/09/14/15 | VERIFIED |
 | S02 | Invitation-only sign-in and role authorization | 0 | U2/U4; U3 access enforcement | VERIFIED |
 | S03 | Durable private workflow jobs and safe progress proof | 0 | ADR 08/19; D3 foundation | VERIFIED |
-| S04 | Admin private SOP upload | 1 | D2; D1 upload status; ADR 03 | VERIFYING |
+| S04 | Admin private SOP upload | 1 | D2; D1 upload status; ADR 03 | VERIFIED |
 | S05 | SOP extraction, OCR, previews and indexing | 1 | D3; ADR 04/05/11/21/22 | PLANNED |
 | S06 | Assisted verification and revision-bound activation | 1 | D3; ADR 17 | PLANNED |
 | S07 | SOP library search and authorized original access | 1 | D1/D5 | PLANNED |
@@ -178,6 +178,8 @@ Follow-up22 November: final six recovery cases/native POST controls passed and w
 
 Final local checkpoint22 November: app rebuild CLI0, updated48/48 DB and actual20MB/browser/canonical-original proof passed. All3 originals match exact size/SHA/MIME and one undispatched parked job each; negative SHA has no canonical doc/job. Label cursor defect was fixed in base CSS; finalc9c9 app differs only in CSS from the successful provider artifact, with69 other production inputs identical. Lead's full real-provider UI gate passed at18:39 Jakarta, after recording private observer/sign-in timeout history. Six provider services healthy/two one-shots0, only loopback3000; previous9 fixture containers and volumes retained. Exact hosted CI and independent closure are the remaining S04 gates. Earlier pending checkpoints above are historical.
 
+Closure22 November: S04 VERIFIED for1ef8521 after hosted45018939728 and independent QA/security PASS. Exact committed-byte build and every mandatory regression pass; the sole local-build/Git input distinction is the unchanged tsconfig final newline, with normalized text/JSON equality documented. All four acceptance items below pass. Earlier pending states above remain historical; S05 may now start under the continuing P0 authorization, preserving its provider/configuration and company-data gates.
+
 Development scope:
 
 - Implement authenticated upload-init/finalization contracts and upload UI within document management, using backend-issued short-lived direct-upload authorization.
@@ -187,10 +189,10 @@ Development scope:
 
 Verify after development:
 
-- [ ] Admin valid PDF/DOCX upload succeeds; Staff/anonymous upload and invalid signature/type/size/checksum fail.
-- [ ] Missing/incomplete or wrong-object finalization cannot create an eligible document or trusted processing result.
-- [ ] Duplicate finalization/request retries create one logical job; signed upload access expires and cannot target unrelated objects.
-- [ ] Original files remain private and UPLOADED/PROCESSING documents cannot be Staff evidence.
+- [x] Admin valid PDF/DOCX upload succeeds; Staff/anonymous upload and invalid signature/type/size/checksum fail.
+- [x] Missing/incomplete or wrong-object finalization cannot create an eligible document or trusted processing result.
+- [x] Duplicate finalization/request retries create one logical job; signed upload access expires and cannot target unrelated objects.
+- [x] Original files remain private and UPLOADED/PROCESSING documents cannot be Staff evidence.
 
 ### S05 — SOP processing, OCR, previews and indexing
 

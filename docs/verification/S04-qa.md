@@ -6,11 +6,11 @@
 | --- | --- |
 | Sprint / requirements | S04 private Admin uploads; D2, D1 upload status, ADR03 |
 | Phase / predecessor | Phase1; S03 VERIFIED for0396cf6, closure base93a71e8 |
-| Candidate | Uncommitted `codex/s04-private-uploads`, base `93a71e8b93392c7740fd5b097548b28e1747b1d3` |
+| Candidate | Published `1ef852166cda0e07c231ddd4834cf053442bb1dd` on `codex/s04-private-uploads`; tree `64a1946be0983098bfc4a6f12b4513a6681fd9cb`; base `93a71e8b93392c7740fd5b097548b28e1747b1d3` |
 | Verifier / ownership | Independent QA; implementation and assertions read-only; this report assigned by lead |
 | Environment | Windows, Node/npm host unit suite; no Docker mutation, build/typegen, provider request or real-key read by QA |
-| Date | Initial21 November2026; final local/provider/UI receipt reconciliation22 November2026, Asia/Jakarta; original unit run18:24 and file snapshot18:26:01 are historical |
-| Result | Final47-source local/provider/UI evidence reconciled; exact published candidate, hosted CI and final independent closure remain pending; S04 not yet VERIFIED |
+| Date | Initial21 November2026; final local/provider/UI and exact hosted-CI reconciliation22 November2026, Asia/Jakarta; original unit run18:24 and file snapshot18:26:01 are historical |
+| Result | Independent QA PASS for S04 candidate `1ef8521`; exact hosted run45018939728 succeeded, and required local/provider/UI evidence is reconciled. Lead owns sprint closure after independent security handoff. |
 
 The initial sections preserve a bounded early review while source was changing; subsequent dated sections record fix checks and final evidence. The latest status above and final sections supersede earlier pending states without relabeling failures. The initial unit run is not a frozen final-candidate verification. The protected PRDs, shared/QA guides, current plan/checklist, testing guide and [upload contract](../private-uploads.md) govern the review. Both original PRDs remain unchanged. Root owns UI/browser tests and, after the fullstack agent became unavailable, the remaining backend/test fixes. DevOps owns the storage fixture and CI. QA has not changed implementation or tests.
 
@@ -403,3 +403,65 @@ QA used Node `assert/strict` against the two JSON receipts to require PASS, exac
 The final UI report also retains two harness observations: a5s small-file observer expired during real finalization and was replaced with40s, outside the unchanged35s client deadline; a Staff sign-in request timed out at30s, then an unchanged isolated check passed in1.919s and the full unchanged gate passed. No cause is assigned to that sign-in timeout. No application timeout or authorization assertion was relaxed. This replaces the previous section's pending real-UI status; existing69-file unchanged-input proof carries forward the matching backend/provider/database evidence.
 
 Source remains frozen at47 changes with the final app/production manifest above. Exact published commit and independently decoded hosted-CI evidence are the remaining mandatory QA gate. No new product defect or material contradiction is demonstrated by the permitted receipts/current reports. S04 remains VERIFYING, with S05, production and company SOP processing still gated.
+
+## Exact published candidate and hosted CI: final QA acceptance
+
+The final source candidate is `1ef852166cda0e07c231ddd4834cf053442bb1dd`, tree `64a1946be0983098bfc4a6f12b4513a6681fd9cb`, on `codex/s04-private-uploads`. It changes55 files relative to kickoff868dca5:47 source/test/configuration files and8 Markdown reports/guides. QA independently recomputed the47-source path/NUL/lowercase-SHA256/newline manifest as `e8d68296d880a3787ef0aa44becc610f1225a8dd8f59e9f38490a474fbdd317e`, exactly matching security's frozen source checkpoint. Read-only Git inspection used `git diff --name-only`, `git cat-file --batch` and `git rev-parse <candidate>^{tree}`; no index/object/ref or implementation mutation was made.
+
+### Exact source/artifact newline distinction
+
+The first raw-byte comparison of all92 receipt inputs to the published Git blobs failed only for `tsconfig.json`. The saved local image input is703 bytes, SHA-256 `04569496623a9a2ccc85ee42ba924fae0d59ac7fd7ab65457571b68b9aac44ae`, ending in CRLF; the committed blob is702 bytes, SHA-256 `3a2d2d9e970868c7140a8c038745ff991a59d2103b272c45cb2cda1650ea39d6`, ending in LF. All other bytes match after CRLF→LF normalization, and parsed JSON is identical. The other91 build inputs match their committed blobs byte-for-byte. The worktree was clean at this comparison; the file is unchanged by this sprint and is outside the47 changed-source manifest. QA did not rewrite either representation.
+
+The canonical committed92-input aggregate is therefore `c12c35050e0ace4e9e3c52aa1ba86c1b5dc3ac017f8a1c40c383e9e811b2855d`; its70-production-input aggregate is `c24cef94d6d9a1ffc61f25ceaed500fd1c11c10db44e6a12a4e4275438439ae1`. These differ from the local receipt aggregates solely because they hash the committed final LF. This is a documented byte-level provenance difference without a compiler-option/content change. The hosted build and runtime checks below executed the exact committed blob, so no semantic source mismatch or untested implementation delta is inferred.
+
+### Independently fetched primary GitHub evidence
+
+QA fetched the run metadata, job/step metadata and decoded complete job log through the GitHub tools:
+
+```text
+github_fetch: https://api.github.com/repos/AuserZ/ai-sop-assistant/actions/runs/45018939728
+github_fetch_workflow_run_jobs: repo_full_name=AuserZ/ai-sop-assistant, run_id=45018939728
+github_fetch_workflow_job_logs: repo_full_name=AuserZ/ai-sop-assistant, job_id=137197322521
+```
+
+[Hosted run45018939728](https://github.com/AuserZ/ai-sop-assistant/actions/runs/45018939728), attempt1, completed successfully. Metadata binds `head_sha` and the commit tree to the exact identities above; the decoded checkout log independently prints the full same commit SHA. The run started11:46:17Z and was last updated11:57:12Z on22 November2026 (18:46:17–18:57:12 Asia/Jakarta). The sole required `foundation` job, ID137197322521, and all19 job-step entries are completed/success, including setup, checkout/setup-node post-actions and Complete job. There is no skipped/canceled/failing mandatory step. The fetched decoded log contains332,582 characters and4,304 lines; QA inspected the command/result sections and complete native/browser/recovery/redirect/cleanup output rather than relying only on the green run badge.
+
+| Exact hosted command / required step | Observed result |
+| --- | --- |
+| Pinned checkout/setup-node; `npm ci` | PASS; exact checkout SHA, Node24 setup and successful clean install. Dependency warnings below remain visible. |
+| `npm run check:prd` | PASS; both protected originals explicitly unchanged. |
+| `npm run lint`; `npm run typecheck` | PASS; ESLint with zero warnings; Next route type generation and TypeScript no-emit complete. |
+| `npm test` | PASS40/40 in9 files,2.72s, including2 document-client deadline cases; no skipped test is reported. |
+| `node --test infra/n8n/local-secrets.test.mjs` | PASS1/1; fail/canceled/skipped/todo all0. |
+| `node --test infra/storage-fixture/gateway.test.mjs infra/storage-fixture/secrets.test.mjs` | PASS7/7; fail/canceled/skipped/todo all0. |
+| `npm run build` | PASS optimized Next.js compilation, TypeScript and7/7 static pages; document init/status/process routes included. |
+| Compose config and app/migrate/verify-db/storage-fixture builds | PASS in the smoke/database step; no masked shell failure. |
+| `SOP_STORAGE_FIXTURE_VERIFY=1 SOP_STORAGE_FIXTURE_IMAGE=ai-sop-assistant-storage-fixture node infra/storage-fixture/verify-native.mjs` | PASS actual native PUT/HEAD/GET200 and exact bytes; Authorization-signed SDK.send PUT/GET200/replay412; unsigned known object400; conditional race200/412;9 cryptographic denials,5 gateway denials,0 diagnostic/log credential markers. Isolated network:none/read-only/nonroot container removed;0 persistent volumes created. This is synthetic native compatibility, not actual R2 proof. |
+| PostgreSQL startup and `docker compose run --rm --no-deps migrate` | PASS; migrations applied successfully. The dependent migrator later exits successfully. The earlier local repeated-migration/four-ledger-row proof remains separate; this CI log is not claimed to print a fresh ledger count. |
+| `docker compose --profile verify run --rm --no-deps verify-db` | PASS48/48 in4 files,4.82s:18 document,12 job,15 auth and3 foundation. Includes exact storage-signal29s/30s assertions in the frozen test source, persisted rejection/no-acceptance and actual PostgreSQL authorization/locking checks. |
+| Proxy/storage-fixture startup, live/ready `curl --fail` and conversion-profile command | PASS; proxy and fixture healthy, both HTTP smoke commands succeed, LibreOffice7.4.7.2 version probe completes. This is tooling smoke, not S05 extraction/OCR proof. |
+| Injected synthetic browser seed; `npm run test:browser` | PASS15/15 in48.7s:5 document journeys,6 auth journeys and4 workflow journeys. Exact20MB upload/sealing, narrow DOCX, cookie/RBAC, validation/retry, validation-failure stream, slow reader and reconnect/ownership cases pass. Delivery is injected; no email provider is called. |
+| `node scripts/verify-workflow-runtime.mjs` | PASS all6 actual cases below; post-check fixture force-recreate returns healthy. |
+| `node infra/n8n/verify-redirects.mjs` | PASS actual native POST301/307; each source hit once per mode, default destinations2, no-follow destinations0, forwarded canary0 in both. This remains separate from Queue Mode proof. |
+| Always-run `docker compose --profile verify --profile conversion down --volumes --remove-orphans` | PASS; decoded output removes all9 service containers, the3 edge/database/workflow networks and the disposable PostgreSQL volume. Both post-actions and final job completion succeed. Only this disposable hosted environment is removed; the local provider objects/reservations/project remain retained. |
+
+| Hosted recovery check | Result | Measured duration |
+| --- | --- | --- |
+| Queued work/worker pause | PASS |11.518s |
+| In-flight worker loss/fencing | PASS |34.046s |
+| Redis interruption/durable work | PASS |72.276s |
+| App restart/reconnect cursor | PASS |21.106s |
+| Account deactivation/open-stream closure | PASS |5.253s |
+| Actual60s proxy timeout/reconnect | PASS |71.389s |
+
+The hosted Redis record requires at least12,000ms interruption after an active attempt, main and worker restart counts0→1 with both healthy, and `queueProcessesManuallyStarted=false`. Its200,000ms collector remains explicitly180,000ms bounded retry horizon+20,000ms delivery allowance. The default100,000ms collector and all production retry/token/SSE bounds retain their previously inspected values and assertions. The actual60s paused-worker interval is visible in the decoded proxy-timeout case. Passing these synthetic probes does not prove an actual SOP answer or real LLM judge.
+
+The final hosted count-only snapshot at11:56:02.428Z contains13 JWT-bearing execution payload rows and54 JWT occurrences across statuses,0 orphan rows/private-key markers,0 JWT occurrences in2 queue hashes and0 available Docker/native-event log credential markers. Its earlier paused snapshot explicitly defers the paused worker's native log. This is a separate disposable-runtime observation from the earlier local19-row/84-occurrence snapshot. Neither snapshot establishes zero persistence or a guaranteed pruning deadline; the hosted volume is then removed by the recorded cleanup.
+
+`npm ci` retains4 moderate dependency advisories, deprecation warnings and esbuild install-script approval notices; the successful workflow is not a claim of a clean dependency audit. The previously documented S14/pre-V01 remediation gate remains. No automated dependency repair, assertion relaxation or history rewrite was performed during QA. Local original100s failures/136.092s completion, initial fixture/browser failures,20MB deadline failures and transient harness/timing failures remain recorded above.
+
+### QA verdict
+
+Independent QA PASS for S04 D2/D1-upload-status/ADR03 candidate `1ef852166cda0e07c231ddd4834cf053442bb1dd`. The exact hosted candidate now passes every required CI job/step and measured runtime regression; the scoped source/fix reviews, actual R2 browser/original/private controls, final lead UI gate and source/artifact correspondence are reconciled with their limits. No mandatory S04 QA check remains NOT RUN at this handoff, and no demonstrated unresolved implementation defect is identified in this bounded review. This supersedes the earlier pending exact-CI/QA statuses without erasing failed evidence.
+
+The lead may record S04 VERIFIED after reviewing the independent security handoff. This verdict does not itself authorize S05 work, production deployment, company SOP processing, provider policy decisions, P1/P2 or V01/V02 acceptance; predecessor sequencing and the existing authorizations still govern those actions. Only this report was edited by QA; implementation, assertions, Git index and runtime/provider resources were left unchanged.

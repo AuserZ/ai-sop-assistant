@@ -2,7 +2,7 @@
 
 Implementation contract for D2, D1 upload status and ADR03, subordinate to the protected PRDs. S03 is VERIFIED for source0396cf6 and hosted run44852222243; closure93a71e8 is the S04 base. The user's continuation and Cloudflare R2 selection carry development into this sprint. Timebox is unset.
 
-Status on22 November2026: implementation and local unit/database/browser/recovery checks pass, including live synthetic R2 acceptance and exact original bytes. Final UI gate passes. Exact hosted CI and independent final closure remain required. [Recorded evidence](verification/S04.md)
+Status on22 November2026: S04 VERIFIED for source1ef8521 and hosted run45018939728, with independent QA/security PASS. Local unit/database/browser/recovery, live synthetic R2 acceptance/exact original bytes and final UI gate also pass. This does not approve production/company data or close later sprints. [Recorded evidence and limits](verification/S04.md)
 
 ## Bounded outcome
 
