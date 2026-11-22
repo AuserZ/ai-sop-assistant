@@ -37,13 +37,14 @@ export async function createProbeJob(account: CurrentAccount, input: unknown, da
       ownerId: account.id, requestKey: parsed.data.requestKey, inputHash, scenario: parsed.data.scenario,
       attemptId: randomUUID(), dispatchNonce: randomUUID(),
       attemptDeadline: sql`clock_timestamp() + ${workflowBounds.attemptMilliseconds} * interval '1 millisecond'`,
-    }).onConflictDoNothing({ target: [workflowJobs.ownerId, workflowJobs.requestKey] }).returning();
+    }).onConflictDoNothing({ target: [workflowJobs.ownerId, workflowJobs.kind, workflowJobs.requestKey] }).returning();
     if (created) {
       await appendEvent(transaction, created, "accepted", 0);
       return { jobId: created.id, created: true };
     }
     const [existing] = await transaction.select().from(workflowJobs).where(and(
       eq(workflowJobs.ownerId, account.id), eq(workflowJobs.requestKey, parsed.data.requestKey),
+      eq(workflowJobs.kind, "synthetic_probe"),
     ));
     if (!existing || existing.inputHash !== inputHash) throw new AuthFailure("IDEMPOTENCY_CONFLICT", 409);
     return { jobId: existing.id, created: false };
@@ -53,7 +54,7 @@ export async function createProbeJob(account: CurrentAccount, input: unknown, da
 export async function applyWorkflowCallback(claims: CallbackClaims, database: JobDatabase = getDatabase()) {
   return database.transaction(async (transaction) => {
     const [job] = await transaction.select().from(workflowJobs).where(eq(workflowJobs.id, claims.jobId)).for("update");
-    if (!job || job.attemptId !== claims.attemptId || job.attemptNumber !== claims.attemptNumber || job.dispatchNonce !== claims.dispatchNonce) {
+    if (!job || job.kind !== "synthetic_probe" || job.attemptId !== claims.attemptId || job.attemptNumber !== claims.attemptNumber || job.dispatchNonce !== claims.dispatchNonce) {
       throw new AuthFailure("STALE_WORKFLOW_ATTEMPT", 409);
     }
     const [fresh] = await transaction.select({ id: workflowJobs.id }).from(workflowJobs).where(and(
@@ -107,7 +108,7 @@ export async function withOwnedEvents<T>(account: CurrentAccount, jobId: string,
   return database.transaction(async (transaction) => {
     await lockCurrentAccount(transaction, account);
     const [job] = await transaction.select().from(workflowJobs).where(and(eq(workflowJobs.id, jobId), eq(workflowJobs.ownerId, account.id))).for("share");
-    if (!job) throw new AuthFailure("NOT_FOUND", 404);
+    if (!job || job.kind !== "synthetic_probe") throw new AuthFailure("NOT_FOUND", 404);
     if (after > job.eventSequence) throw new AuthFailure("INVALID_EVENT_CURSOR", 400);
     const events = await transaction.select().from(workflowEvents).where(and(eq(workflowEvents.jobId, job.id), gt(workflowEvents.sequence, after)))
       .orderBy(asc(workflowEvents.sequence)).limit(16);

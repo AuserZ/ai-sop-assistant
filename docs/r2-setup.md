@@ -15,7 +15,11 @@ The configured S3 endpoint is the account/jurisdiction endpoint without the buck
 
 ## Private bucket and browser CORS
 
-Keep bucket public access disabled. For the local browser verification origin, set this narrow CORS rule in the bucket settings:
+Keep bucket public access disabled.
+
+Open Cloudflare Dashboard → Storage & databases → R2 object storage → Overview, select the bucket, then **Settings**. Under **Public Development URL**, an **Enable** button means the public URL is already off. If access is enabled, select **Disable**, type `disallow` and confirm. Under **Custom Domains**, an empty list is fine; otherwise disable each allowed domain with its three-dot menu and check **Access to Bucket: Not allowed**. These are independent public-access routes, so check both. [Cloudflare public bucket settings](https://developers.cloudflare.com/r2/buckets/public-buckets/)
+
+For the local browser verification origin, set this narrow CORS rule in the bucket settings:
 
 ```json
 [
@@ -36,4 +40,4 @@ Use only synthetic files created for S04, with tracked app-owned identities. Nev
 
 Staging objects and reservations remain accounted for until cleanup/recovery policy is reviewed. An expired URL or negative HEAD cannot prove that an earlier in-flight PUT will never commit. Accepted originals use a separate server-only conditional-write key. [R2 consistency](https://developers.cloudflare.com/r2/reference/consistency/) · [Conditional operations](https://developers.cloudflare.com/r2/api/s3/conditional-operations/)
 
-The live R2 gate remains open until real synthetic checks pass. Local Wrangler checks establish only their measured fixture behavior. See [S04 contract](private-uploads.md).
+Live synthetic checks passed on22 November2026, including actual browser PDF/DOCX/exact20MB uploads and independently verified server-only originals. The user confirmed both public-access settings above. The optional disabled development-domain HTTP probe was unobserved because its certificate was expired; no TLS bypass was used. This does not approve production residency, recovery or company data. Local Wrangler checks establish only their measured fixture behavior. See [S04 evidence](verification/S04.md) and [contract](private-uploads.md).

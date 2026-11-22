@@ -1,0 +1,20 @@
+services:
+  app:
+    environment:
+      R2_BUCKET: ${R2_BUCKET:?Configure the private R2 bucket}
+      R2_ENDPOINT: ${R2_ENDPOINT:?Configure the approved HTTPS R2 endpoint}
+      R2_ACCESS_KEY_ID_FILE: /run/secrets/r2-access-key-id
+      R2_SECRET_ACCESS_KEY_FILE: /run/secrets/r2-secret-access-key
+      SOP_LOCAL_STORAGE_FIXTURE_ENABLED: "0"
+      DOCUMENT_UPLOAD_QUOTA_BYTES: ${DOCUMENT_UPLOAD_QUOTA_BYTES:?Configure the approved upload quota}
+    secrets:
+      - source: r2-provider-access-key-id
+        target: r2-access-key-id
+      - source: r2-provider-secret-access-key
+        target: r2-secret-access-key
+
+secrets:
+  r2-provider-access-key-id:
+    file: ./.local-secrets/r2-access-key-id
+  r2-provider-secret-access-key:
+    file: ./.local-secrets/r2-secret-access-key

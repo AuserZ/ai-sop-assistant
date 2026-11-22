@@ -8,8 +8,8 @@ class RuntimeVerificationError extends Error {}
 class StreamVerificationError extends RuntimeVerificationError {}
 
 const project = process.env.SOP_WORKFLOW_TEST_PROJECT;
-if (!project || !/^ai-sop-(?:assistant|s03-[a-z0-9-]+)$/.test(project)) {
-  throw new RuntimeVerificationError("An explicitly named synthetic S03 Compose project is required.");
+if (!project || !/^ai-sop-(?:assistant|s0[34]-[a-z0-9-]+)$/.test(project)) {
+  throw new RuntimeVerificationError("An explicitly named synthetic workflow verification project is required.");
 }
 const docker = process.env.SOP_TEST_DOCKER ?? (process.platform === "win32" ? "C:/Program Files/Docker/Docker/resources/bin/docker.exe" : "docker");
 const baseURL = "http://127.0.0.1:3000";
@@ -126,7 +126,7 @@ async function createProbe(cookie) {
   }
   return job;
 }
-function collect(job, cookie) {
+function collect(job, cookie, budgetMilliseconds = recoveryMilliseconds) {
   const controller = new AbortController();
   const events = [];
   let failure;
@@ -136,7 +136,7 @@ function collect(job, cookie) {
   let timeoutFrames = 0;
   let terminalSeen = false;
   const completion = (async () => {
-    const deadline = performance.now() + recoveryMilliseconds;
+    const deadline = performance.now() + budgetMilliseconds;
     while (!controller.signal.aborted && performance.now() < deadline) {
       try {
         const response = await fetch(`${baseURL}${job.eventsUrl}`, {
@@ -284,14 +284,38 @@ try {
     if (state.attemptNumber < 2 || state.attemptNumber > 3 || state.state !== "COMPLETED") throw new RuntimeVerificationError("Abandoned attempt recovery was not proven.");
   });
   await check("Redis interruption preserves durable work", async () => {
+    const minimumRedisOutageMilliseconds = 12_000;
+    const maximumAttempts = 3;
+    const attemptMilliseconds = 60_000;
+    const deliveryAllowanceMilliseconds = 20_000;
+    const retryHorizonMilliseconds = maximumAttempts * attemptMilliseconds;
+    const collectorBudgetMilliseconds = retryHorizonMilliseconds + deliveryAllowanceMilliseconds;
+    const queueServices = ["n8n-main", "n8n-worker"];
+    const before = queueServices.map(service => ({ service, container: ownedService(service) }));
+    if (before.some(({ container }) => container.HostConfig.RestartPolicy.Name !== "unless-stopped" || container.State.Health?.Status !== "healthy")) {
+      throw new RuntimeVerificationError("Redis recovery requires healthy queue processes with their configured restart policy.");
+    }
     await serviceAction("stop", "redis");
     let job;
     let stream;
     try {
-      job = await createProbe(cookie); stream = collect(job, cookie);
+      job = await createProbe(cookie); stream = collect(job, cookie, collectorBudgetMilliseconds);
       await stream.stage("accepted");
       await until(() => fixtureControl("status", job.jobId).dispatchCount > 0, "Interrupted dispatch was not attempted.", 20_000);
+      const attemptedAt = performance.now();
+      await delay(minimumRedisOutageMilliseconds);
+      if (performance.now() - attemptedAt < minimumRedisOutageMilliseconds) throw new RuntimeVerificationError("The deliberate Redis outage was too short.");
     } finally { await serviceAction("start", "redis"); }
+    await until(() => before.every(({ service, container }) => {
+      const current = ownedService(service);
+      return current.State.Running && !current.State.Paused && current.State.Health?.Status === "healthy" &&
+        current.RestartCount > container.RestartCount && current.State.StartedAt !== container.State.StartedAt;
+    }), "Queue processes did not automatically restart and recover after Redis returned.");
+    console.log(JSON.stringify({ phase: "automatic queue recovery", minimumRedisOutageAfterAttemptMilliseconds: minimumRedisOutageMilliseconds,
+      collectorBudgetMilliseconds, retryHorizonMilliseconds, deliveryAllowanceMilliseconds,
+      services: before.map(({ service, container }) => { const current = ownedService(service); return { service, restartsBefore: container.RestartCount,
+        restartsAfter: current.RestartCount, healthy: current.State.Health.Status === "healthy" }; }),
+      queueProcessesManuallyStarted: false }));
     await stream.complete();
   });
   await check("app restart preserves the job and reconnect cursor", async () => {

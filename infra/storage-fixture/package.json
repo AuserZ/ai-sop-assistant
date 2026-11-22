@@ -1,0 +1,11 @@
+{
+  "name": "s04-local-storage-fixture",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=24" },
+  "scripts": {
+    "test": "node --test gateway.test.mjs secrets.test.mjs",
+    "start": "node server.mjs"
+  },
+  "dependencies": { "wrangler": "4.166.0" }
+}

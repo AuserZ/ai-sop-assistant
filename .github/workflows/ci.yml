@@ -15,6 +15,7 @@ jobs:
     env:
       NEXT_TELEMETRY_DISABLED: 1
       WORKFLOW_PROBE_CALLBACK_DELAY_MS: "2000"
+      COMPOSE_FILE: docker-compose.yml:infra/storage-fixture/compose.yml
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
@@ -29,16 +30,21 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: node --test infra/n8n/local-secrets.test.mjs
+      - run: node --test infra/storage-fixture/gateway.test.mjs infra/storage-fixture/secrets.test.mjs
       - run: npm run build
       - name: Check Compose and run application smoke and database tests
         run: |
           npm run dev:secrets
+          node infra/storage-fixture/create-secrets.mjs
           docker compose --profile verify --profile conversion config --quiet
           docker compose --profile verify build app migrate verify-db
+          docker compose build storage-fixture
+          SOP_STORAGE_FIXTURE_VERIFY=1 SOP_STORAGE_FIXTURE_IMAGE=ai-sop-assistant-storage-fixture node infra/storage-fixture/verify-native.mjs
           docker compose up --wait --wait-timeout 180 postgres
           docker compose run --rm --no-deps migrate
           docker compose --profile verify run --rm --no-deps verify-db
           docker compose up --wait --wait-timeout 300 proxy
+          docker compose up --wait --no-deps --wait-timeout 120 storage-fixture
           curl --fail --silent --show-error http://127.0.0.1:3000/api/health/live
           curl --fail --silent --show-error http://127.0.0.1:3000/api/health/ready
           docker compose --profile conversion run --rm --build convert
@@ -54,7 +60,9 @@ jobs:
       - name: Verify workflow recovery and proxy timeout
         env:
           SOP_WORKFLOW_TEST_PROJECT: ai-sop-assistant
-        run: node scripts/verify-workflow-runtime.mjs
+        run: |
+          node scripts/verify-workflow-runtime.mjs
+          docker compose up --wait --no-deps --force-recreate --wait-timeout 120 storage-fixture
       - name: Verify native POST redirect controls
         env:
           SOP_WORKFLOW_TEST_PROJECT: ai-sop-assistant

@@ -1,0 +1,6 @@
+**
+!package.json
+!package-lock.json
+!gateway.mjs
+!server.mjs
+!worker.mjs

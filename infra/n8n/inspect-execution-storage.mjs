@@ -3,8 +3,8 @@ import { spawnSync } from "node:child_process";
 import { resolve } from "node:path";
 
 const project = process.env.SOP_WORKFLOW_TEST_PROJECT;
-if (!project || !/^ai-sop-(?:assistant|s03-[a-z0-9-]+)$/.test(project)) {
-  throw new Error("An explicitly named synthetic S03 Compose project is required.");
+if (!project || !/^ai-sop-(?:assistant|s0[34]-[a-z0-9-]+)$/.test(project)) {
+  throw new Error("An explicitly named synthetic workflow verification project is required.");
 }
 const docker = process.env.SOP_TEST_DOCKER ?? (process.platform === "win32" ? "C:/Program Files/Docker/Docker/resources/bin/docker.exe" : "docker");
 const jwtPattern = /\beyJ[A-Za-z0-9_-]*\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/g;

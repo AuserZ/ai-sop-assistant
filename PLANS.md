@@ -1,8 +1,10 @@
 # Development plan by feature sprint
 
-Source: [approved technical PRD](<AI SOP Assistant — Technical Product Req.md>), sections 0, 14–16, and [original product PRD](<PRD AI SOP Assistant.pdf>). This plan does not change either source. Status updated on 21 November 2026.
+Source: [approved technical PRD](<AI SOP Assistant — Technical Product Req.md>), sections 0, 14–16, and [original product PRD](<PRD AI SOP Assistant.pdf>). This plan does not change either source. Status updated on 22 November 2026.
 
 ## Current state
+
+S04 private Admin uploads are **VERIFYING** on22 November2026. Implementation,40 units,48 real PostgreSQL checks,15 fixture browser journeys, six recovery cases/native POST controls and live synthetic R2 PDF/DOCX/exact20MB plus exact original-byte checks pass. Final appc9c9 and lead's item-by-item UI gate pass; exact published-candidate CI and independent final closure remain mandatory. S05 has not started. Company privacy/residency, object recovery and production file-policy gates remain open. [Current S04 evidence](docs/verification/S04.md)
 
 S03 is **VERIFIED** on 21 November 2026 for published source `0396cf606b8e34a805a038b273a103687a691ce1`. [Hosted run44852222243](https://github.com/AuserZ/ai-sop-assistant/actions/runs/44852222243), job136685999286, passed all18 steps: lint/types/build, 28 unit tests, isolated secret generation, 30 PostgreSQL tests, 10 browser tests, six actual recovery/timeout cases, native POST301/307 controls and cleanup. QA independently checked the exact source and decoded logs; security confirmed the frozen41-file manifest, publication boundaries and original PRD/license/history integrity. Local native recovery/pruning removed the earlier JWT-bearing payloads under unchanged normal settings; transient payload retention remains explicit. Phase0 is complete for the recorded candidates. Next permitted sprint: S04 Admin private uploads using the user's selected Cloudflare R2; bucket/configuration and recovery-policy gates remain open. [S03 evidence](docs/verification/S03.md)
 
@@ -66,7 +68,7 @@ The default execution order is S01 through S16. Each sprint depends on the VERIF
 | S01 | Secure application runtime, database and CI foundation | 0 | ADR 01/02/09/14/15 | VERIFIED |
 | S02 | Invitation-only sign-in and role authorization | 0 | U2/U4; U3 access enforcement | VERIFIED |
 | S03 | Durable private workflow jobs and safe progress proof | 0 | ADR 08/19; D3 foundation | VERIFIED |
-| S04 | Admin private SOP upload | 1 | D2; D1 upload status; ADR 03 | IN_PROGRESS |
+| S04 | Admin private SOP upload | 1 | D2; D1 upload status; ADR 03 | VERIFYING |
 | S05 | SOP extraction, OCR, previews and indexing | 1 | D3; ADR 04/05/11/21/22 | PLANNED |
 | S06 | Assisted verification and revision-bound activation | 1 | D3; ADR 17 | PLANNED |
 | S07 | SOP library search and authorized original access | 1 | D1/D5 | PLANNED |
@@ -166,9 +168,15 @@ Verify after development:
 
 ### S04 — Admin private SOP upload
 
-Kickoff:21 November2026 on `codex/s04-private-uploads`, base S03 closure `93a71e8b93392c7740fd5b097548b28e1747b1d3`; predecessor S03 VERIFIED for0396cf6/hosted44852222243. User continuation and R2 selection carry the next P0 slice forward. Scope is private Admin upload-init/finalization, exact-byte validation/sealing, explicit quota reservations, status UI and one parked ingestion intent; no S05 processing. Root owns contracts/UI/browser/integration, fullstack owns backend/schema/tests/root packages, DevOps owns fixture/config/CI, security/QA independently review. Timebox unset. Bucket/endpoint/scoped credentials/jurisdiction/recovery policy and live R2 evidence remain open. [Contract and tests](docs/private-uploads.md)
+Kickoff:21 November2026 on `codex/s04-private-uploads`, base S03 closure `93a71e8b93392c7740fd5b097548b28e1747b1d3`; predecessor S03 VERIFIED for0396cf6/hosted44852222243. User continuation and R2 selection carry the next P0 slice forward. Scope is private Admin upload-init/finalization, exact-byte validation/sealing, explicit quota reservations, status UI and one parked ingestion intent; no S05 processing. Root owns contracts/UI/browser/integration, fullstack owns backend/schema/tests/root packages, DevOps owns fixture/config/CI, security/QA independently review. Timebox unset. Supplied bucket/endpoint/scoped credentials and live synthetic provider checks now pass; jurisdiction/recovery/company policy remain open. [Contract and tests](docs/private-uploads.md)
 
 **Outcome:** Admin can upload an accepted synthetic PDF/DOCX to private storage and start one durable ingestion job. **Depends on:** S03. **Mapping:** D2 and D1 upload-status groundwork, ADR 03. **External gate:** selected storage/project access and tested file limits; adapters can be scaffolded while this remains open.
+
+Resume22 November: user confirmed the public development URL disabled and Custom Domains empty. Standalone real R2 tampering/race/replay/hash/CORS/expiry/private-S3 checks passed, with the disabled public-domain HTTP probe explicitly unobserved due to expired TLS; no TLS checks were bypassed. The one standalone synthetic canary was deleted. Final six-case recovery is running after the documented n8n restart-policy and Redis-only test-horizon corrections. Actual app R2 verification will use fresh project `ai-sop-s04-r2-verify-20261122` and a separate database, reusing the checked images; this avoids moving fixture records/quota/object identities between storage backends. Retain the old synthetic S04 volume/networks and all personal S02 state. No provider app startup or hosted S04 CI is recorded yet.
+
+Follow-up22 November: final six recovery cases/native POST controls passed and were independently reconciled. Fresh provider startup/migrations/seeding and small PDF/DOCX browser acceptance passed. The actual20MB case exposed an insufficient15s seal budget: a verified read took11.220s and separate PUT10.699s. Coordinated storage30s/lease45s/client35s preserves proxy35s and all other caps;40 updated units, lint/types/integrity pass. Rebuild,48DB, live20MB/original-byte proof and exact hosted CI are pending. The expired failed upload remains reserved/retained; no quota/data reset is authorized. Earlier startup/image/client-hash checkpoints remain historical evidence, not verification of this timing follow-up.
+
+Final local checkpoint22 November: app rebuild CLI0, updated48/48 DB and actual20MB/browser/canonical-original proof passed. All3 originals match exact size/SHA/MIME and one undispatched parked job each; negative SHA has no canonical doc/job. Label cursor defect was fixed in base CSS; finalc9c9 app differs only in CSS from the successful provider artifact, with69 other production inputs identical. Lead's full real-provider UI gate passed at18:39 Jakarta, after recording private observer/sign-in timeout history. Six provider services healthy/two one-shots0, only loopback3000; previous9 fixture containers and volumes retained. Exact hosted CI and independent closure are the remaining S04 gates. Earlier pending checkpoints above are historical.
 
 Development scope:
 
@@ -469,13 +477,13 @@ Only after P0 acceptance and an explicit request, plan separate feature sprints 
 
 These gates remain open to the extent recorded below. Partial follow-up decisions do not close missing configuration, policy or verification. Use reversible scaffolding and synthetic fixtures while those prerequisites remain unresolved.
 
-Storage follow-up decision, 21 November 2026: the user selected **Cloudflare R2**. Bucket/account endpoint, jurisdiction/location, scoped server credentials and object recovery policy are not yet supplied or approved. This records the user's selection without changing either protected PRD or starting S04 before S03 is VERIFIED.
+Storage follow-up decision,21–22 November2026: the user selected **Cloudflare R2**, supplied bucket/account endpoint and individual scoped credential files, and confirmed public development access disabled with no custom domains. Local CORS and live synthetic object/browser/original-byte checks pass. Jurisdiction/location, company privacy approval, production limits and object recovery policy remain open. This records follow-up decisions without changing either protected PRD.
 
 | Gate | Owner / required evidence |
 | --- | --- |
 | Company approval for confidential OpenAI/OCR processing, privacy, residency, and no model training | Product/Security approval and provider controls before real SOPs |
 | Pilot team, owner, launch date, document types and languages | Product owner confirmation |
-| Cloudflare R2 configuration and object recovery | Provider selected by user; bucket/account endpoint, jurisdiction/location, credentials and recovery policy remain open |
+| Cloudflare R2 configuration and object recovery | Supplied private configuration, user-confirmed public off/empty domains and full live synthetic object/browser/original-byte checks pass. Disabled development-domain HTTP probe remains unobserved due expired TLS, with no bypass. Jurisdiction/location, company policy and object recovery remain open. |
 | OpenAI balance, exact reranker/answer/judge models and entitlements | Authorized project catalog/billing checks; ADR 23's model name is not proof of availability |
 | Google OCR processor region, limits, allowance, table quality | Project checks and representative authorized benchmark |
 | Queue Mode progress/SSE bridge | RESOLVED for this implementation by VERIFIED S03: signed callbacks, durable PostgreSQL events and bounded authenticated Next.js SSE polling; production load/latency evidence remains later work |

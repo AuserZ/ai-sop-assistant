@@ -1,0 +1,46 @@
+services:
+  app:
+    environment:
+      R2_BUCKET: s04-synthetic-uploads
+      R2_ENDPOINT: http://127.0.0.1:8787/cdn-cgi/local/r2/s3
+      R2_ACCESS_KEY_ID_FILE: /run/secrets/r2-access-key-id
+      R2_SECRET_ACCESS_KEY_FILE: /run/secrets/r2-secret-access-key
+      SOP_LOCAL_STORAGE_FIXTURE_ENABLED: "1"
+      DOCUMENT_UPLOAD_QUOTA_BYTES: "200000000"
+    ports: ["127.0.0.1:8787:8787"]
+    secrets:
+      - source: storage-fixture-access-key-id
+        target: r2-access-key-id
+      - source: storage-fixture-secret-access-key
+        target: r2-secret-access-key
+
+  storage-fixture:
+    build:
+      context: ./infra/storage-fixture
+    network_mode: service:app
+    user: "1000:1000"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    tmpfs: ["/tmp:uid=1000,gid=1000,mode=0700,size=256m"]
+    environment:
+      SOP_LOCAL_STORAGE_FIXTURE_ENABLED: "1"
+    secrets: [storage-fixture-access-key-id, storage-fixture-secret-access-key]
+    depends_on:
+      app:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:8787/healthz').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 3s
+      timeout: 4s
+      retries: 40
+    mem_limit: 512m
+    cpus: 1.0
+    pids_limit: 128
+    stop_grace_period: 10s
+
+secrets:
+  storage-fixture-access-key-id:
+    file: ./.local-secrets/storage-fixtures/access-key-id
+  storage-fixture-secret-access-key:
+    file: ./.local-secrets/storage-fixtures/secret-access-key

@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { boolean, check, index, integer, jsonb, pgSchema, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import { bigint, boolean, check, index, integer, jsonb, pgSchema, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 
 export const appSchema = pgSchema("app");
 
@@ -79,14 +79,62 @@ export const authRateLimits = appSchema.table("auth_rate_limits", {
   expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
 }, (table) => [index("auth_rate_limits_expiry").on(table.expiresAt)]);
 
+export const documentUploadIntents = appSchema.table("document_upload_intents", {
+  id: uuid().defaultRandom().primaryKey(),
+  ownerId: text("owner_id").notNull().references(() => authUsers.id),
+  requestKey: uuid("request_key").notNull(),
+  inputHash: text("input_hash").notNull(),
+  title: text().notNull(),
+  fileName: text("file_name").notNull(),
+  mimeType: text("mime_type").$type<"application/pdf" | "application/vnd.openxmlformats-officedocument.wordprocessingml.document">().notNull(),
+  sizeBytes: integer("size_bytes").notNull(),
+  sha256: text().notNull(),
+  stagingKey: text("staging_key").notNull().unique(),
+  finalKey: text("final_key").notNull().unique(),
+  reservedBytes: bigint("reserved_bytes", { mode: "number" }).notNull(),
+  state: text().$type<"AWAITING_UPLOAD" | "FINALIZING" | "FAILED" | "ACCEPTED">().default("AWAITING_UPLOAD").notNull(),
+  failureCode: text("failure_code"),
+  uploadExpiresAt: timestamp("upload_expires_at", { withTimezone: true }).notNull(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  finalizeLeaseToken: uuid("finalize_lease_token"),
+  finalizeLeaseUntil: timestamp("finalize_lease_until", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("document_upload_owner_request").on(table.ownerId, table.requestKey),
+  check("document_upload_state", sql`${table.state} in ('AWAITING_UPLOAD','FINALIZING','FAILED','ACCEPTED')`),
+  check("document_upload_bytes", sql`${table.sizeBytes} between 1 and 20000000 and ${table.reservedBytes} = 2::bigint * ${table.sizeBytes}`),
+  check("document_upload_sha256", sql`${table.sha256} ~ '^[a-f0-9]{64}$'`),
+  check("document_upload_mime", sql`${table.mimeType} in ('application/pdf','application/vnd.openxmlformats-officedocument.wordprocessingml.document')`),
+]);
+
+export const sopDocuments = appSchema.table("sop_documents", {
+  id: uuid().primaryKey().references(() => documentUploadIntents.id),
+  title: text().notNull(),
+  fileName: text("file_name").notNull(),
+  mimeType: text("mime_type").notNull(),
+  sizeBytes: integer("size_bytes").notNull(),
+  sha256: text().notNull(),
+  originalKey: text("original_key").notNull().unique(),
+  uploadedBy: text("uploaded_by").notNull().references(() => authUsers.id),
+  status: text().$type<"UPLOADED">().default("UPLOADED").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  check("sop_documents_status", sql`${table.status} = 'UPLOADED'`),
+  check("sop_documents_sha256", sql`${table.sha256} ~ '^[a-f0-9]{64}$'`),
+  check("sop_documents_bytes", sql`${table.sizeBytes} between 1 and 20000000`),
+]);
+
 export const workflowJobs = appSchema.table("workflow_jobs", {
   id: uuid().defaultRandom().primaryKey(),
   ownerId: text("owner_id").notNull().references(() => authUsers.id),
   requestKey: uuid("request_key").notNull(),
   inputHash: text("input_hash").notNull(),
-  kind: text().default("synthetic_probe").notNull(),
-  scenario: text().$type<"success" | "validation_failure">().notNull(),
-  state: text().$type<"QUEUED" | "RUNNING" | "COMPLETED" | "FAILED">().default("QUEUED").notNull(),
+  kind: text().$type<"synthetic_probe" | "document_ingestion">().default("synthetic_probe").notNull(),
+  scenario: text().$type<"success" | "validation_failure">(),
+  documentId: uuid("document_id").references(() => sopDocuments.id),
+  sourceSha256: text("source_sha256"),
+  pipelineVersion: text("pipeline_version"),
+  state: text().$type<"QUEUED" | "RUNNING" | "COMPLETED" | "FAILED" | "WAITING_FOR_PIPELINE">().default("QUEUED").notNull(),
   attemptId: uuid("attempt_id").notNull(),
   attemptNumber: integer("attempt_number").default(1).notNull(),
   dispatchNonce: uuid("dispatch_nonce").notNull(),
@@ -95,7 +143,7 @@ export const workflowJobs = appSchema.table("workflow_jobs", {
   dispatchLeaseToken: uuid("dispatch_lease_token"),
   dispatchLeaseUntil: timestamp("dispatch_lease_until", { withTimezone: true }),
   dispatchAcceptedAt: timestamp("dispatch_accepted_at", { withTimezone: true }),
-  attemptDeadline: timestamp("attempt_deadline", { withTimezone: true }).notNull(),
+  attemptDeadline: timestamp("attempt_deadline", { withTimezone: true }),
   runLeaseUntil: timestamp("run_lease_until", { withTimezone: true }),
   executionId: text("execution_id"),
   step: integer().default(0).notNull(),
@@ -103,11 +151,12 @@ export const workflowJobs = appSchema.table("workflow_jobs", {
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
-  uniqueIndex("workflow_jobs_owner_request").on(table.ownerId, table.requestKey),
+  uniqueIndex("workflow_jobs_owner_request").on(table.ownerId, table.kind, table.requestKey),
+  uniqueIndex("workflow_jobs_ingestion_identity").on(table.documentId, table.sourceSha256, table.pipelineVersion),
   index("workflow_jobs_dispatch_due").on(table.state, table.dispatchNextAt),
-  check("workflow_jobs_kind", sql`${table.kind} = 'synthetic_probe'`),
-  check("workflow_jobs_state", sql`${table.state} in ('QUEUED','RUNNING','COMPLETED','FAILED')`),
-  check("workflow_jobs_scenario", sql`${table.scenario} in ('success','validation_failure')`),
+  check("workflow_jobs_kind", sql`${table.kind} in ('synthetic_probe','document_ingestion')`),
+  check("workflow_jobs_state", sql`${table.state} in ('QUEUED','RUNNING','COMPLETED','FAILED','WAITING_FOR_PIPELINE')`),
+  check("workflow_jobs_kind_state", sql`(${table.kind} = 'synthetic_probe' and ${table.scenario} in ('success','validation_failure') and ${table.scenario} is not null and ${table.attemptDeadline} is not null and ${table.state} <> 'WAITING_FOR_PIPELINE' and ${table.documentId} is null and ${table.sourceSha256} is null and ${table.pipelineVersion} is null) or (${table.kind} = 'document_ingestion' and ${table.scenario} is null and ${table.documentId} is not null and ${table.sourceSha256} ~ '^[a-f0-9]{64}$' and ${table.sourceSha256} is not null and ${table.pipelineVersion} is not null and ${table.state} = 'WAITING_FOR_PIPELINE' and ${table.attemptDeadline} is null and ${table.dispatchCount} = 0 and ${table.dispatchLeaseToken} is null and ${table.dispatchLeaseUntil} is null and ${table.dispatchAcceptedAt} is null and ${table.runLeaseUntil} is null and ${table.executionId} is null and ${table.step} = 0 and ${table.attemptNumber} = 1)`),
   check("workflow_jobs_attempt_bounds", sql`${table.attemptNumber} between 1 and 3 and ${table.dispatchCount} between 0 and 3 and ${table.step} between 0 and 5`),
 ]);
 

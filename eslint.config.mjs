@@ -6,5 +6,5 @@ export default defineConfig([
   ...nextVitals,
   ...nextTypeScript,
   { files: ["src/emails/**/*.tsx"], rules: { "@next/next/no-head-element": "off" } },
-  globalIgnores([".next/**", "coverage/**", "next-env.d.ts"]),
+  globalIgnores([".next/**", "coverage/**", ".local-secrets/**", "next-env.d.ts"]),
 ]);

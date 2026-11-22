@@ -10,6 +10,7 @@ import { signDispatch } from "./signatures";
 export async function reconcileJobs(database: JobDatabase = getDatabase()) {
   await database.transaction(async (transaction) => {
     const abandoned = await transaction.select().from(workflowJobs).where(and(
+      eq(workflowJobs.kind, "synthetic_probe"),
       or(eq(workflowJobs.state, "QUEUED"), eq(workflowJobs.state, "RUNNING")),
       or(lte(workflowJobs.attemptDeadline, sql`clock_timestamp()`), and(eq(workflowJobs.state, "RUNNING"), lte(workflowJobs.runLeaseUntil, sql`clock_timestamp()`))),
     )).limit(workflowBounds.dispatchBatch).for("update", { skipLocked: true });
@@ -37,6 +38,7 @@ export async function dispatchJobs(database: JobDatabase = getDatabase(), send: 
   sign = signDispatch, destination = workflowDispatchUrl(), signal?: AbortSignal) {
   const jobs = await database.transaction(async (transaction) => {
     const due = await transaction.select().from(workflowJobs).where(and(
+      eq(workflowJobs.kind, "synthetic_probe"),
       eq(workflowJobs.state, "QUEUED"), isNull(workflowJobs.dispatchAcceptedAt),
       lte(workflowJobs.dispatchNextAt, sql`clock_timestamp()`),
       sql`${workflowJobs.dispatchCount} < ${workflowBounds.maximumDispatches}`,
@@ -54,6 +56,7 @@ export async function dispatchJobs(database: JobDatabase = getDatabase(), send: 
     return due;
   });
   await Promise.all(jobs.map(async (job) => {
+    if (job.kind !== "synthetic_probe" || !job.scenario || !job.attemptDeadline) return;
     if (signal?.aborted) return;
     let accepted = false;
     try {

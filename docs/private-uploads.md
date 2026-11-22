@@ -2,13 +2,13 @@
 
 Implementation contract for D2, D1 upload status and ADR03, subordinate to the protected PRDs. S03 is VERIFIED for source0396cf6 and hosted run44852222243; closure93a71e8 is the S04 base. The user's continuation and Cloudflare R2 selection carry development into this sprint. Timebox is unset.
 
-Status on21 November2026: engineering, DevOps and scoped security design review complete; implementation underway. No S04 test or provider check is claimed passing. Independent source review and verification remain required.
+Status on22 November2026: implementation and local unit/database/browser/recovery checks pass, including live synthetic R2 acceptance and exact original bytes. Final UI gate passes. Exact hosted CI and independent final closure remain required. [Recorded evidence](verification/S04.md)
 
 ## Bounded outcome
 
 An active Admin can submit one synthetic PDF/DOCX through short-lived backend-issued direct upload authorization. Backend finalization verifies the actual object, seals immutable accepted bytes and commits one durable ingestion intent. The original stays private and UPLOADED; its job explicitly waits for the processor implemented in S05. This sprint performs no extraction, OCR, embedding, verification, activation, retrieval or chat work.
 
-Cloudflare R2 is selected. Bucket, endpoint and credential files are now supplied privately. Root verified bucket access and configured/read back local PUT CORS; actual preflight passed without writing an object. Dashboard public-access confirmation, complete live upload/conditional/expiry evidence, jurisdiction/location and object recovery policy remain open. All fixtures are synthetic. Local fixture evidence cannot establish live R2 compatibility or approve company SOP processing.
+Cloudflare R2 is selected. Bucket, endpoint and credential files are supplied privately. The user confirmed Public Development URL disabled and Custom Domains empty. Live synthetic browser uploads, private original-byte reads, tampering, conditional races/replay, expiry and CORS checks pass. The optional disabled public-domain HTTP probe was unobserved because TLS reported an expired certificate; TLS was not bypassed. Jurisdiction/location, company privacy approval and object recovery policy remain open. Local fixture evidence remains distinct from live-provider evidence.
 
 ## Ownership
 
@@ -37,6 +37,8 @@ Upload states distinguish awaiting upload, finalizing, safe failure and accepted
 
 The presigner must explicitly force Content-Type, Content-Length and If-None-Match into its actual SignedHeaders; the SDK's default excludes Content-Type. The browser receives only the settable type/create-only headers and sends a File body, which supplies network Content-Length automatically. One overall abort/read/storage deadline must fit inside the fenced lease. Final commit requires the current unexpired fence and fresh Admin/session locks; stale finalizers cannot clear replacement leases. ZIP selected-metadata streams have actual inflated-byte caps and no entity/network resolution.
 
+Current bounded verification settings: overall storage deadline30s, fenced lease45s, browser metadata request35s and proxy read35s. Direct PUT remains120s and upload acceptance intent600s. An actual20MB read took11.220s and a separate write10.699s, exceeding the previous15s combined budget; the updated real-provider20MB acceptance passed. These measurements do not establish a production latency guarantee or approved file policy.
+
 The initial test limit is20,000,000 bytes (20MB), preserving its status as a tested assumption rather than approved production policy. Quota is explicit configuration, with atomic reservations of twice declared size for staging plus original. No production company quota is invented. Staging/reservations remain accounted for until a reviewed cleanup policy exists: expiry or one negative HEAD cannot prove an earlier in-flight PUT will never commit. No automatic retention or recovery policy is introduced.
 
 ## Immutable accepted bytes
@@ -57,7 +59,7 @@ Use lazy server-only `R2_BUCKET`, `R2_ENDPOINT`, `R2_ACCESS_KEY_ID_FILE`, `R2_SE
 
 The proposed verification-only Wrangler sidecar uses the official local SigV4 S3 endpoint, path-style addressing and the app's network namespace so app and browser share the same loopback URL. Default Compose retains the sole proxy3000 binding; the test overlay alone exposes loopback8787. A narrow forwarder excludes unsigned public/explorer routes, suppresses signed queries/Authorization logs and uses bounded private tmpfs. Root real secrets/Resend files are never mounted into it.
 
-Pinned local Miniflare implements configured-key SigV4 HMAC verification, signed-header binding and expiry, so actual local rejection tests can establish those measured fixture behaviors. Its region/skew/repeated-header behavior differs, destination CopyObject conditions and flexible SHA checksums are unsupported, and CORS is permissive within loopback. Conditional PutObject is the common primitive. Actual R2 signature/header/expiry, conditional writes and configured browser CORS still need separate live synthetic proof. Every CI Compose call inherits the same overlay; DB tests still precede dispatcher startup. Recheck fixture namespace readiness after an app recreation.
+Pinned local Miniflare implements configured-key SigV4 HMAC verification, signed-header binding and expiry, so actual local rejection tests establish only those measured fixture behaviors. Its region/skew/repeated-header behavior differs, destination CopyObject conditions and flexible SHA checksums are unsupported, and CORS is permissive within loopback. Conditional PutObject is the common primitive. Separate actual R2 signature/header/expiry, conditional-write and configured browser CORS evidence is recorded in the sprint report. Every CI Compose call inherits the same overlay; DB tests still precede dispatcher startup. Recheck fixture namespace readiness after an app recreation.
 
 ## Required verification
 
