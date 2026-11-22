@@ -6,7 +6,7 @@ On22 November2026 the user confirmed OpenAI is ready and explicitly requested Pa
 
 This S05a increment supports D3 and ADR04 with a local CPU OCR worker. S04 is VERIFIED for1ef8521/hosted45018939728; its uploaded objects and parked ingestion jobs are retained. The worker is an independently exercised processing component. Full S05 still requires native PDF/DOCX extraction, scanned/mixed-page routing, derivative previews, faithful table/section mappings, chunks/embeddings, authenticated n8n orchestration and failure/idempotency evidence. A successful image smoke test does not satisfy those gates or activate any source.
 
-DevOps inspected the boundaries and prepared the resolver/71-wheel lock. Its session reached a usage limit; the lead completed code/CI without replacing the limited agent or changing models. QA independently checked source/receipts; final candidate CI and security review remain pending. Timebox is unset.
+DevOps inspected the boundaries and prepared the resolver/71-wheel lock. Its session reached a usage limit; the lead completed code/CI without replacing the limited agent or changing models. Independent QA and exact candidate CI pass. Security review remains usage-blocked. Timebox is unset.
 
 ## Local execution contract
 
@@ -41,9 +41,9 @@ Trial bounds:2GiB RAM,2 CPUs/two inference threads,128 PIDs,128MiB shared memory
 
 Local build and verification **PASS** on22 November2026. Self-test and actual PNG/JPEG file inputs each matched four literal lines, including2.5bar,10minutes and75C. Latest case times including container operations:17.028s self-test,9.160s PNG and9.321s JPEG. Eleven bounds/model/deadline checks include symlink/FIFO/directory denial. All eight containers and temporary inputs were removed; the existing R2/application runtime remained healthy.
 
-Local image ID: `sha256:8bfe1e3ce933e57f429c34275252bb418b09123a9de9592dc559755f909852e5`. Eight-input manifest: `1e53ecf1775c66b2bb0818017ffcfe745c614e71051307d15263b122c533f1e7`. Each test uses this immutable image ID; its six copied runtime source files were also independently hashed inside the readonly image. [Evidence](verification/S05.md). Exact hosted CI and final independent review remain pending. Full S05 stays **IN_PROGRESS**.
+Local image ID: `sha256:8bfe1e3ce933e57f429c34275252bb418b09123a9de9592dc559755f909852e5`. Eight-input manifest: `1e53ecf1775c66b2bb0818017ffcfe745c614e71051307d15263b122c533f1e7`. Tests use immutable IDs; six runtime source files were also hashed in the readonly image. Exact source4f1bf00 passed both OCR and existing-app jobs in [hosted45026670726](https://github.com/AuserZ/ai-sop-assistant/actions/runs/45026670726). [Evidence](verification/S05.md). Final security review remains pending; full S05 stays **IN_PROGRESS**.
 
-The requested OpenAI key file is present and remains ignored. A read-only catalog check returned200 on22 November13:13:57Z, with99 entries including both embedding-3 candidates. No SOP content or inference call was sent. Billing, actual embedding inference and dimensions remain unverified. Company authorization remains required before confidential passages reach external embedding/LLM providers.
+The requested OpenAI key file remains ignored. A catalog check returned200 at13:13:57Z with99 entries. The user then explicitly selected text-embedding-3-small at1,536 dimensions. One synthetic request returned200 at13:21:04Z, exactly1,536 finite values and17 input tokens. This establishes that minimal model/shape compatibility, not account balance, indexing or production capacity. No company SOP content was sent; external company-data approval and runtime integration remain open.
 
 ## Primary references
 

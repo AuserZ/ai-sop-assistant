@@ -6,13 +6,13 @@
 | --- | --- |
 | Requirement / predecessor | D3; ADR04 and the user's22 November2026 temporary local-OCR follow-up; S04 VERIFIED, closuref81a8d3 |
 | Authorized increment | Standalone offline CPU PaddleOCR Docker worker, synthetic numeric/unit OCR and bounded failure/sandbox verification |
-| Candidate | Final expanded working candidate on `codex/s05-document-processing`, awaiting published SHA/CI; initial `1eb4adeaf8a5ed5e44e61726fb90a86972f86f14` is historical |
+| Candidate | Published `4f1bf000b004e8a488a73268aed6635e8cb88423`, tree `24cb68484f7474447bc9bb35d283ad2eaa7bf8c7`, on `codex/s05-document-processing`; initial `1eb4adeaf8a5ed5e44e61726fb90a86972f86f14` is historical |
 | Local worker image | `sha256:8bfe1e3ce933e57f429c34275252bb418b09123a9de9592dc559755f909852e5` |
 | Eight build-input manifest | `1e53ecf1775c66b2bb0818017ffcfe745c614e71051307d15263b122c533f1e7` |
 | Pipeline / models | `local-paddleocr-v1`; `PP-OCRv5_mobile_det` and `en_PP-OCRv5_mobile_rec`; all output remains UNVERIFIED |
 | QA ownership / environment | Source/assertions read-only; only this report edited. Host Node read-only consistency checks; no Docker/build/provider/key/private-configuration access or suite execution by QA. |
 | Date |22 November2026, Asia/Jakarta |
-| Result | Source/assertion and final expanded eight-case local receipt/artifact consistency PASS; exact published-candidate/hosted-CI evidence pending. Independent security review separately BLOCKED by its actual role usage limit. Full S05 remains IN_PROGRESS. |
+| Result | Independent QA PASS for the bounded S05a Docker increment at4f1bf00: source/artifact/receipt checks and both exact hosted jobs pass. QA review completed; independent security remains BLOCKED by its actual role usage limit. Full S05 remains IN_PROGRESS. |
 
 The protected technical PRD/PDF, shared/QA guides, current S05 checklist, testing guide and [temporary setup contract](../paddleocr-setup.md) govern this review. The original Google decision remains visible and unchanged in the protected PRDs. QA does not replace the limited DevOps/security roles or infer any approval from their unavailable sessions.
 
@@ -91,3 +91,93 @@ For both real-input results, QA independently checked literal texts, order0–3,
 The receipt records all8 owned containers removed. Host-file cleanup is a separate finally block that removes only the two known files and then their validated fresh temporary directory; it performs no recursive deletion. The lead reports process exit0 after that cleanup. The JSON PASS line is emitted before this final host cleanup, so the receipt alone is not an independent host-cleanup proof; exact successful hosted process completion remains the final corroboration. No private input directory, credentials, live provider runtime or Docker resource was accessed by QA.
 
 Source/assertion and expanded local receipt/artifact consistency PASS. The initial five-case results, old image/manifest and earlier immutable-image correction remain historical evidence. Exact final published candidate and hosted OCR/foundation job verification are still pending. Independent security review remains separately BLOCKED; full S05 remains IN_PROGRESS.
+
+## Exact published-source and copied-runtime binding
+
+QA independently fetched GitHub metadata for run45026670726 and confirmed `head_sha=4f1bf000b004e8a488a73268aed6635e8cb88423`, commit tree `24cb68484f7474447bc9bb35d283ad2eaa7bf8c7`, attempt1, still in progress at this checkpoint. Read-only Git `cat-file --batch` checks bind all8 committed image-input blobs exactly to the expanded receipt's source hashes/manifest and bind the committed verifier exactly to `2003b2eb…`. The worktree was clean before this report update. No old candidate/run result is substituted for the final candidate.
+
+The newly permitted sanitized `.local-secrets/s05-ocr-runtime-files.json`, raw SHA-256 `6bda2e54484646bba54805c7e96c9bfb4852126fb9baacdb244462feafb28732`, contains the six copied runtime source hashes from the lead's actual read-only image inspection. QA matched all6 to the exact committed blobs: requirements.lock, models.json, download_models.py, engine.py, cli.py and verify_cases.py. The map itself contains hashes rather than an embedded image ID; its image-inspection provenance is attributed to the lead, alongside the expanded run/build receipts that name the actual image. QA performed no Docker inspection. An initial strict JSON parse failed on this receipt's UTF-8 BOM; a BOM-aware decode then passed all6 unchanged hash assertions. This was a QA reader correction, not a product failure or relaxed source comparison.
+
+Run45025398293 for initial1eb4ade was reported successful by the lead; immutable-ID-only run45025907843 was still running at the handoff. Both are historical and neither supplies final expanded-candidate acceptance. QA will inspect completed final OCR/foundation job metadata and decoded logs after the lead's completion signal. Security's separate actual usage block remains unchanged.
+
+## Exact completed hosted OCR job
+
+After the lead's completion signal for the OCR job, QA independently called `github_fetch_workflow_run_jobs` for `AuserZ/ai-sop-assistant`, run45026670726, and `github_fetch_workflow_job_logs` for job137221097795. The decoded OCR log contains81,060 characters/770 lines and prints the exact4f1bf000b004e8a488a73268aed6635e8cb88423 checkout. The `paddleocr` job and all9 step entries completed successfully, including build, verification, post-actions and Complete job. Foundation job137221097593 was still in browser journeys at this fetch; no final overall-run/foundation PASS is claimed here.
+
+The actual hosted commands are:
+
+```text
+node .codex/scripts/check-prd-integrity.mjs
+docker compose -f infra/paddleocr/compose.yml --progress plain build paddleocr
+node infra/paddleocr/verify.mjs
+```
+
+Both protected originals pass. The build installs71 pinned hash-checked wheels, reports no broken requirements, prepares2 pinned models/6 files, and exports OCI index `sha256:d08be2d5e36e84b275cef9e5f173168dfc81e4a39040e6727aa0661bce042ad9` (platform manifest `sha256:b8f0a00c4296ddae4a116c60fe2f954c4a88fefdfafda51eec57638c7a88333a`). The verifier's actual image ID equals that exported index exactly. Its full8-file source inventory/manifest equals the final committed/local inventory `1e53ecf1775c66b2bb0818017ffcfe745c614e71051307d15263b122c533f1e7`. The hosted and local image IDs remain distinct builds; no bit-for-bit reproducibility claim is made. The pip root-user warning concerns the build stage; actual inference containers still require UID10001.
+
+| Exact hosted OCR case | Result / exit | Duration including container operations |
+| --- | --- | --- |
+| Synthetic OCR | PASS/0, exact4 lines |10.434s |
+| Fixture export | PASS/0,2 synthetic files |0.296s |
+| Actual PNG input | PASS/0, exact4 literal lines/order/hash/UNVERIFIED |2.847s |
+| Actual JPEG input | PASS/0, exact4 literal lines/order/hash/UNVERIFIED |2.894s |
+| Bounds | PASS/0,11 checks including actual symlink/FIFO/directory |0.376s |
+| Missing models | Expected safe FAIL/1, OCR_MODELS_UNAVAILABLE |0.277s |
+| URL input | Expected safe FAIL/1, OCR_INPUT_PATH |0.271s |
+| TERM-ignoring child | Expected137 |2.188s |
+
+QA parsed the actual final JSON record and independently required exact manifest, build/run image equality, all case exits, sandbox PASS,8 removed containers, network:none,0 secret mounts/ports and no full-ingestion claim. Both PNG/JPEG outputs retain the expected input hashes and4 literal lines,1100×420 dimensions, UNVERIFIED, order0–3, finite confidence0–1 and finite four-point boxes within the image. No unhandled GitHub error marker occurs in the fetched log. Successful verification-step and job completion corroborate process exit0 after the final host-temp cleanup, resolving the earlier receipt-only cleanup limit. This does not prove production accuracy, recovery, real SOP processing or full ingestion.
+
+## Separately approved embedding prerequisite
+
+The lead relayed the user's explicit approval of `text-embedding-3-small` at1,536 dimensions. This is a later follow-up to the initial pending model/dimension checkpoint, not an inferred entitlement or an edit to either original PRD. QA read only the additionally permitted sanitized catalog and embedding receipts; no key/configuration, raw vector or provider request was accessed by QA.
+
+| Saved prerequisite evidence | Observed fields / limit |
+| --- | --- |
+| Catalog receipt13:13:57.070Z; SHA-256 `51c704902a381d8d6f81071928566a6378589ff4af431b738e4d09e587f86da0` | GET /v1/models200,99 entries, small/large embedding candidates,0 inference calls, no SOP content. Catalog visibility alone did not establish inference/billing. |
+| Synthetic embedding receipt13:21:04.556Z; SHA-256 `ca8206bcaedafe290871177ed458cd7cc29ff1a1f80714a1263a2018680216e3` | POST /v1/embeddings200 for approved small model, requested1,536 dimensions and recorded1,536 finite values;1 synthetic call,17 prompt/total tokens,2.772s; no SOP content. Input hash `39a78974a5e8a716688789f8f5f277988d698e5444540d178422f442de9ae033`; raw values were not provided to or recomputed by QA. |
+
+The latter receipt reports PASS and a finite-vector norm near1; these actual-vector checks belong to the lead. Both saved records explicitly decline a balance claim, and the embedding receipt sets `fullIngestionVerified=false`. The specific synthetic endpoint access/model/dimension prerequisite now has saved runtime evidence; vector storage/schema compatibility, real pipeline indexing, quality/limits and company authorization remain open. No repeated embedding call was made for QA.
+
+Final foundation-job/overall-run completion and independent security review remain the outstanding acceptance gates at this cutoff. The completed OCR job is source-bound evidence for the bounded Docker component; it does not mark full S05 VERIFIED.
+
+## Completed exact foundation regression and final QA verdict
+
+After the lead's final completion signal, QA independently refetched run45026670726 and its jobs, then fetched decoded foundation job137221097593 logs. [The exact hosted run](https://github.com/AuserZ/ai-sop-assistant/actions/runs/45026670726), attempt1, is completed/success for `4f1bf000b004e8a488a73268aed6635e8cb88423`, tree `24cb68484f7474447bc9bb35d283ad2eaa7bf8c7`. Run start/update times are13:17:13–13:28:04Z on22 November2026 (20:17:13–20:28:04 Asia/Jakarta). Both required jobs pass: OCR9 step entries and foundation19 entries, all28 completed/success, including cleanup/post-actions/Complete job. No skipped, canceled or failing mandatory step is substituted with an earlier run result.
+
+The foundation decoded log contains309,215 characters/3,894 lines and independently prints the same exact checkout. QA inspected its command/result sections, native storage controls,15 browser-case outputs, six fault records, automatic-restart conditions, POST controls, count-only snapshots and final cleanup; parsed-record assertions separately required the actual counts/outcomes. Primary GitHub calls used `github_fetch` for the run URL, `github_fetch_workflow_run_jobs` with run45026670726 and `github_fetch_workflow_job_logs` with foundation job137221097593.
+
+| Exact hosted command / regression | Independently observed result |
+| --- | --- |
+| Pinned checkout/setup-node; `npm ci` | PASS exact final checkout and install;4 moderate dependency advisories remain reported, not a clean audit. |
+| `npm run check:prd`; `npm run lint`; `npm run typecheck`; `npm run build` | PASS both originals, zero-warning ESLint, generated route types/TypeScript and optimized build. |
+| `npm test` | PASS40/40 in9 files,3.38s. |
+| `node --test infra/n8n/local-secrets.test.mjs` | PASS1/1, fail/skipped0. |
+| `node --test infra/storage-fixture/gateway.test.mjs infra/storage-fixture/secrets.test.mjs` | PASS7/7, fail/skipped0. |
+| Compose config/builds, PostgreSQL migration and `docker compose --profile verify run --rm --no-deps verify-db` | PASS migration application and48/48 DB cases across4 files,5.42s:18 documents,12 jobs,15 auth,3 foundation. No new ledger-count or full-S05-schema claim is inferred. |
+| Native fixture verifier | PASS actual signed PUT/HEAD/GET200 with matching bytes, actual Authorization-signed SDK PUT/GET200/replay412, race200/412,9 cryptographic denials and5 gateway denials. Unsigned known object400, malformed signature/expiry/identity controls and cookie/Bearer/foreign-origin/public/explorer denials are visible. Credential/diagnostic markers0. Owned isolated container removed,0 persistent volumes created. This is fixture compatibility, not another live R2 call. |
+| Proxy/fixture health, live/ready curl smoke and conversion profile | PASS in the completed smoke/database step; LibreOffice7.4.7.2 probe. Tool availability does not prove implemented S05 extraction/conversion. |
+| Synthetic seed; `npm run test:browser` | PASS15/15 in50.2s:5 document,6 auth and4 workflow cases, including exact20MB, narrow layout, RBAC, safe retry, bounded/failed/slow-reader/reconnect streams. Email delivery is injected. |
+| `node scripts/verify-workflow-runtime.mjs` | PASS all6 actual cases below; force-recreated fixture returns healthy. |
+| `node infra/n8n/verify-redirects.mjs` | PASS each301/307 source once per mode; default destination2, no-follow destination0, forwarded canary0 in both. Actual native HTTP control remains separate from Queue Mode proof. |
+| Always-run `docker compose --profile verify --profile conversion down --volumes --remove-orphans` | PASS; actual log removes all9 service containers,3 edge/database/workflow networks and disposable PostgreSQL volume; post-actions and Complete job also pass. This cleanup concerns the disposable hosted project, not the retained local R2/application state. |
+
+| Actual hosted recovery case | Result | Duration |
+| --- | --- | --- |
+| Queued worker pause | PASS |11.361s |
+| In-flight worker loss/fencing | PASS |34.896s |
+| Redis interruption/durable work | PASS |72.507s |
+| App restart/reconnect cursor | PASS |20.571s |
+| Account deactivation/open stream | PASS |5.399s |
+| Real60s proxy timeout/reconnect | PASS |71.773s |
+
+The Redis record explicitly requires12,000ms minimum interruption after an active attempt, main/worker restart counts0→1 with both healthy and no manual queue-process start. It retains200,000ms=180,000ms bounded retry horizon+20,000ms allowance; other collector/production limits are unchanged. These existing synthetic probes use a judge stub/completion marker, not real SOP answers or actual LLM-judge validation.
+
+At13:26:52.054Z, the final count-only execution snapshot contains13 JWT-bearing payload rows/54 JWT occurrences,0 orphan payload rows/private-key markers,2 queue hashes with0 JWT occurrences, and0 JWT/Bearer/private-key markers in all available final Docker/native-event logs. The earlier paused-worker snapshot explicitly defers that worker's native log. These observations do not establish zero transient persistence or a guaranteed pruning deadline. The recorded disposable PostgreSQL volume is subsequently removed. Existing S04 retention limits and moderate-dependency remediation remain open; successful CI does not erase them.
+
+### Bounded acceptance handoff
+
+Independent QA PASS for the S05a offline CPU Docker increment at `4f1bf000b004e8a488a73268aed6635e8cb88423`. Required QA proof now covers exact committed image/verifier inputs, local and hosted artifact identity, actual numeric/unit OCR through self-test and real PNG/JPEG input, malformed/oversized/local-path/model/result/deadline controls, inspected actual sandbox assertions, owned-container/temporary-file cleanup and both complete hosted jobs. No mandatory assigned QA check remains pending, and no demonstrated unresolved functional defect was found in this bounded review. Earlier initial-source/coverage/provenance checkpoints remain historical; their pending statuses are superseded by these executed results.
+
+QA's completed verdict does not replace the independently usage-blocked security role. Security sign-off is still BLOCKED, so no full security/overall release approval is claimed. Full S05 remains IN_PROGRESS: native/scanned/mixed PDF/DOCX extraction, previews, faithful tables/section/source mappings, embeddings/storage/indexing, authenticated n8n pipeline and job/idempotency/source-eligibility acceptance are not implemented/verified by this component. The approved1,536-dimension synthetic endpoint probe remains prerequisite proof only. Company data, production OCR policy, deployment and V01/V02 remain gated.
+
+Only this QA report was edited. QA made no source/assertion/index mutation, build, runtime/provider call or key/private-configuration read. Protected originals and report whitespace are checked after this update. Edits are held for the lead's closure staging; the lead owns final documentation/status and remaining acceptance decisions.
