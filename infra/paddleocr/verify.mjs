@@ -36,11 +36,12 @@ async function runCase(label, command, extra = [], expectedExitCode = 0) {
       "--cap-drop", "ALL", "--security-opt", "no-new-privileges:true",
       "--memory", "2g", "--cpus", "2", "--pids-limit", "128",
       "--shm-size", "128m", "--tmpfs", "/tmp:size=256m,mode=1777",
-      "--log-driver", "none", ...extra, image, ...command]);
+      "--log-driver", "none", ...extra, imageMetadata.Id, ...command]);
     created = true;
     const configuration = JSON.parse(await dockerCall(["inspect", name]))[0];
     assert.equal(configuration.Config.Labels["com.docker.compose.project"], project);
     assert.equal(configuration.Config.User, "10001:10001");
+    assert.equal(configuration.Image, imageMetadata.Id);
     assert.equal(configuration.HostConfig.NetworkMode, "none");
     assert.equal(configuration.HostConfig.ReadonlyRootfs, true);
     assert.equal(configuration.HostConfig.Privileged, false);
