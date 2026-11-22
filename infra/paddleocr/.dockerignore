@@ -1,0 +1,8 @@
+**
+!Dockerfile
+!requirements.lock
+!models.json
+!download_models.py
+!cli.py
+!engine.py
+!verify_cases.py

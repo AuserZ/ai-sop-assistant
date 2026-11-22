@@ -6,6 +6,10 @@ Source: [approved technical PRD](<AI SOP Assistant — Technical Product Req.md>
 
 S04 private Admin uploads are **VERIFIED** on22 November2026 for published source `1ef852166cda0e07c231ddd4834cf053442bb1dd`. [Hosted run45018939728](https://github.com/AuserZ/ai-sop-assistant/actions/runs/45018939728), job137197322521, passed all19 step entries: lint/types/build,40 units,48 PostgreSQL checks,15 browser journeys, native storage controls, six actual recovery cases/native POST controls and cleanup. Independent QA decoded the exact-checkout logs; security independently bound the47-source manifest/publication and final evidence. Live synthetic R2 PDF/DOCX/exact20MB, exact original bytes and the lead's final UI gate also pass. Next permitted sprint is S05. Company privacy/residency, object recovery and production file-policy gates remain open. [S04 evidence and limits](docs/verification/S04.md)
 
+S05 is now **IN_PROGRESS** on `codex/s05-document-processing`, based on S04 closuref81a8d3. The user explicitly requested a temporary local PaddleOCR Docker setup instead of Google OCR on22 November. First increment is a bounded offline CPU worker with pinned models and synthetic numeric/unit tests; the full processing/embedding/n8n sprint remains unverified. OpenAI is user-reported ready, with application entitlement/dimensions still to inspect. [Approved follow-up and setup](docs/paddleocr-setup.md)
+
+S05a local checkpoint22 November: actual CPU image build/frozen rebuild exit0; offline inference matches4 synthetic lines,10 bounds/model/deadline checks and5 actual sandbox/failure cases pass. All5 owned containers removed; current R2/app and retained volumes unchanged. The lead completed implementation after specialist usage limits; independent review and exact hosted CI pending. Full S05 stays IN_PROGRESS. [Evidence](docs/verification/S05.md)
+
 S03 is **VERIFIED** on 21 November 2026 for published source `0396cf606b8e34a805a038b273a103687a691ce1`. [Hosted run44852222243](https://github.com/AuserZ/ai-sop-assistant/actions/runs/44852222243), job136685999286, passed all18 steps: lint/types/build, 28 unit tests, isolated secret generation, 30 PostgreSQL tests, 10 browser tests, six actual recovery/timeout cases, native POST301/307 controls and cleanup. QA independently checked the exact source and decoded logs; security confirmed the frozen41-file manifest, publication boundaries and original PRD/license/history integrity. Local native recovery/pruning removed the earlier JWT-bearing payloads under unchanged normal settings; transient payload retention remains explicit. Phase0 is complete for the recorded candidates. Next permitted sprint: S04 Admin private uploads using the user's selected Cloudflare R2; bucket/configuration and recovery-policy gates remain open. [S03 evidence](docs/verification/S03.md)
 
 S01 is **VERIFIED** for candidate `59fa63f7df02489a6730b02f6cbbb2383c255503`. Local Docker evidence and [hosted run 44485878184](https://github.com/AuserZ/ai-sop-assistant/actions/runs/44485878184) passed all required foundation checks, including 3 unit tests, 3 PostgreSQL/pgvector integration tests and cleanup. The user selected [AuserZ/ai-sop-assistant](https://github.com/AuserZ/ai-sop-assistant); native Git publication succeeded after browser sign-in on branch `codex/s01-foundation`, preserving the existing `master` history/license. [S01 verification report](docs/verification/S01.md)
@@ -69,7 +73,7 @@ The default execution order is S01 through S16. Each sprint depends on the VERIF
 | S02 | Invitation-only sign-in and role authorization | 0 | U2/U4; U3 access enforcement | VERIFIED |
 | S03 | Durable private workflow jobs and safe progress proof | 0 | ADR 08/19; D3 foundation | VERIFIED |
 | S04 | Admin private SOP upload | 1 | D2; D1 upload status; ADR 03 | VERIFIED |
-| S05 | SOP extraction, OCR, previews and indexing | 1 | D3; ADR 04/05/11/21/22 | PLANNED |
+| S05 | SOP extraction, OCR, previews and indexing | 1 | D3; ADR 04/05/11/21/22 | IN_PROGRESS |
 | S06 | Assisted verification and revision-bound activation | 1 | D3; ADR 17 | PLANNED |
 | S07 | SOP library search and authorized original access | 1 | D1/D5 | PLANNED |
 | S08 | SOP deletion and reliable unindexing | 1 | D4 | PLANNED |
@@ -196,11 +200,13 @@ Verify after development:
 
 ### S05 — SOP processing, OCR, previews and indexing
 
-**Outcome:** Uploaded documents produce faithful mapped text, previews, chunks and embeddings, ready for human verification. **Depends on:** S04. **Mapping:** D3, ADR 04/05/11/21/22. **External gates:** verified OpenAI embedding model/dimensions and Google processor region/limits/quality; no real SOPs without company approval.
+Kickoff22 November2026 after recorded S04 VERIFIED closuref81a8d3. User's latest instruction approves PaddleOCR locally in Docker instead of Google OCR for now; this temporary follow-up is recorded in [the setup guide](docs/paddleocr-setup.md), leaving both original PRDs intact. Scope S05a: separate offline CPU image, pinned public models/dependencies, bounded local-image CLI and actual synthetic OCR/sandbox/failure proof. DevOps owns the new worker/Compose and scoped CI; lead owns integration/docs, security and QA independently review. Timebox unset. No S04 object/job/volume reset. Full S05 acceptance below remains unchecked until the complete pipeline and required provider evidence pass.
+
+**Outcome:** Uploaded documents produce faithful mapped text, previews, chunks and embeddings, ready for human verification. **Depends on:** S04. **Mapping:** D3, ADR 04/05/11/21/22 with the recorded temporary OCR-provider follow-up. **External gates:** verified OpenAI embedding model/dimensions, accepted local PaddleOCR quality/resource evidence, and production OCR/language decisions; Google processor region/limits/quality if resumed. No real SOPs without company approval.
 
 Development scope:
 
-- Implement native PDF/DOCX extraction, scanned/empty/mixed-page detection and necessary Google Document AI OCR fallback.
+- Implement native PDF/DOCX extraction, scanned/empty/mixed-page detection and necessary OCR fallback using the user's temporary local PaddleOCR choice; preserve the original Google decision and explicit follow-up history.
 - Preserve original PDFs; generate DOCX derivative previews through isolated resource-limited LibreOffice, with honest source-versus-derivative page mappings.
 - Preserve headings, procedure ordering, digits/units/conditions and table headers/cells; structure-aware chunking uses recursive oversized-section fallback without paraphrasing evidence.
 - Store source/job/pipeline/chunk identity, text hashes, search data and verified-model embeddings; flag quality issues and transition to PENDING_VERIFICATION, never ACTIVE.
@@ -487,7 +493,7 @@ Storage follow-up decision,21–22 November2026: the user selected **Cloudflare 
 | Pilot team, owner, launch date, document types and languages | Product owner confirmation |
 | Cloudflare R2 configuration and object recovery | Supplied private configuration, user-confirmed public off/empty domains and full live synthetic object/browser/original-byte checks pass. Disabled development-domain HTTP probe remains unobserved due expired TLS, with no bypass. Jurisdiction/location, company policy and object recovery remain open. |
 | OpenAI balance, exact reranker/answer/judge models and entitlements | Authorized project catalog/billing checks; ADR 23's model name is not proof of availability |
-| Google OCR processor region, limits, allowance, table quality | Project checks and representative authorized benchmark |
+| OCR provider, limits and table quality | User approved temporary local PaddleOCR Docker setup on22 November, replacing Google for this local increment only. Offline runtime and synthetic quality/resource checks required; production provider/languages/table acceptance remain open. Original Google processor/region gates apply if Google is resumed. |
 | Queue Mode progress/SSE bridge | RESOLVED for this implementation by VERIFIED S03: signed callbacks, durable PostgreSQL events and bounded authenticated Next.js SSE polling; production load/latency evidence remains later work |
 | Scoring rubric and p50/p95 versus latency targets | Product/QA agreement and measurement |
 | Chat/audit deletion, retention, backup expiry, Admin MFA | Security/Product policy; proposed 90-day audit and 30-day backup periods are not approved policy |
