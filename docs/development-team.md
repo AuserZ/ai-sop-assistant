@@ -1,6 +1,6 @@
 # Development team
 
-The user requested this five-role team on 19 November 2026, adding the principal DevOps engineer after the initial four roles and explicitly authorizing project-manager orchestration. S01–S06 are VERIFIED; next permitted sprint is S07 (not started yet). Predecessor checks, external decisions and deployment approval remain required. This is an execution agreement subordinate to the [technical PRD](<../AI SOP Assistant — Technical Product Req.md>), [original product PDF](<../PRD AI SOP Assistant.pdf>) and [sprint plan](../PLANS.md).
+The user requested this five-role team on 19 November 2026, adding the principal DevOps engineer after the initial four roles and explicitly authorizing project-manager orchestration. S01–S07 are VERIFIED; next permitted sprint is S08 (not started yet). Predecessor checks, external decisions and deployment approval remain required. This is an execution agreement subordinate to the [technical PRD](<../AI SOP Assistant — Technical Product Req.md>), [original product PDF](<../PRD AI SOP Assistant.pdf>) and [sprint plan](../PLANS.md).
 
 | Role | Responsibility | Detailed role guide | Codex definition |
 | --- | --- | --- | --- |
@@ -27,7 +27,7 @@ The main agent acts as project manager and schedules the four specialist roles i
    - **Pass 2 (Single closure pass):** Independent Security and QA verify the fix diff and green CI run together in one wakeup using compact table receipts ([verification template](sprint-verification-template.md)).
 5. Save compact evidence in `docs/verification/Sxx.md`, update compact `PLANS.md` (archiving narrative history in [verification history](verification/history.md)) and `AGENTS.md`, rerun PRD integrity, push closure, and recommend `/compact` or a fresh chat before starting the next sprint.
 
-S01–S06 are VERIFIED against their recorded evidence (archived in [verification history](verification/history.md)). Next permitted sprint is S07; later sprints require predecessor verification. Provider configuration and policy decisions remain gated, with synthetic fixtures where the plan permits. P1/P2, production release and real company-data processing retain their approval gates. V01 technical acceptance, production approval and V02 pilot acceptance remain separate outcomes.
+S01–S07 are VERIFIED against their recorded evidence (archived in [verification history](verification/history.md)). Next permitted sprint is S08; later sprints require predecessor verification. Provider configuration and policy decisions remain gated, with synthetic fixtures where the plan permits. P1/P2, production release and real company-data processing retain their approval gates. V01 technical acceptance, production approval and V02 pilot acceptance remain separate outcomes.
 
 ## Continuity
 

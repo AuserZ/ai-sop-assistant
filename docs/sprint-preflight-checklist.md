@@ -21,6 +21,7 @@ Read this before coding any sprint increment to eliminate avoidable Security/QA 
 - Verify keyboard navigation, ARIA tab/dialog bindings, `min-h-11` interactive targets, and zero horizontal page overflow at `320px`.
 
 ## 4. Test isolation & pre-review gates
-- Ensure PostgreSQL integration tests clean up or scope shared global rows (`document_upload_intents`, `workflow_jobs`) and remain deterministic under `npm run test:db` (`--no-file-parallelism`).
+- Ensure PostgreSQL integration tests clean up or scope shared global rows (`document_upload_intents`, `workflow_jobs`), defer queued `workflow_jobs.dispatchNextAt` (+60s) when seeding background jobs, and remain deterministic under `npm run test:db` (`--no-file-parallelism`).
+- Remember `0001_authentication.sql` trigger `auth_users_revoke_sessions` deletes all `app.auth_sessions` rows for a user whenever `app.auth_users.active` or `app.auth_users.role` changes; re-seed a synthetic session in DB tests if testing post-role-change authorization beyond the `401` session revocation itself.
 - Run `npm.cmd run check:prd`, `npm.cmd run lint`, `npm.cmd run typecheck`, and `npm.cmd test` cleanly before requesting Pass 1 Security + QA review.
 - Never alter `AI SOP Assistant — Technical Product Req.md` or `PRD AI SOP Assistant.pdf`.

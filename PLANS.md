@@ -4,9 +4,9 @@ Source: [approved technical PRD](<AI SOP Assistant — Technical Product Req.md>
 
 ## Current state
 
-- **Verified sprints:** `S01`–`S06` are **VERIFIED** against their recorded candidates (detailed S01–S06 history archived in [verification history](docs/verification/history.md)).
-- **Latest closure (S06):** Published source `14e2d54cade8dfe6b357caa7a1baad6dcafdcf28` (tree `644ee407bcfa699a36892c54d1dff7b7562e0c46`, closure `aa8ccef3a2a7ff6afbb1ea464210919c09b6949e`) on `codex/s06-assisted-verification`; [hosted run 45122984069](https://github.com/AuserZ/ai-sop-assistant/actions/runs/45122984069) passed `29/29` steps (`paddleocr` `9/9` + `foundation` `20/20`); independent Security ([S06-security.md](docs/verification/S06-security.md)) and QA ([S06-qa.md](docs/verification/S06-qa.md)) PASS. [S06 evidence](docs/verification/S06.md).
-- **Next permitted sprint:** **S07** — searchable SOP library and authorized original access (`D1/D5`, `U4`). Not started yet.
+- **Verified sprints:** `S01`–`S07` are **VERIFIED** against their recorded candidates (detailed S01–S07 history archived in [verification history](docs/verification/history.md)).
+- **Latest closure (S07):** Published source `ae644f95ef1a155e047f0baabcd4af52f169e31d` (tree `264eff0116d6db120fadcb13173eea3b02a82615`) on `codex/s07-library-access`; [hosted run 45149286306](https://github.com/AuserZ/ai-sop-assistant/actions/runs/45149286306) passed `foundation` `20/20` + `changes` `5/5` (with `paddleocr` `9/9` passed on `6a44efc` in [run 45146557698](https://github.com/AuserZ/ai-sop-assistant/actions/runs/45146557698)); independent Security ([S07-security.md](docs/verification/S07-security.md)) and QA ([S07-qa.md](docs/verification/S07-qa.md)) PASS. [S07 evidence](docs/verification/S07.md).
+- **Next permitted sprint:** **S08** — SOP deletion and reliable unindexing (`D4`). Not started yet.
 - **Team & workflow cadence:** Project manager orchestrates fresh per-sprint specialist subagents (up to 3 concurrent; invoke DevOps only when Docker/Compose/CI/runtime files change), uses [sprint preflight checklist](docs/sprint-preflight-checklist.md) before coding, runs a 2-pass Security/QA cycle (Pass 1 pre-push review → Fix/Push/CI → Pass 2 single closure pass), and recommends `/compact` or a fresh chat between sprints ([development-team.md](docs/development-team.md), [coding-standards.md](docs/coding-standards.md)).
 - **Standing constraints:** Preserve P0 order, 3-menu cap, protected PRDs, and all PRD section 16 open gates below. Open S14/pre-V01 item: 4 moderate dev-chain Node advisories (`GHSA-67mh-4wv8-2f99`); do not describe full audit as clean.
 
@@ -22,7 +22,7 @@ Default execution order is S01–S16. Each sprint depends on the VERIFIED predec
 | S04 | Admin private SOP upload | 1 | D2; D1 upload status; ADR 03 | VERIFIED | [S04.md](docs/verification/S04.md) |
 | S05 | SOP extraction, OCR, previews and indexing | 1 | D3; ADR 04/05/11/21/22 | VERIFIED | [S05.md](docs/verification/S05.md) |
 | S06 | Assisted verification and revision-bound activation | 1 | D3; ADR 17 | VERIFIED | [S06.md](docs/verification/S06.md) |
-| S07 | SOP library search and authorized original access | 1 | D1/D5 | PLANNED | — |
+| S07 | SOP library search and authorized original access | 1 | D1/D5 | VERIFIED | [S07.md](docs/verification/S07.md) |
 | S08 | SOP deletion and reliable unindexing | 1 | D4 | PLANNED | — |
 | S09 | Verified ACTIVE hybrid retrieval and reranking | 2 | C2; ADR 10/23 | PLANNED | — |
 | S10 | Evidence-validated procedural answers and citations | 2 | C2/C3/C4/C5; ADR 12 | PLANNED | — |
@@ -94,19 +94,11 @@ Status flow: `PLANNED → IN_PROGRESS → IMPLEMENTED → VERIFYING → VERIFIED
 - [x] Review panels show real data/mappings and audit entries; approval and state updates commit consistently or roll back together.
 
 ### S07 — searchable SOP library and original access
-**Outcome:** Users can find eligible SOPs by title and open/download authorized originals; Admin sees processing diagnostics. **Depends on:** S06. **Mapping:** D1/D5 and U4.
-
-Development scope:
-- Implement the List Document SOP table with title/type/uploader/date/status, title search and useful loading/empty/error states.
-- Staff queries and metadata/source routes expose only verified ACTIVE documents; Admin can inspect processing/rejected/failed states and existing upload/review actions.
-- Resolve private original/preview access through backend reauthorization and short-lived signed links, with genuine section/page context.
-- Keep source access separate from historical citation snapshots; do not issue permanent public links or trust generated URLs.
-
-Verify after development:
-- [ ] Search/table metadata and original access work for Admin/Staff according to role and current account state.
-- [ ] Guessed IDs, non-ACTIVE sources, unauthorized previews, expired links and deactivated sessions fail safely.
-- [ ] Signed link issuance rechecks source status; test/document the residual bearer-access window until link expiry.
-- [ ] Browser tests cover search, open/download, keyboard operation and usable narrow-screen behavior; no fourth menu is added.
+**VERIFIED** (`ae644f9`, hosted `45149286306`, [S07.md](docs/verification/S07.md)). **Mapping:** D1/D5 and U4.
+- [x] Search/table metadata and original access work for Admin/Staff according to role and current account state.
+- [x] Guessed IDs, non-ACTIVE sources, unauthorized previews, expired links and deactivated sessions fail safely.
+- [x] Signed link issuance rechecks source status; test/document the residual bearer-access window until link expiry.
+- [x] Browser tests cover search, open/download, keyboard operation and usable narrow-screen behavior; no fourth menu is added.
 
 ### S08 — deletion and reliable unindexing
 **Outcome:** Admin deletion immediately removes evidence eligibility and reliably cleans up indexes/private files. **Depends on:** S07. **Mapping:** D4 with C2/C3/D5 integrity.
