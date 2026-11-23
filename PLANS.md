@@ -4,7 +4,9 @@ Source: [approved technical PRD](<AI SOP Assistant — Technical Product Req.md>
 
 ## Current state
 
-S05 SOP extraction, OCR, previews and indexing is **VERIFIED** on 23 November 2026 for published source `caf0fc7d8e8bb879f1162d1d32c174248022ee31` (tree `ac923727099f080f3923954e573cdcd9f19ca041`) on `codex/s05-document-processing`. [Hosted run 45102843612](https://github.com/AuserZ/ai-sop-assistant/actions/runs/45102843612) passed all 29 step entries (`paddleocr` job `137457390869` 9/9 + `foundation` job `137457391121` 20/20): 58/58 unit tests, 9-input PaddleOCR CLI/stdin/HTTP-server/12-bounds verifier, Docker LibreOffice/Poppler conversion verifier, fresh `0004` PostgreSQL/pgvector migrations + `verify-db`, full Compose stack + 3-document Playwright D3 E2E (native PDF, scanned PDF via real PaddleOCR, rich DOCX via LibreOffice preview + Staff 403), workflow recovery, redirect controls and cleanup. Independent Security ([S05-security.md](docs/verification/S05-security.md)) and QA ([S05-qa.md](docs/verification/S05-qa.md)) issued final PASS for both S05a and full S05 closure; raw GitHub log download was unauthenticated 403 so step-level API metadata is verified, and CI's loopback synthetic embedding fixture remains distinct from S05a's standalone live OpenAI `text-embedding-3-small` (1,536-dim) compatibility receipt. Next permitted sprint is S06 (`codex/s06-assisted-verification`). All PRD section 16 external gates remain open. [S05 evidence and limits](docs/verification/S05.md)
+S06 assisted verification and revision-bound atomic activation is **VERIFIED** on 23 November 2026 for published source `14e2d54cade8dfe6b357caa7a1baad6dcafdcf28` (tree `644ee407bcfa699a36892c54d1dff7b7562e0c46`) on `codex/s06-assisted-verification`. [Hosted run 45122984069](https://github.com/AuserZ/ai-sop-assistant/actions/runs/45122984069) passed all 29 step entries (`paddleocr` job `137520801499` 9/9 + `foundation` job `137520801816` 20/20): `61/61` unit tests, fresh `0000`–`0005` PostgreSQL/pgvector migrations + `verify-db` (including `tests/integration/verification.test.ts` RBAC, worker-JWT, snapshot/attempt binding, `ACTIVE` immutability triggers, atomic rollback, DOCX preview and reprocess rotation), full Compose stack + Playwright E2E (`tests/e2e/verification.spec.ts` with same-origin `/pdf.worker.min.mjs`, PDF/DOCX review, zoom scaling, reject/reprocess/approve lifecycle, Staff denial, 320px reflow + S02–S05 regressions), workflow recovery, redirect controls and cleanup. Independent Security ([S06-security.md](docs/verification/S06-security.md)) and QA ([S06-qa.md](docs/verification/S06-qa.md)) issued final closure PASS on `14e2d54`; raw GitHub log download was unauthenticated HTTP `403` so step-level API metadata is verified, and single-page E2E fixtures cover disabled boundary controls rather than multi-page clicks. Next permitted sprint is S07 (SOP library search and authorized original access). All PRD section 16 external gates remain open; document replacement remains D6/P1. [S06 evidence and limits](docs/verification/S06.md)
+
+S05 SOP extraction, OCR, previews and indexing is **VERIFIED** on 23 November 2026 for published source `caf0fc7d8e8bb879f1162d1d32c174248022ee31` (tree `ac923727099f080f3923954e573cdcd9f19ca041`) on `codex/s05-document-processing`. [Hosted run 45102843612](https://github.com/AuserZ/ai-sop-assistant/actions/runs/45102843612) passed all 29 step entries (`paddleocr` job `137457390869` 9/9 + `foundation` job `137457391121` 20/20): 58/58 unit tests, 9-input PaddleOCR CLI/stdin/HTTP-server/12-bounds verifier, Docker LibreOffice/Poppler conversion verifier, fresh `0004` PostgreSQL/pgvector migrations + `verify-db`, full Compose stack + 3-document Playwright D3 E2E (native PDF, scanned PDF via real PaddleOCR, rich DOCX via LibreOffice preview + Staff 403), workflow recovery, redirect controls and cleanup. Independent Security ([S05-security.md](docs/verification/S05-security.md)) and QA ([S05-qa.md](docs/verification/S05-qa.md)) issued final PASS for both S05a and full S05 closure; raw GitHub log download was unauthenticated 403 so step-level API metadata is verified, and CI's loopback synthetic embedding fixture remains distinct from S05a's standalone live OpenAI `text-embedding-3-small` (1,536-dim) compatibility receipt. [S05 evidence and limits](docs/verification/S05.md)
 
 S04 private Admin uploads are **VERIFIED** on22 November2026 for published source `1ef852166cda0e07c231ddd4834cf053442bb1dd`. [Hosted run45018939728](https://github.com/AuserZ/ai-sop-assistant/actions/runs/45018939728), job137197322521, passed all19 step entries: lint/types/build,40 units,48 PostgreSQL checks,15 browser journeys, native storage controls, six actual recovery cases/native POST controls and cleanup. Independent QA decoded the exact-checkout logs; security independently bound the47-source manifest/publication and final evidence. Live synthetic R2 PDF/DOCX/exact20MB, exact original bytes and the lead's final UI gate also pass. Next permitted sprint is S05. Company privacy/residency, object recovery and production file-policy gates remain open. [S04 evidence and limits](docs/verification/S04.md)
 
@@ -74,7 +76,7 @@ The default execution order is S01 through S16. Each sprint depends on the VERIF
 | S03 | Durable private workflow jobs and safe progress proof | 0 | ADR 08/19; D3 foundation | VERIFIED |
 | S04 | Admin private SOP upload | 1 | D2; D1 upload status; ADR 03 | VERIFIED |
 | S05 | SOP extraction, OCR, previews and indexing | 1 | D3; ADR 04/05/11/21/22 | VERIFIED |
-| S06 | Assisted verification and revision-bound activation | 1 | D3; ADR 17 | IN_PROGRESS |
+| S06 | Assisted verification and revision-bound activation | 1 | D3; ADR 17 | VERIFIED |
 | S07 | SOP library search and authorized original access | 1 | D1/D5 | PLANNED |
 | S08 | SOP deletion and reliable unindexing | 1 | D4 | PLANNED |
 | S09 | Verified ACTIVE hybrid retrieval and reranking | 2 | C2; ADR 10/23 | PLANNED |
@@ -235,10 +237,12 @@ Development scope:
 
 Verify after development:
 
-- [ ] Admin can approve a valid snapshot and reject questionable text; Staff/worker approval attempts fail.
-- [ ] Stale hash/job/snapshot, empty chunks, incomplete processing and concurrent changed-state approvals are rejected.
-- [ ] Reprocessing requires renewed verification; ACTIVE originals cannot be mutated in place. Replacement remains D6/P1.
-- [ ] Review panels show real data/mappings and audit entries; approval and state updates commit consistently or roll back together.
+- [x] Admin can approve a valid snapshot and reject questionable text; Staff/worker approval attempts fail.
+- [x] Stale hash/job/snapshot, empty chunks, incomplete processing and concurrent changed-state approvals are rejected.
+- [x] Reprocessing requires renewed verification; ACTIVE originals cannot be mutated in place. Replacement remains D6/P1.
+- [x] Review panels show real data/mappings and audit entries; approval and state updates commit consistently or roll back together.
+
+Closure 23 November 2026: **S06 VERIFIED** for `14e2d54cade8dfe6b357caa7a1baad6dcafdcf28` after hosted run `45122984069` (`29/29` steps PASS) and independent QA/Security closure PASS. S07 may now proceed. [S06 evidence](docs/verification/S06.md)
 
 ### S07 — searchable SOP library and original access
 
