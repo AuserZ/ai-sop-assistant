@@ -1,6 +1,6 @@
-# S02 authentication
+# S02 / S12 authentication and user management
 
-Implementation guide for U2/U4, U3 access enforcement and ADR 06/07. The approved PRD remains the requirements authority. User directory and account-management screens belong to S12; password reset and SSO remain deferred.
+Implementation guide for U1/U2/U3/U4 and ADR 06/07/20. The approved PRD remains the requirements authority. Password-reset enhancements (`U5`, P1) and SSO (`U6`, P2) remain deferred.
 
 ## Runtime contract
 
@@ -13,7 +13,9 @@ Better Auth uses the Drizzle PostgreSQL adapter. The Next.js catchall delegates 
 | `GET /api/auth/get-session` | Current active session | `{user,session:{id,expiresAt}}` |
 | `GET /api/account` | Current active session | `{user}` |
 | `POST /api/auth/invitations/accept` | `{token,email,name,password}` | `{accepted:true}`; sign in afterward |
-| `POST /api/users/invite` | `{email,role}`; current active Admin | Invitation ID, intended email/role and expiry; no token |
+| `GET /api/users` | `?q=&role=&status=&limit=`; current active Admin | `{users,pendingInvitations,summary}` without credentials, tokens, or invitation digests |
+| `POST /api/users/invite` | `{email,role}`; current active Admin | Invitation ID, intended email/role and expiry; no token; rejects duplicate active pending invites (`409 INVITATION_ALREADY_PENDING`) |
+| `PATCH /api/users/{id}` | `{role?,active?}`; current active Admin | `{user}` with immediate session revocation, self-lockout protection (`409 SELF_ACCESS_CHANGE_DENIED`), and last-active-Admin protection (`409 LAST_ADMIN_REQUIRED`) |
 
 All responses use `Cache-Control: no-store`. Public account data excludes credential hashes, session bearer tokens and library internals. Errors are `{error:{code}}`; unexpected failures return safe 503 responses. Protected unauthenticated operations return 401, denied Admin actions return 403, and ownership failures return 404.
 

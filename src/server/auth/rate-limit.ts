@@ -11,6 +11,8 @@ export const authLimits = {
   signIn: { maximum: 10, windowSeconds: 60 },
   accept: { maximum: 10, windowSeconds: 60 },
   invite: { maximum: 20, windowSeconds: 3600 },
+  userList: { maximum: 120, windowSeconds: 60 },
+  userUpdate: { maximum: 60, windowSeconds: 60 },
   session: { maximum: 120, windowSeconds: 60 },
   global: { maximum: 120, windowSeconds: 60 },
 } as const;

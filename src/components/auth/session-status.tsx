@@ -70,6 +70,9 @@ export function SessionStatus() {
       <nav aria-label="Primary" className="flex flex-wrap items-center gap-4">
         <Link href="/chat" className={linkClassName}>Chat</Link>
         <Link href="/documents" className={linkClassName}>List Document SOP</Link>
+        {session.user.role === "ADMIN" && (
+          <Link href="/users" className={linkClassName}>User Management</Link>
+        )}
       </nav>
       <button type="button" onClick={() => void signOut()} disabled={signingOut} className={buttonClassName}>{signingOut ? "Signing out..." : "Sign out"}</button>
       {error && <p role="alert" className="text-[#991b1b]">{error}</p>}

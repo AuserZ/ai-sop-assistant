@@ -22,9 +22,9 @@ Next.js owns authentication, current-account checks, RBAC, ownership, input vali
 | `GET /api/chat/conversations` | Active owner; implemented in S11 | Owner-scoped conversation summary list (`limit` 1–50, default 20); P1 C7 past-chat reopen UI remains deferred |
 | `GET /api/chat/conversations/{id}` | Active owner; implemented in S11 | Owner-scoped current-session messages with live-rechecked source availability (`available: true` + backend `sourcePath`, or `available: false` with `reason: "UNAVAILABLE" | "DELETED"`); cross-user returns `404` |
 | `POST /api/internal/chat/{id}/{claim,retrieve,generate,validate,fail}` | Private n8n RS256 callback JWT; implemented in S11 | Staged internal chat orchestration callbacks (`iss: "sop-n8n"`, `aud: "sop-app"`, nonce replay protection, monotonic step/attempt binding, live owner check); returns `200 { ok: true, terminal: boolean }` |
-| `GET /api/users` | Admin | User directory |
-| `POST /api/users/invite` | Admin; implemented in S02 | Expiring, single-use, intended-email-and-role invitation; one authorized live delivery/acceptance/sign-in verified |
-| `PATCH /api/users/{id}` | Admin | Role/status changes with deactivation safeguards |
+| `GET /api/users` | Active Admin; implemented in S12 | Admin user directory (`q`, `role`, `status`, `limit`); returns `{ users, pendingInvitations, summary }` ordered deterministically without password hashes, session tokens, or invitation digests; `Cache-Control: no-store` |
+| `POST /api/users/invite` | Active Admin; implemented in S02/S12 | Expiring, single-use, intended-email-and-role invitation; blocks existing accounts (`409 ACCOUNT_EXISTS`) and active duplicate pending invitations (`409 INVITATION_ALREADY_PENDING`), while permitting re-invitation after expiry or revocation; one authorized live delivery/acceptance/sign-in verified |
+| `PATCH /api/users/{id}` | Active Admin; implemented in S02/S12 | Role/status changes with self-lockout (`409 SELF_ACCESS_CHANGE_DENIED`) and last-active-Admin (`409 LAST_ADMIN_REQUIRED`) safeguards, immediate session revocation (`app.auth_sessions` delete + DB trigger), and redacted `account_access_changed` audit event |
 
 Choose exact DTOs, versioning, response codes, pagination, and safe errors during implementation; do not silently present these examples as final decisions. Validate incoming metadata, callback payloads, and model outputs with Zod. Require effective deactivation on protected operations and rate-limit login, invites, upload, chat, and access-token issuance.
 

@@ -32,13 +32,32 @@ export async function issueInvitation(actor: CurrentAccount, input: unknown, dep
     await lockCurrentAdmin(actor, transaction);
     const [existing] = await transaction.select({ id: authUsers.id }).from(authUsers).where(eq(authUsers.email, parsed.data.email));
     if (existing) throw new AuthFailure("ACCOUNT_EXISTS", 409);
+    const [pending] = await transaction
+      .select({ id: authInvitations.id })
+      .from(authInvitations)
+      .where(
+        and(
+          eq(authInvitations.email, parsed.data.email),
+          isNull(authInvitations.consumedAt),
+          isNull(authInvitations.revokedAt),
+          gt(authInvitations.expiresAt, sql`clock_timestamp()`),
+        ),
+      )
+      .for("update");
+    if (pending) throw new AuthFailure("INVITATION_ALREADY_PENDING", 409);
     const [created] = await transaction.insert(authInvitations).values({
       ...parsed.data,
       invitedBy: actor.id,
       tokenDigest: invitationTokenDigest(token),
       expiresAt: sql`clock_timestamp() + interval '24 hours'`,
     }).returning();
-    await transaction.insert(auditEvents).values({ actorId: actor.id, action: "invitation_created", targetId: created.id, outcome: "pending_delivery" });
+    await transaction.insert(auditEvents).values({
+      actorId: actor.id,
+      action: "invitation_created",
+      targetId: created.id,
+      outcome: "pending_delivery",
+      metadata: { role: created.role },
+    });
     return created;
   });
 
@@ -54,10 +73,23 @@ export async function issueInvitation(actor: CurrentAccount, input: unknown, dep
         gt(authInvitations.expiresAt, sql`clock_timestamp()`),
       )).returning({ id: authInvitations.id });
       if (!delivered) throw new AuthFailure("INVITATION_DELIVERY_FAILED", 503);
-      await transaction.insert(auditEvents).values({ actorId: actor.id, action: "invitation_delivered", targetId: invitation.id, outcome: "accepted" });
+      await transaction.insert(auditEvents).values({
+        actorId: actor.id,
+        action: "invitation_delivered",
+        targetId: invitation.id,
+        outcome: "accepted",
+        metadata: { role: invitation.role },
+      });
     });
   } catch {
     await database.update(authInvitations).set({ revokedAt: sql`clock_timestamp()` }).where(eq(authInvitations.id, invitation.id)).catch(() => undefined);
+    await database.insert(auditEvents).values({
+      actorId: actor.id,
+      action: "invitation_delivery_failed",
+      targetId: invitation.id,
+      outcome: "revoked",
+      metadata: { role: invitation.role },
+    }).catch(() => undefined);
     throw new AuthFailure("INVITATION_DELIVERY_FAILED", 503);
   }
   return { invitationId: invitation.id, email: invitation.email, role: invitation.role, expiresAt: invitation.expiresAt };
