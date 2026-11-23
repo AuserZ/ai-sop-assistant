@@ -34,6 +34,25 @@ export function ingestionDispatchUrl(env: Environment = process.env) {
   return url.toString();
 }
 
+export function chatDispatchEnabled(env: Environment = process.env) {
+  return env.NEXT_PHASE !== "phase-production-build" && env.CHAT_DISPATCH_ENABLED === "1";
+}
+
+export function chatDispatchUrl(env: Environment = process.env) {
+  const raw = env.CHAT_DISPATCH_URL ??
+    (env.INGESTION_DISPATCH_URL
+      ? new URL("/webhook/sop-s11-chat-v1", env.INGESTION_DISPATCH_URL).toString()
+      : env.WORKFLOW_DISPATCH_URL
+        ? new URL("/webhook/sop-s11-chat-v1", env.WORKFLOW_DISPATCH_URL).toString()
+        : "");
+  const url = new URL(raw);
+  if (url.username || url.password || url.search || url.hash ||
+      !["http:", "https:"].includes(url.protocol) || url.pathname !== "/webhook/sop-s11-chat-v1") {
+    throw new Error("Invalid chat dispatch configuration.");
+  }
+  return url.toString();
+}
+
 export function dispatchPrivateKey() { return readServerSecret("WORKFLOW_DISPATCH_PRIVATE_KEY"); }
 export function callbackPublicKey() { return readServerSecret("WORKFLOW_CALLBACK_PUBLIC_KEY"); }
 
@@ -46,5 +65,7 @@ export function probeCallbackDelayMilliseconds(env: Environment = process.env) {
 
 export function workflowDispatcherEnabled(env: Environment = process.env) {
   if (env.NEXT_PHASE === "phase-production-build") return false;
-  return (env.WORKFLOW_DISPATCH_ENABLED === "1" && workflowProbeEnabled(env)) || ingestionDispatchEnabled(env);
+  return (env.WORKFLOW_DISPATCH_ENABLED === "1" && workflowProbeEnabled(env)) ||
+    ingestionDispatchEnabled(env) ||
+    chatDispatchEnabled(env);
 }

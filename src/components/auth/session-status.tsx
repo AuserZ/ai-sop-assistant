@@ -67,7 +67,10 @@ export function SessionStatus() {
     <section className="mt-8 space-y-4" aria-label="Your account">
       <p className="break-words">Signed in as {session.user.name} ({session.user.email}).</p>
       <p>Role: {session.user.role === "ADMIN" ? "Admin" : "Staff"}</p>
-      {session.user.role === "ADMIN" && <div><Link href="/documents" className={linkClassName}>List Document SOP</Link></div>}
+      <nav aria-label="Primary" className="flex flex-wrap items-center gap-4">
+        <Link href="/chat" className={linkClassName}>Chat</Link>
+        <Link href="/documents" className={linkClassName}>List Document SOP</Link>
+      </nav>
       <button type="button" onClick={() => void signOut()} disabled={signingOut} className={buttonClassName}>{signingOut ? "Signing out..." : "Sign out"}</button>
       {error && <p role="alert" className="text-[#991b1b]">{error}</p>}
     </section>

@@ -6,6 +6,7 @@ const temporaryFile = "/tmp/sop-import/credentials.json";
 const managedWorkflows = [
   { id: "sop-s03-probe-v1", path: "/opt/sop/workflows/s03-probe.v1.json" },
   { id: "sop-s05-ingestion-v1", path: "/opt/sop/workflows/s05-ingestion.v1.json" },
+  { id: "sop-s11-chat-v1", path: "/opt/sop/workflows/s11-chat.v1.json" },
 ];
 const dispatchPublic = createPublicKey(await readFile("/run/secrets/workflow-dispatch-public", "utf8"));
 const callbackPrivate = createPrivateKey(await readFile("/run/secrets/workflow-callback-private", "utf8"));

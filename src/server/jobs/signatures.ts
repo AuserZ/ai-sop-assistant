@@ -1,6 +1,14 @@
 import { createPublicKey, randomUUID } from "node:crypto";
 import { errors, importPKCS8, importSPKI, jwtVerify, SignJWT, type JWTPayload } from "jose";
-import { callbackClaims, ingestionBounds, ingestionCallbackClaims, sourceRefClaims, workflowBounds } from "./contracts";
+import {
+  callbackClaims,
+  chatBounds,
+  chatCallbackClaims,
+  ingestionBounds,
+  ingestionCallbackClaims,
+  sourceRefClaims,
+  workflowBounds,
+} from "./contracts";
 import { callbackPublicKey, dispatchPrivateKey } from "./config";
 import { AuthFailure } from "../auth/errors";
 
@@ -38,6 +46,23 @@ export async function verifyIngestionCallback(token: string, publicKey = callbac
     const now = Math.floor(Date.now() / 1000);
     if (claims.exp - claims.iat > ingestionBounds.callbackTokenSeconds || claims.exp <= claims.iat ||
         claims.iat > now + ingestionBounds.clockToleranceSeconds || claims.iat < now - ingestionBounds.callbackTokenSeconds ||
+        claims.nbf > claims.iat) throw new Error("Invalid time window.");
+    return claims;
+  } catch { throw new AuthFailure("INVALID_WORKFLOW_SIGNATURE", 401); }
+}
+
+export async function verifyChatCallback(token: string, publicKey = callbackPublicKey()) {
+  if (token.length > 8192) throw new AuthFailure("INVALID_WORKFLOW_SIGNATURE", 401);
+  try {
+    const verified = await jwtVerify(token, await importSPKI(publicKey, "RS256"), {
+      algorithms: ["RS256"], issuer: "sop-n8n", audience: "sop-app", typ: "JWT",
+      clockTolerance: chatBounds.clockToleranceSeconds,
+      requiredClaims: ["iat", "nbf", "exp", "jti"],
+    });
+    const claims = chatCallbackClaims.parse(verified.payload);
+    const now = Math.floor(Date.now() / 1000);
+    if (claims.exp - claims.iat > chatBounds.callbackTokenSeconds || claims.exp <= claims.iat ||
+        claims.iat > now + chatBounds.clockToleranceSeconds || claims.iat < now - chatBounds.callbackTokenSeconds ||
         claims.nbf > claims.iat) throw new Error("Invalid time window.");
     return claims;
   } catch { throw new AuthFailure("INVALID_WORKFLOW_SIGNATURE", 401); }

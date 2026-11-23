@@ -50,6 +50,13 @@
       "when": 1795429057894,
       "tag": "0006_document_deletion",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1795451558484,
+      "tag": "0007_chat_conversations",
+      "breakpoints": true
     }
   ]
 }

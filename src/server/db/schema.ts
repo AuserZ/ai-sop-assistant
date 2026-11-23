@@ -193,14 +193,17 @@ export const workflowJobs = appSchema.table("workflow_jobs", {
   ownerId: text("owner_id").notNull().references(() => authUsers.id),
   requestKey: uuid("request_key").notNull(),
   inputHash: text("input_hash").notNull(),
-  kind: text().$type<"synthetic_probe" | "document_ingestion">().default("synthetic_probe").notNull(),
+  kind: text().$type<"synthetic_probe" | "document_ingestion" | "chat_turn">().default("synthetic_probe").notNull(),
   scenario: text().$type<"success" | "validation_failure">(),
   documentId: uuid("document_id").references(() => sopDocuments.id),
   sourceSha256: text("source_sha256"),
   pipelineVersion: text("pipeline_version"),
+  conversationId: uuid("conversation_id").references((): AnyPgColumn => chatConversations.id, { onDelete: "cascade" }),
+  assistantMessageId: uuid("assistant_message_id").references((): AnyPgColumn => chatMessages.id, { onDelete: "set null" }),
   state: text().$type<"QUEUED" | "RUNNING" | "COMPLETED" | "FAILED" | "WAITING_FOR_PIPELINE">().default("QUEUED").notNull(),
   stage: text(),
   errorCode: text("error_code"),
+  errorRetryable: boolean("error_retryable"),
   attemptId: uuid("attempt_id").notNull(),
   attemptNumber: integer("attempt_number").default(1).notNull(),
   dispatchNonce: uuid("dispatch_nonce").notNull(),
@@ -220,10 +223,10 @@ export const workflowJobs = appSchema.table("workflow_jobs", {
   uniqueIndex("workflow_jobs_owner_request").on(table.ownerId, table.kind, table.requestKey),
   uniqueIndex("workflow_jobs_ingestion_identity").on(table.documentId, table.sourceSha256, table.pipelineVersion),
   index("workflow_jobs_dispatch_due").on(table.state, table.dispatchNextAt),
-  check("workflow_jobs_kind", sql`${table.kind} in ('synthetic_probe','document_ingestion')`),
+  check("workflow_jobs_kind", sql`${table.kind} in ('synthetic_probe','document_ingestion','chat_turn')`),
   check("workflow_jobs_state", sql`${table.state} in ('QUEUED','RUNNING','COMPLETED','FAILED','WAITING_FOR_PIPELINE')`),
-  check("workflow_jobs_kind_state", sql`(${table.kind} = 'synthetic_probe' and ${table.scenario} in ('success','validation_failure') and ${table.scenario} is not null and ${table.attemptDeadline} is not null and ${table.state} <> 'WAITING_FOR_PIPELINE' and ${table.documentId} is null and ${table.sourceSha256} is null and ${table.pipelineVersion} is null) or (${table.kind} = 'document_ingestion' and ${table.scenario} is null and ${table.documentId} is not null and ${table.sourceSha256} ~ '^[a-f0-9]{64}$' and ${table.sourceSha256} is not null and ${table.pipelineVersion} is not null and ((${table.state} = 'WAITING_FOR_PIPELINE' and ${table.attemptDeadline} is null and ${table.dispatchCount} = 0 and ${table.dispatchLeaseToken} is null and ${table.dispatchLeaseUntil} is null and ${table.dispatchAcceptedAt} is null and ${table.runLeaseUntil} is null and ${table.executionId} is null and ${table.step} = 0 and ${table.attemptNumber} = 1) or (${table.state} in ('QUEUED','RUNNING','COMPLETED','FAILED') and ${table.attemptDeadline} is not null)))`),
-  check("workflow_jobs_attempt_bounds", sql`${table.attemptNumber} between 1 and 3 and ${table.dispatchCount} between 0 and 3 and ${table.step} between 0 and 5`),
+  check("workflow_jobs_kind_state", sql`(${table.kind} = 'synthetic_probe' and ${table.scenario} in ('success','validation_failure') and ${table.scenario} is not null and ${table.attemptDeadline} is not null and ${table.state} <> 'WAITING_FOR_PIPELINE' and ${table.documentId} is null and ${table.sourceSha256} is null and ${table.pipelineVersion} is null and ${table.conversationId} is null and ${table.assistantMessageId} is null) or (${table.kind} = 'document_ingestion' and ${table.scenario} is null and ${table.documentId} is not null and ${table.sourceSha256} ~ '^[a-f0-9]{64}$' and ${table.sourceSha256} is not null and ${table.pipelineVersion} is not null and ${table.conversationId} is null and ${table.assistantMessageId} is null and ((${table.state} = 'WAITING_FOR_PIPELINE' and ${table.attemptDeadline} is null and ${table.dispatchCount} = 0 and ${table.dispatchLeaseToken} is null and ${table.dispatchLeaseUntil} is null and ${table.dispatchAcceptedAt} is null and ${table.runLeaseUntil} is null and ${table.executionId} is null and ${table.step} = 0 and ${table.attemptNumber} = 1) or (${table.state} in ('QUEUED','RUNNING','COMPLETED','FAILED') and ${table.attemptDeadline} is not null))) or (${table.kind} = 'chat_turn' and ${table.scenario} is null and ${table.documentId} is null and ${table.sourceSha256} is null and ${table.pipelineVersion} is null and ${table.conversationId} is not null and ${table.attemptDeadline} is not null and ${table.state} in ('QUEUED','RUNNING','COMPLETED','FAILED'))`),
+  check("workflow_jobs_attempt_bounds", sql`${table.attemptNumber} between 1 and 3 and ${table.dispatchCount} between 0 and 3 and ${table.step} between 0 and 8`),
 ]);
 
 export const sopExtractionPages = appSchema.table("sop_extraction_pages", {
@@ -334,18 +337,130 @@ export const sopVerificationRecords = appSchema.table("sop_verification_records"
   check("sop_verification_records_transition", sql`(${table.decision} = 'APPROVED' and ${table.afterStatus} = 'ACTIVE') or (${table.decision} = 'REJECTED' and ${table.afterStatus} = 'REJECTED')`),
 ]);
 
+export type ChatTurnTimings = {
+  retrievalMs: number;
+  generateMs: number;
+  deterministicCheckMs: number;
+  judgeMs: number;
+  citationResolveMs: number;
+  totalMs: number;
+};
+
+export type ChatTurnRetrievalArtifact = {
+  originalQuestion: string;
+  standaloneQuery: string;
+  passages: Array<{
+    chunkId: string;
+    documentId: string;
+    jobId: string;
+    pipelineVersion: string;
+    sourceSha256: string;
+    contentHash: string;
+    documentTitle: string;
+    fileName: string;
+    sequence: number;
+    sectionPath: string;
+    pageStart: number | null;
+    pageEnd: number | null;
+    contentType: "procedure" | "table" | "narrative" | "mixed";
+    text: string;
+    tokenEstimate: number;
+    rerankScore: number;
+    rrfScore: number;
+    semanticRank: number | null;
+    keywordRank: number | null;
+  }>;
+  retrievalMs: number;
+  mode: "openai" | "synthetic_fixture";
+  embeddingModel: string;
+  rerankerModel: string;
+  rewriteModel: string | null;
+};
+
+export type ChatTurnCandidateArtifact = {
+  isProcedural: boolean;
+  claims: Array<{
+    text: string;
+    stepNumber?: number | null;
+    chunkIds: string[];
+  }>;
+  generateMs: number;
+  answerModel: string;
+};
+
+export const chatConversations = appSchema.table("chat_conversations", {
+  id: uuid().defaultRandom().primaryKey(),
+  ownerId: text("owner_id").notNull().references(() => authUsers.id),
+  title: text().notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index("chat_conversations_owner_updated").on(table.ownerId, table.updatedAt.desc()),
+  check("chat_conversations_title_nonempty", sql`length(btrim(${table.title})) > 0`),
+]);
+
+export const chatMessages = appSchema.table("chat_messages", {
+  id: uuid().defaultRandom().primaryKey(),
+  conversationId: uuid("conversation_id").notNull().references(() => chatConversations.id, { onDelete: "cascade" }),
+  ownerId: text("owner_id").notNull().references(() => authUsers.id),
+  role: text().$type<"user" | "assistant">().notNull(),
+  content: text().notNull(),
+  requestKey: uuid("request_key").notNull(),
+  jobId: uuid("job_id").references((): AnyPgColumn => workflowJobs.id, { onDelete: "set null" }),
+  validationStatus: text("validation_status").$type<"USER_INPUT" | "PASSED" | "NO_EVIDENCE">().notNull(),
+  isProcedural: boolean("is_procedural").default(false).notNull(),
+  timings: jsonb().$type<ChatTurnTimings | null>(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("chat_messages_owner_request_role").on(table.ownerId, table.requestKey, table.role),
+  index("chat_messages_conversation_created").on(table.conversationId, table.createdAt),
+  check("chat_messages_role", sql`${table.role} in ('user','assistant')`),
+  check("chat_messages_content_nonempty", sql`length(btrim(${table.content})) > 0`),
+  check("chat_messages_validation_status", sql`(${table.role} = 'user' and ${table.validationStatus} = 'USER_INPUT' and ${table.isProcedural} = false) or (${table.role} = 'assistant' and ${table.validationStatus} in ('PASSED','NO_EVIDENCE'))`),
+  check("chat_messages_no_evidence_exact", sql`${table.validationStatus} <> 'NO_EVIDENCE' or (${table.content} = 'No SOP found for this question' and ${table.isProcedural} = false)`),
+]);
+
+export const chatMessageSources = appSchema.table("chat_message_sources", {
+  id: uuid().defaultRandom().primaryKey(),
+  messageId: uuid("message_id").notNull().references(() => chatMessages.id, { onDelete: "cascade" }),
+  documentId: uuid("document_id").notNull().references(() => sopDocuments.id),
+  chunkId: uuid("chunk_id").notNull(),
+  sopTitle: text("sop_title").notNull(),
+  sectionPath: text("section_path").notNull(),
+  pageStart: integer("page_start"),
+  pageEnd: integer("page_end"),
+  citationOrder: integer("citation_order").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("chat_message_sources_message_chunk").on(table.messageId, table.chunkId),
+  index("chat_message_sources_message_order").on(table.messageId, table.citationOrder),
+  check("chat_message_sources_order", sql`${table.citationOrder} >= 0`),
+  check("chat_message_sources_pages", sql`(${table.pageStart} is null or ${table.pageStart} >= 1) and (${table.pageEnd} is null or (${table.pageStart} is not null and ${table.pageEnd} >= ${table.pageStart}))`),
+]);
+
+export const chatTurnArtifacts = appSchema.table("chat_turn_artifacts", {
+  jobId: uuid("job_id").primaryKey().references(() => workflowJobs.id, { onDelete: "cascade" }),
+  attemptId: uuid("attempt_id").notNull(),
+  questionText: text("question_text").notNull(),
+  retrievalPayload: jsonb("retrieval_payload").$type<ChatTurnRetrievalArtifact | null>(),
+  candidatePayload: jsonb("candidate_payload").$type<ChatTurnCandidateArtifact | null>(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  check("chat_turn_artifacts_question_nonempty", sql`length(btrim(${table.questionText})) > 0`),
+]);
+
 export const workflowEvents = appSchema.table("workflow_events", {
   id: uuid().defaultRandom().primaryKey(),
   jobId: uuid("job_id").notNull().references(() => workflowJobs.id, { onDelete: "cascade" }),
   attemptId: uuid("attempt_id").notNull(),
   sequence: integer().notNull(),
   step: integer().notNull(),
-  kind: text().$type<"accepted" | "started" | "processing" | "deterministic_pass" | "judge_stub_pass" | "synthetic_completed" | "failed" | "retrying">().notNull(),
+  kind: text().$type<"accepted" | "started" | "processing" | "deterministic_pass" | "judge_stub_pass" | "synthetic_completed" | "failed" | "retrying" | "retrieving" | "reranking" | "generating" | "validating" | "completed" | "no_evidence">().notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
   uniqueIndex("workflow_events_sequence").on(table.jobId, table.sequence),
   uniqueIndex("workflow_events_attempt_step").on(table.jobId, table.attemptId, table.step),
-  check("workflow_events_kind", sql`${table.kind} in ('accepted','started','processing','deterministic_pass','judge_stub_pass','synthetic_completed','failed','retrying')`),
+  check("workflow_events_kind", sql`${table.kind} in ('accepted','started','processing','deterministic_pass','judge_stub_pass','synthetic_completed','failed','retrying','retrieving','reranking','generating','validating','completed','no_evidence')`),
 ]);
 
 export const workflowNonceReceipts = appSchema.table("workflow_nonce_receipts", {

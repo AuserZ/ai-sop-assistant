@@ -20,6 +20,20 @@ export async function lockCurrentAccount(transaction: JobTransaction, account: C
   if (!session) throw new AuthFailure("UNAUTHENTICATED", 401);
 }
 
+export async function lockActiveOwner(transaction: JobTransaction, ownerId: string) {
+  const [user] = await transaction.select({
+    id: authUsers.id,
+    role: authUsers.role,
+    active: authUsers.active,
+  }).from(authUsers).where(eq(authUsers.id, ownerId)).for("share");
+  if (!user?.active) throw new AuthFailure("UNAUTHENTICATED", 401);
+  const [session] = await transaction.select({ id: authSessions.id }).from(authSessions).where(and(
+    eq(authSessions.userId, ownerId), gt(authSessions.expiresAt, sql`clock_timestamp()`),
+  )).limit(1).for("share");
+  if (!session) throw new AuthFailure("UNAUTHENTICATED", 401);
+  return user;
+}
+
 export async function appendEvent(transaction: JobTransaction, job: WorkflowJob, kind: WorkflowEvent["kind"], step: number) {
   const sequence = job.eventSequence + 1;
   await transaction.insert(workflowEvents).values({ jobId: job.id, attemptId: job.attemptId, sequence, step, kind });

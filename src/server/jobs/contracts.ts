@@ -2,6 +2,7 @@ import { z } from "zod";
 
 export const workflowVersion = "s03-probe-v1";
 export const ingestionWorkflowVersion = "s05-ingestion-v1";
+export const chatWorkflowVersion = "s11-chat-v1";
 export const syntheticMarker = "S03_SYNTHETIC_VALIDATED";
 export const workflowBounds = {
   maximumAttempts: 3, maximumDispatches: 3, dispatchBatch: 5,
@@ -18,6 +19,18 @@ export const ingestionBounds = {
   sourceRefTokenSeconds: 45,
   callbackTokenSeconds: 60,
   clockToleranceSeconds: 3,
+} as const;
+export const chatBounds = {
+  maximumAttempts: 3,
+  maximumDispatches: 3,
+  attemptMilliseconds: 90_000,
+  runLeaseMilliseconds: 45_000,
+  callbackTokenSeconds: 60,
+  clockToleranceSeconds: 3,
+  streamMilliseconds: 60_000,
+  pollMilliseconds: 200,
+  heartbeatMilliseconds: 10_000,
+  streamQueueBytes: 65_536,
 } as const;
 
 export const probeInput = z.object({ requestKey: z.uuid(), scenario: z.enum(["success", "validation_failure"]).default("success") }).strict();
@@ -102,6 +115,50 @@ export const sourceRefClaims = z.object({
   exp: z.number().int(),
 }).strict();
 export type SourceRefClaims = z.infer<typeof sourceRefClaims>;
+
+export const chatCallbackPurposes = [
+  "claim",
+  "retrieve",
+  "generate",
+  "validate",
+  "fail",
+] as const;
+export type ChatCallbackPurpose = typeof chatCallbackPurposes[number];
+
+const chatIdentity = {
+  v: z.literal(1),
+  workflow: z.literal(chatWorkflowVersion),
+  jobId: z.uuid(),
+  conversationId: z.uuid(),
+  requestKey: z.uuid(),
+  attemptId: z.uuid(),
+  attemptNumber: z.number().int().min(1).max(chatBounds.maximumAttempts),
+  dispatchNonce: z.uuid(),
+  jti: z.string().regex(/^[A-Za-z0-9:_-]{16,200}$/),
+  iat: z.number().int(),
+  nbf: z.number().int(),
+  exp: z.number().int(),
+  method: z.literal("POST"),
+};
+
+export const chatDispatchClaims = z.object({
+  ...chatIdentity,
+  iss: z.literal("sop-app"),
+  aud: z.literal("sop-n8n"),
+  purpose: z.literal("dispatch"),
+  path: z.literal("/webhook/sop-s11-chat-v1"),
+}).strict();
+export type ChatDispatchClaims = z.infer<typeof chatDispatchClaims>;
+
+export const chatCallbackClaims = z.object({
+  ...chatIdentity,
+  iss: z.literal("sop-n8n"),
+  aud: z.literal("sop-app"),
+  purpose: z.enum(chatCallbackPurposes),
+  path: z.string().max(200),
+  executionId: z.string().regex(/^[A-Za-z0-9_-]{1,128}$/),
+}).strict();
+export type ChatCallbackClaims = z.infer<typeof chatCallbackClaims>;
 
 export function parseEventCursor(value: string | null, jobId: string) {
   if (!value) return 0;

@@ -102,6 +102,8 @@ services:
       WORKFLOW_DISPATCH_URL: http://n8n-main:5678/webhook/sop-s03-probe-v1
       INGESTION_DISPATCH_ENABLED: "1"
       INGESTION_DISPATCH_URL: http://n8n-main:5678/webhook/sop-s05-ingestion-v1
+      CHAT_DISPATCH_ENABLED: "1"
+      CHAT_DISPATCH_URL: http://n8n-main:5678/webhook/sop-s11-chat-v1
       PADDLEOCR_URL: http://paddleocr:8091
       CONVERSION_URL: http://convert-worker:8092
       OPENAI_EMBEDDING_MODEL: text-embedding-3-small

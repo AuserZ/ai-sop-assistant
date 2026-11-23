@@ -16,9 +16,10 @@ The local PostgreSQL bootstrap installs pgvector and assigns three identities. `
 | `sop_extraction_pages` | Original/normalized text, meaningful page/section/layout mapping, confidence when available |
 | `sop_chunks` | Document/snapshot, section/page/order, original text, content type/hash, full-text data, embedding and model/version |
 | `sop_verification_issues` | Page/region, severity, reason, resolution and reviewer; preserve the verification audit required by section 5 |
-| `chat_conversations` | Owner and conversation metadata |
-| `chat_messages` | Conversation, role/content, request identity, validation outcome and timestamps |
-| `chat_message_sources` | Message/document/chunk references and section/page snapshots, with current availability resolved separately |
+| `chat_conversations` (implemented in S11, `0007_chat_conversations.sql`) | Owner-scoped conversations indexed on `(owner_id, updated_at desc)` with immutable `owner_id` (`UPDATE` granted only on `title, updated_at`) |
+| `chat_messages` (implemented in S11, `0007_chat_conversations.sql`) | Immutable owner-scoped turns with `UNIQUE (owner_id, request_key, role)`, `CHECK` constraints blocking unvalidated drafts and enforcing exact `No SOP found for this question` on `NO_EVIDENCE`, and trigger `app.enforce_chat_message_owner()` preventing cross-user injection (`23514`) |
+| `chat_message_sources` (implemented in S11, `0007_chat_conversations.sql`) | Verified citations with `UNIQUE (message_id, chunk_id)`, no cascade delete on `sop_chunks` (preserving historical unavailable citations after SOP cleanup), and trigger `app.enforce_chat_message_source_passed()` rejecting sources on non-`PASSED` messages (`23514`) |
+| `chat_turn_artifacts` (implemented in S11, `0007_chat_conversations.sql`) | Private server-only staging table (`job_id` PK) holding attempt-bound retrieval and candidate drafts between n8n stages; deleted unconditionally on terminal commit, failure, or timeout reconciliation and never queried by browser SSE |
 | `audit_events` | Actor/action/target/time/outcome and sanitized metadata |
 | `evaluation_runs` | Dataset/configuration/model/workflow versions, results and timings |
 

@@ -26,11 +26,11 @@ Requests and callbacks require signed authentication, timestamp/nonce freshness,
 
 PostgreSQL stores durable job state. Reconcile after worker/Redis restart. File references expire; renew only through backend-authorized access to the intended object. Validate object references to prevent SSRF or arbitrary bucket access. Reject deleted/stale-snapshot work before changing eligible state.
 
-## Browser progress
+## Browser progress and S11 chat workflow (`sop-s11-chat-v1`)
 
-Queue Mode alone does not make browser SSE work. Spike an authenticated bridge from actual workflow stages to Next.js, including proxy buffering, disconnect/reconnect, backpressure, ordering, request correlation and replay. Callback+Redis pub/sub is an illustrative mechanism, not an approved transport choice.
+Queue Mode bridges to Next.js via RS256-signed dispatch (`POST /webhook/sop-s11-chat-v1`, exact 17 claims, `workflow: "s11-chat-v1"`, `exp - iat <= 60s`, body `{}`) and staged internal callbacks (`POST /api/internal/chat/{jobId}/{claim,retrieve,generate,validate,fail}`, `iss: "sop-n8n"`, `aud: "sop-app"`, nonce replay protection in `app.workflow_nonce_receipts`, body `{}`). Each callback returns `200 { ok: true, terminal: boolean }` so n8n stops cleanly on `no_evidence` or terminal failure.
 
-Only allowlisted progress metadata crosses to the browser before validation. Do not forward arbitrary node output, exception bodies, draft answers or token deltas. Next.js releases a checked final answer, exact no-evidence fallback, or distinct safe service error. The backend rechecks current user/source eligibility and persists final messages idempotently.
+Only allowlisted progress metadata (`accepted`, `retrieving`, `reranking`, `generating`, `validating`) crosses to the browser before validation. Next.js never forwards arbitrary node output, exception bodies, draft answers, or token deltas; unvalidated drafts live strictly in server-only `app.chat_turn_artifacts` and are deleted immediately on terminal commit, failure, or reconciliation. Next.js rechecks live account status and live ACTIVE source eligibility before emitting `completed`, persists final messages idempotently via `UNIQUE (owner_id, request_key, role)`, and emits exact `No SOP found for this question` on insufficient/revoked evidence or a distinct static safe error on provider/validation failure.
 
 ## Export and verification
 

@@ -1,11 +1,21 @@
 import { randomUUID } from "node:crypto";
 import { and, asc, eq, isNull, lte, ne, or, sql } from "drizzle-orm";
 import { getDatabase } from "../db/client";
-import { auditEvents, sopDocuments, workflowJobs } from "../db/schema";
+import { auditEvents, chatTurnArtifacts, sopDocuments, workflowJobs } from "../db/schema";
 import { reconcileDocumentDeletions } from "../documents/service";
 import { appendEvent, type JobDatabase } from "./service";
-import { ingestionBounds, ingestionWorkflowVersion, workflowBounds, workflowVersion } from "./contracts";
 import {
+  chatBounds,
+  chatDispatchClaims,
+  chatWorkflowVersion,
+  ingestionBounds,
+  ingestionWorkflowVersion,
+  workflowBounds,
+  workflowVersion,
+} from "./contracts";
+import {
+  chatDispatchEnabled,
+  chatDispatchUrl,
   ingestionDispatchEnabled,
   ingestionDispatchUrl,
   workflowDispatchUrl,
@@ -17,7 +27,11 @@ import { signDispatch } from "./signatures";
 export async function reconcileJobs(database: JobDatabase = getDatabase()) {
   await database.transaction(async (transaction) => {
     const abandoned = await transaction.select().from(workflowJobs).where(and(
-      or(eq(workflowJobs.kind, "synthetic_probe"), eq(workflowJobs.kind, "document_ingestion")),
+      or(
+        eq(workflowJobs.kind, "synthetic_probe"),
+        eq(workflowJobs.kind, "document_ingestion"),
+        eq(workflowJobs.kind, "chat_turn"),
+      ),
       or(eq(workflowJobs.state, "QUEUED"), eq(workflowJobs.state, "RUNNING")),
       or(lte(workflowJobs.attemptDeadline, sql`clock_timestamp()`), and(eq(workflowJobs.state, "RUNNING"), lte(workflowJobs.runLeaseUntil, sql`clock_timestamp()`))),
     )).limit(workflowBounds.dispatchBatch).for("update", { skipLocked: true });
@@ -39,12 +53,29 @@ export async function reconcileJobs(database: JobDatabase = getDatabase()) {
           continue;
         }
       }
-      const maximumAttempts = job.kind === "document_ingestion" ? ingestionBounds.maximumAttempts : workflowBounds.maximumAttempts;
-      const attemptMilliseconds = job.kind === "document_ingestion" ? ingestionBounds.attemptMilliseconds : workflowBounds.attemptMilliseconds;
+      if (job.kind === "chat_turn") {
+        await transaction.delete(chatTurnArtifacts).where(eq(chatTurnArtifacts.jobId, job.id));
+      }
+      const maximumAttempts =
+        job.kind === "document_ingestion"
+          ? ingestionBounds.maximumAttempts
+          : job.kind === "chat_turn"
+            ? chatBounds.maximumAttempts
+            : workflowBounds.maximumAttempts;
+      const attemptMilliseconds =
+        job.kind === "document_ingestion"
+          ? ingestionBounds.attemptMilliseconds
+          : job.kind === "chat_turn"
+            ? chatBounds.attemptMilliseconds
+            : workflowBounds.attemptMilliseconds;
       if (job.attemptNumber >= maximumAttempts) {
         await transaction.update(workflowJobs).set({
           state: "FAILED",
           ...(job.kind === "document_ingestion" ? { errorCode: "INGESTION_TIMEOUT" } : {}),
+          ...(job.kind === "chat_turn" ? { errorCode: "CHAT_TIMEOUT", errorRetryable: true } : {}),
+          dispatchLeaseToken: null,
+          dispatchLeaseUntil: null,
+          runLeaseUntil: null,
           updatedAt: sql`clock_timestamp()`,
         }).where(eq(workflowJobs.id, job.id));
         await appendEvent(transaction, job, "failed", 8);
@@ -68,6 +99,7 @@ export async function reconcileJobs(database: JobDatabase = getDatabase()) {
           state: "QUEUED",
           stage: null,
           errorCode: null,
+          errorRetryable: null,
           attemptId: randomUUID(),
           attemptNumber: job.attemptNumber + 1,
           dispatchNonce: randomUUID(),
@@ -194,6 +226,68 @@ export async function dispatchIngestionJobs(database: JobDatabase = getDatabase(
   }));
 }
 
+export async function dispatchChatJobs(database: JobDatabase = getDatabase(), send: typeof fetch = fetch,
+  sign = signDispatch, destination = chatDispatchUrl(), signal?: AbortSignal) {
+  const jobs = await database.transaction(async (transaction) => {
+    const due = await transaction.select().from(workflowJobs).where(and(
+      eq(workflowJobs.kind, "chat_turn"),
+      eq(workflowJobs.state, "QUEUED"), isNull(workflowJobs.dispatchAcceptedAt),
+      lte(workflowJobs.dispatchNextAt, sql`clock_timestamp()`),
+      sql`${workflowJobs.dispatchCount} < ${chatBounds.maximumDispatches}`,
+      sql`${workflowJobs.attemptDeadline} > clock_timestamp()`,
+      or(isNull(workflowJobs.dispatchLeaseUntil), lte(workflowJobs.dispatchLeaseUntil, sql`clock_timestamp()`)),
+      sql`exists (select 1 from app.auth_users u where u.id = ${workflowJobs.ownerId} and u.active = true)`,
+    )).orderBy(asc(workflowJobs.dispatchNextAt)).limit(workflowBounds.dispatchBatch).for("update", { skipLocked: true });
+    for (const job of due) {
+      job.dispatchLeaseToken = randomUUID();
+      job.dispatchCount++;
+      await transaction.update(workflowJobs).set({
+        dispatchLeaseToken: job.dispatchLeaseToken, dispatchCount: job.dispatchCount,
+        dispatchLeaseUntil: sql`clock_timestamp() + ${workflowBounds.dispatchLeaseMilliseconds} * interval '1 millisecond'`,
+      }).where(eq(workflowJobs.id, job.id));
+    }
+    return due;
+  });
+  await Promise.all(jobs.map(async (job) => {
+    if (job.kind !== "chat_turn" || !job.conversationId || !job.attemptDeadline) return;
+    if (signal?.aborted) return;
+    let accepted = false;
+    try {
+      const now = Math.floor(Date.now() / 1000);
+      const claims = chatDispatchClaims.parse({
+        v: 1,
+        workflow: chatWorkflowVersion,
+        purpose: "dispatch",
+        iss: "sop-app",
+        aud: "sop-n8n",
+        method: "POST",
+        path: "/webhook/sop-s11-chat-v1",
+        jobId: job.id,
+        conversationId: job.conversationId,
+        requestKey: job.requestKey,
+        attemptId: job.attemptId,
+        attemptNumber: job.attemptNumber,
+        dispatchNonce: job.dispatchNonce,
+        jti: job.dispatchNonce,
+        iat: now,
+        nbf: now,
+        exp: Math.min(now + chatBounds.callbackTokenSeconds, Math.floor(job.attemptDeadline.getTime() / 1000)),
+      });
+      const token = await sign(claims);
+      const response = await send(destination, { method: "POST", redirect: "error",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` }, body: "{}",
+        signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(workflowBounds.fetchTimeoutMilliseconds)]) : AbortSignal.timeout(workflowBounds.fetchTimeoutMilliseconds),
+      });
+      accepted = response.ok;
+      await response.body?.cancel();
+    } catch { /* The committed lease makes interrupted delivery retryable. */ }
+    await database.update(workflowJobs).set({
+      ...(accepted ? { dispatchAcceptedAt: sql`clock_timestamp()` } : {}), dispatchLeaseToken: null, dispatchLeaseUntil: null,
+      dispatchNextAt: sql`clock_timestamp() + ${Math.min(2 ** job.dispatchCount, 8)} * interval '1 second'`,
+    }).where(and(eq(workflowJobs.id, job.id), eq(workflowJobs.attemptId, job.attemptId), eq(workflowJobs.dispatchLeaseToken, job.dispatchLeaseToken!)));
+  }));
+}
+
 export function startWorkflowDispatcher() {
   if (!workflowDispatcherEnabled()) return;
   const registry = globalThis as typeof globalThis & { sopWorkflowDispatcher?: AbortController };
@@ -212,6 +306,9 @@ export function startWorkflowDispatcher() {
       }
       if (ingestionDispatchEnabled()) {
         await dispatchIngestionJobs(undefined, undefined, undefined, undefined, controller.signal);
+      }
+      if (chatDispatchEnabled()) {
+        await dispatchChatJobs(undefined, undefined, undefined, undefined, controller.signal);
       }
     })().catch(() => undefined).finally(() => { running = false; });
   }, 1000);
