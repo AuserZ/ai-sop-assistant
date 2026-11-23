@@ -21,10 +21,11 @@ The main agent acts as project manager and schedules the four specialist roles i
 1. Read the complete protected PRDs, compact [PLANS.md](../PLANS.md) and actual implementation. Run `node .codex/scripts/check-prd-integrity.mjs` before edits. Select the earliest sprint whose prerequisites allow work.
 2. Spawn **fresh specialist subagents per sprint** (skip DevOps when Docker/Compose/CI/runtime files are untouched). Assign bounded file ownership, requirement IDs and [sprint preflight checklist](sprint-preflight-checklist.md) upfront. Tell workers they share the workspace and must preserve other edits.
 3. Implement the smallest coherent increment with real success/failure automated tests; run `check:prd`, `lint`, `typecheck` and `npm test` cleanly before review.
-4. **2-pass review & CI cadence:**
-   - **Pass 1 (Pre-push):** Independent Security and QA review the local implementation once.
+4. **2-pass QA review & CI cadence (Security agent deferred until all sprints finish):**
+   - Per user decision on 23 November 2026, `security-expert` subagent invocation is deferred until all development sprints are complete; security invariants continue to be enforced during every sprint via [sprint preflight checklist](sprint-preflight-checklist.md) and QA negative-boundary verification.
+   - **Pass 1 (Pre-push):** Independent QA reviews the local implementation and security/negative boundaries once.
    - **Fix → Push → CI:** Implementer fixes findings, commits/pushes, and the lead waits once (~12 min for full CI unless local Docker or authenticated read-only `gh` CLI is available) rather than polling repeatedly. `.github/workflows/ci.yml` path-filters standalone `paddleocr` fail-safely when OCR/CI/PRD files did not change.
-   - **Pass 2 (Single closure pass):** Independent Security and QA verify the fix diff and green CI run together in one wakeup using compact table receipts ([verification template](sprint-verification-template.md)).
+   - **Pass 2 (Single closure pass):** Independent QA verifies the fix diff and green CI run together in one wakeup using a compact table receipt ([verification template](sprint-verification-template.md)).
 5. Save compact evidence in `docs/verification/Sxx.md`, update compact `PLANS.md` (archiving narrative history in [verification history](verification/history.md)) and `AGENTS.md`, rerun PRD integrity, push closure, and recommend `/compact` or a fresh chat before starting the next sprint.
 
 S01–S07 are VERIFIED against their recorded evidence (archived in [verification history](verification/history.md)). Next permitted sprint is S08; later sprints require predecessor verification. Provider configuration and policy decisions remain gated, with synthetic fixtures where the plan permits. P1/P2, production release and real company-data processing retain their approval gates. V01 technical acceptance, production approval and V02 pilot acceptance remain separate outcomes.
