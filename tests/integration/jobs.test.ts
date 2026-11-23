@@ -117,7 +117,8 @@ describe("ADR08/D3 durable jobs, attempts, nonce receipts and outbox fencing", (
   });
 
   it("accepts completion before dispatch acknowledgement without status regression", async () => {
-    await database.update(schema.workflowJobs).set({ dispatchNextAt: new Date(Date.now() + 60000) }).where(eq(schema.workflowJobs.state, "QUEUED"));
+    await database.update(schema.workflowJobs).set({ dispatchNextAt: new Date(Date.now() + 60000) })
+      .where(and(eq(schema.workflowJobs.kind, "synthetic_probe"), eq(schema.workflowJobs.state, "QUEUED")));
     const saved = await job();
     const send = vi.fn(async () => {
       for (let step = 1; step <= 5; step++) await applyWorkflowCallback(callback(saved, step), database);
@@ -131,7 +132,8 @@ describe("ADR08/D3 durable jobs, attempts, nonce receipts and outbox fencing", (
   });
 
   it("starts the entire bounded dispatch batch together, and competing dispatchers cannot double-claim it", async () => {
-    await database.update(schema.workflowJobs).set({ dispatchNextAt: new Date(Date.now() + 60000) }).where(eq(schema.workflowJobs.state, "QUEUED"));
+    await database.update(schema.workflowJobs).set({ dispatchNextAt: new Date(Date.now() + 60000) })
+      .where(and(eq(schema.workflowJobs.kind, "synthetic_probe"), eq(schema.workflowJobs.state, "QUEUED")));
     const jobs = await Promise.all(Array.from({ length: workflowBounds.dispatchBatch }, () => job()));
     let release!: () => void;
     let signalStarted!: () => void;
@@ -149,7 +151,8 @@ describe("ADR08/D3 durable jobs, attempts, nonce receipts and outbox fencing", (
   });
 
   it("bounds delivery retries, recovers lost leases and fences stale attempts after reconciliation", async () => {
-    await database.update(schema.workflowJobs).set({ dispatchNextAt: new Date(Date.now() + 60000) }).where(eq(schema.workflowJobs.state, "QUEUED"));
+    await database.update(schema.workflowJobs).set({ dispatchNextAt: new Date(Date.now() + 60000) })
+      .where(and(eq(schema.workflowJobs.kind, "synthetic_probe"), eq(schema.workflowJobs.state, "QUEUED")));
     const saved = await job();
     const failed = vi.fn(async () => { throw new Error("synthetic network interruption"); });
     for (let attempt = 0; attempt < workflowBounds.maximumDispatches + 1; attempt++) {

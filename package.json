@@ -12,7 +12,7 @@
     "lint": "eslint . --max-warnings 0",
     "typecheck": "next typegen && tsc --noEmit",
     "test": "vitest run tests/unit",
-    "test:db": "vitest run tests/integration",
+    "test:db": "vitest run --no-file-parallelism tests/integration",
     "test:browser": "playwright test",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",

@@ -1,5 +1,5 @@
 import { createHash, generateKeyPairSync, randomUUID } from "node:crypto";
-import { asc, count, eq } from "drizzle-orm";
+import { and, asc, count, eq, ne } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/postgres-js";
 import { importPKCS8, SignJWT } from "jose";
 import postgres from "postgres";
@@ -401,6 +401,10 @@ describe("D3/ADR04/05/08/11/21/22 end-to-end ingestion persistence, embeddings a
     expect(attempt2.attemptId).not.toBe(job.attemptId);
 
     const sentTokens: string[] = [];
+    await database
+      .update(schema.workflowJobs)
+      .set({ dispatchNextAt: new Date(Date.now() + 60_000) })
+      .where(and(eq(schema.workflowJobs.kind, "document_ingestion"), eq(schema.workflowJobs.state, "QUEUED"), ne(schema.workflowJobs.id, job.id)));
     await database.update(schema.workflowJobs).set({ dispatchNextAt: new Date(0) }).where(eq(schema.workflowJobs.id, job.id));
     await dispatchIngestionJobs(
       database,
