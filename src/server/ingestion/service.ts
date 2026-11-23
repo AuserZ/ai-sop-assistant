@@ -121,7 +121,7 @@ async function applyFailureTransition(
       await transaction
         .update(sopDocuments)
         .set({ status: "UPLOADED", processingErrorCode: null, updatedAt: sql`clock_timestamp()` })
-        .where(eq(sopDocuments.id, job.documentId));
+        .where(and(eq(sopDocuments.id, job.documentId), ne(sopDocuments.status, "ACTIVE")));
     }
     return true;
   }
@@ -140,7 +140,7 @@ async function applyFailureTransition(
     await transaction
       .update(sopDocuments)
       .set({ status: "FAILED", processingErrorCode: errorCode, updatedAt: sql`clock_timestamp()` })
-      .where(eq(sopDocuments.id, job.documentId));
+      .where(and(eq(sopDocuments.id, job.documentId), ne(sopDocuments.status, "ACTIVE")));
     await transaction.insert(auditEvents).values({
       actorId: job.ownerId,
       action: "document.ingestion_failed",
@@ -199,6 +199,14 @@ export async function claimIngestionStage(
       return { job, duplicate: true };
     }
     if (job.state !== "QUEUED") throw new AuthFailure("INVALID_WORKFLOW_STATE", 409);
+
+    const [doc] = await transaction
+      .select({ status: sopDocuments.status })
+      .from(sopDocuments)
+      .where(eq(sopDocuments.id, job.documentId!))
+      .for("update");
+    if (!doc) throw new AuthFailure("NOT_FOUND", 404);
+    if (doc.status === "ACTIVE") throw new AuthFailure("DOCUMENT_ALREADY_ACTIVE", 409);
 
     await transaction
       .update(workflowJobs)
@@ -301,6 +309,7 @@ export async function extractIngestionStage(
 
     const [document] = await transaction.select().from(sopDocuments).where(eq(sopDocuments.id, job.documentId!));
     if (!document || document.sha256 !== job.sourceSha256) throw new AuthFailure("NOT_FOUND", 404);
+    if (document.status === "ACTIVE") throw new AuthFailure("DOCUMENT_ALREADY_ACTIVE", 409);
 
     await transaction
       .update(workflowJobs)
@@ -656,6 +665,14 @@ export async function completeIngestionStage(
       throw new AuthFailure("INGESTION_INCOMPLETE_ARTIFACTS", 409);
     }
 
+    const [doc] = await transaction
+      .select({ status: sopDocuments.status })
+      .from(sopDocuments)
+      .where(eq(sopDocuments.id, job.documentId!))
+      .for("update");
+    if (!doc) throw new AuthFailure("NOT_FOUND", 404);
+    if (doc.status === "ACTIVE") throw new AuthFailure("DOCUMENT_ALREADY_ACTIVE", 409);
+
     await transaction
       .update(workflowJobs)
       .set({
@@ -675,10 +692,11 @@ export async function completeIngestionStage(
         status: "PENDING_VERIFICATION",
         processedJobId: job.id,
         processedPipelineVersion: job.pipelineVersion,
+        processedAttemptId: job.attemptId,
         processingErrorCode: null,
         updatedAt: sql`clock_timestamp()`,
       })
-      .where(eq(sopDocuments.id, job.documentId!));
+      .where(and(eq(sopDocuments.id, job.documentId!), ne(sopDocuments.status, "ACTIVE")));
 
     await transaction.insert(auditEvents).values({
       actorId: job.ownerId,

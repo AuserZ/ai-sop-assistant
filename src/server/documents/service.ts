@@ -42,6 +42,12 @@ async function documentDto(transaction: Transaction, intent: UploadIntent, expir
           status: sopDocuments.status,
           previewKey: sopDocuments.previewKey,
           processingErrorCode: sopDocuments.processingErrorCode,
+          processedJobId: sopDocuments.processedJobId,
+          processedAttemptId: sopDocuments.processedAttemptId,
+          activeJobId: sopDocuments.activeJobId,
+          activeAttemptId: sopDocuments.activeAttemptId,
+          verifiedAt: sopDocuments.verifiedAt,
+          rejectionReason: sopDocuments.rejectionReason,
         })
         .from(sopDocuments)
         .where(eq(sopDocuments.id, intent.id))
@@ -68,7 +74,12 @@ async function documentDto(transaction: Transaction, intent: UploadIntent, expir
   if (accepted && (!job || !doc)) throw new Error("Accepted document job missing.");
 
   let summary: DocumentUploadDto["summary"] = null;
-  if (accepted && doc && job && doc.status === "PENDING_VERIFICATION") {
+  if (
+    accepted &&
+    doc &&
+    job &&
+    (doc.status === "PENDING_VERIFICATION" || doc.status === "ACTIVE" || doc.status === "REJECTED")
+  ) {
     const [pageSummary] = await transaction
       .select({ total: count() })
       .from(sopExtractionPages)
@@ -101,6 +112,12 @@ async function documentDto(transaction: Transaction, intent: UploadIntent, expir
     status: accepted && doc ? doc.status : null,
     failureCode: expired && !accepted ? "UPLOAD_EXPIRED" : uploadStatus === "FAILED" ? intent.failureCode ?? "UPLOAD_RETRY_REQUIRED" : null,
     processingErrorCode: accepted && doc ? doc.processingErrorCode : null,
+    processedJobId: accepted && doc ? (doc.processedJobId ?? null) : null,
+    processedAttemptId: accepted && doc ? (doc.processedAttemptId ?? null) : null,
+    activeJobId: accepted && doc ? (doc.activeJobId ?? null) : null,
+    activeAttemptId: accepted && doc ? (doc.activeAttemptId ?? null) : null,
+    verifiedAt: accepted && doc?.verifiedAt ? doc.verifiedAt.toISOString() : null,
+    rejectionReason: accepted && doc ? (doc.rejectionReason ?? null) : null,
     summary,
     job: job
       ? {
@@ -197,7 +214,12 @@ export async function finalizeDocumentUpload(account: CurrentAccount, id: string
             ),
           )
           .for("update");
-        if (job && (job.state === "FAILED" || job.state === "WAITING_FOR_PIPELINE")) {
+        const [doc] = await transaction
+          .select({ status: sopDocuments.status })
+          .from(sopDocuments)
+          .where(eq(sopDocuments.id, id))
+          .for("update");
+        if (doc && doc.status !== "ACTIVE" && job && (job.state === "FAILED" || job.state === "WAITING_FOR_PIPELINE")) {
           await transaction.delete(sopChunks).where(eq(sopChunks.jobId, job.id));
           await transaction.delete(sopExtractionPages).where(eq(sopExtractionPages.jobId, job.id));
           await transaction.delete(sopVerificationIssues).where(eq(sopVerificationIssues.jobId, job.id));

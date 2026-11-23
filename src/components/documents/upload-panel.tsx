@@ -162,9 +162,15 @@ export function UploadPanel() {
   function acceptedStatusMessage(saved: DocumentUploadDto) {
     if (saved.status === "PROCESSING") return "Processing SOP document...";
     if (saved.status === "PENDING_VERIFICATION") return "Extracted and ready for Admin verification.";
+    if (saved.status === "ACTIVE") return "Verified and active for retrieval.";
+    if (saved.status === "REJECTED") return "Extraction rejected during Admin verification.";
     if (saved.status === "FAILED") return processingFailureMessage(saved);
     return "Queued for processing.";
   }
+
+  const canOpenReview =
+    document?.uploadStatus === "ACCEPTED" &&
+    (document.status === "PENDING_VERIFICATION" || document.status === "REJECTED" || document.status === "ACTIVE");
 
   return <section className="mt-8 space-y-6" aria-label="SOP upload" aria-busy={busy}>
     {document ? <>
@@ -177,7 +183,7 @@ export function UploadPanel() {
             <p role={document.status === "FAILED" ? "alert" : undefined} className={document.status === "FAILED" ? "text-[#991b1b]" : undefined}>
               {acceptedStatusMessage(document)}
             </p>
-            {document.status === "PENDING_VERIFICATION" && document.summary && (
+            {(document.status === "PENDING_VERIFICATION" || document.status === "ACTIVE" || document.status === "REJECTED") && document.summary && (
               <p className="text-sm text-[#4b5563]">
                 {document.summary.pageCount} {document.summary.pageCount === 1 ? "page" : "pages"}, {document.summary.chunkCount}{" "}
                 {document.summary.chunkCount === 1 ? "chunk" : "chunks"}, {document.summary.issueCount}{" "}
@@ -195,6 +201,11 @@ export function UploadPanel() {
           if (attempt.current) await upload(attempt.current, signal);
           else await finish(document.id, signal);
         })}>{file ? "Retry upload" : "Check upload"}</button>}
+        {canOpenReview && (
+          <Link href={`/documents/${document.id}/verify`} className={buttonClassName}>
+            Review and verify
+          </Link>
+        )}
         {document.uploadStatus === "ACCEPTED" && (document.status === "FAILED" || document.job?.state === "WAITING_FOR_PIPELINE") && (
           <button className={buttonClassName} disabled={busy} onClick={() => void run(async (signal) => {
             setPhase("Re-queuing processing...");
@@ -207,7 +218,7 @@ export function UploadPanel() {
             setDocument((await readUpload(document.id, signal)).document);
           })}>Refresh status</button>
         )}
-        <button className={document.uploadStatus === "ACCEPTED" && document.status !== "FAILED" ? buttonClassName : linkClassName} disabled={busy} onClick={startAnother}>Choose another file</button>
+        <button className={document.uploadStatus === "ACCEPTED" && document.status !== "FAILED" && !canOpenReview ? buttonClassName : linkClassName} disabled={busy} onClick={startAnother}>Choose another file</button>
       </div>
     </> : <form noValidate className="max-w-xl space-y-6" onSubmit={(event) => { void handleSubmit(submit)(event); }} onChange={editForm}>
       <h2 className="text-xl font-semibold">Upload SOP</h2>

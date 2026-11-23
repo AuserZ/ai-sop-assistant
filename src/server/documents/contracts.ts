@@ -25,7 +25,7 @@ export const uploadInput = z.object({
 export const emptyDocumentBody = z.object({}).strict();
 export const documentIdInput = z.uuid();
 export type UploadInput = z.infer<typeof uploadInput>;
-export type DocumentLifecycleStatus = "UPLOADED" | "PROCESSING" | "PENDING_VERIFICATION" | "FAILED";
+export type DocumentLifecycleStatus = "UPLOADED" | "PROCESSING" | "PENDING_VERIFICATION" | "ACTIVE" | "REJECTED" | "FAILED";
 export type DocumentJobState = "QUEUED" | "RUNNING" | "COMPLETED" | "FAILED" | "WAITING_FOR_PIPELINE";
 export type DocumentProcessingSummary = {
   pageCount: number;
@@ -44,6 +44,12 @@ export type DocumentUploadDto = {
   status: DocumentLifecycleStatus | null;
   failureCode: string | null;
   processingErrorCode: string | null;
+  processedJobId: string | null;
+  processedAttemptId?: string | null;
+  activeJobId: string | null;
+  activeAttemptId?: string | null;
+  verifiedAt: string | null;
+  rejectionReason: string | null;
   summary: DocumentProcessingSummary | null;
   job: {
     id: string;

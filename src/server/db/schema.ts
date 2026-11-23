@@ -152,16 +152,26 @@ export const sopDocuments = appSchema.table("sop_documents", {
   sha256: text().notNull(),
   originalKey: text("original_key").notNull().unique(),
   uploadedBy: text("uploaded_by").notNull().references(() => authUsers.id),
-  status: text().$type<"UPLOADED" | "PROCESSING" | "PENDING_VERIFICATION" | "FAILED">().default("UPLOADED").notNull(),
+  status: text().$type<"UPLOADED" | "PROCESSING" | "PENDING_VERIFICATION" | "ACTIVE" | "REJECTED" | "FAILED">().default("UPLOADED").notNull(),
   previewKey: text("preview_key").unique(),
   latestJobId: uuid("latest_job_id").references((): AnyPgColumn => workflowJobs.id),
   processedJobId: uuid("processed_job_id").references((): AnyPgColumn => workflowJobs.id),
   processedPipelineVersion: text("processed_pipeline_version"),
+  processedAttemptId: uuid("processed_attempt_id"),
+  activeJobId: uuid("active_job_id").references((): AnyPgColumn => workflowJobs.id),
+  activePipelineVersion: text("active_pipeline_version"),
+  activeAttemptId: uuid("active_attempt_id"),
+  verifiedBy: text("verified_by").references(() => authUsers.id),
+  verifiedAt: timestamp("verified_at", { withTimezone: true }),
+  rejectionReason: text("rejection_reason"),
   processingErrorCode: text("processing_error_code"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
-  check("sop_documents_status", sql`${table.status} in ('UPLOADED','PROCESSING','PENDING_VERIFICATION','FAILED')`),
+  index("sop_documents_status_verified").on(table.status, table.verifiedAt),
+  check("sop_documents_status", sql`${table.status} in ('UPLOADED','PROCESSING','PENDING_VERIFICATION','ACTIVE','REJECTED','FAILED')`),
+  check("sop_documents_activation_binding", sql`(${table.status} = 'ACTIVE' and ${table.activeJobId} is not null and ${table.activePipelineVersion} is not null and ${table.activeAttemptId} is not null and ${table.processedJobId} = ${table.activeJobId} and ${table.processedPipelineVersion} = ${table.activePipelineVersion} and ${table.processedAttemptId} = ${table.activeAttemptId} and ${table.verifiedBy} is not null and ${table.verifiedAt} is not null and ${table.rejectionReason} is null) or (${table.status} <> 'ACTIVE' and ${table.activeJobId} is null and ${table.activePipelineVersion} is null and ${table.activeAttemptId} is null)`),
+  check("sop_documents_rejection_binding", sql`(${table.status} = 'REJECTED' and ${table.verifiedBy} is not null and ${table.verifiedAt} is not null and ${table.rejectionReason} is not null and length(btrim(${table.rejectionReason})) > 0) or (${table.status} <> 'REJECTED' and ${table.rejectionReason} is null)`),
   check("sop_documents_sha256", sql`${table.sha256} ~ '^[a-f0-9]{64}$'`),
   check("sop_documents_bytes", sql`${table.sizeBytes} between 1 and 20000000`),
 ]);
@@ -218,7 +228,7 @@ export const sopExtractionPages = appSchema.table("sop_extraction_pages", {
   ocrConfidence: real("ocr_confidence"),
   ocrModel: text("ocr_model"),
   layoutMetadata: jsonb("layout_metadata").$type<Record<string, unknown>>(),
-  verificationStatus: text("verification_status").$type<"UNVERIFIED">().default("UNVERIFIED").notNull(),
+  verificationStatus: text("verification_status").$type<"UNVERIFIED" | "APPROVED" | "REJECTED">().default("UNVERIFIED").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
   uniqueIndex("sop_extraction_pages_job_page").on(table.jobId, table.pageIndex),
@@ -228,7 +238,7 @@ export const sopExtractionPages = appSchema.table("sop_extraction_pages", {
   check("sop_extraction_pages_kind", sql`${table.pageKind} in ('native','scanned_ocr','mixed_ocr','blank','docx_section_flow')`),
   check("sop_extraction_pages_location", sql`${table.sourceLocationKind} in ('pdf_page','docx_derivative_preview')`),
   check("sop_extraction_pages_confidence", sql`${table.ocrConfidence} is null or (${table.ocrConfidence} >= 0 and ${table.ocrConfidence} <= 1)`),
-  check("sop_extraction_pages_unverified", sql`${table.verificationStatus} = 'UNVERIFIED'`),
+  check("sop_extraction_pages_unverified", sql`${table.verificationStatus} in ('UNVERIFIED','APPROVED','REJECTED')`),
 ]);
 
 export const sopChunks = appSchema.table("sop_chunks", {
@@ -280,6 +290,36 @@ export const sopVerificationIssues = appSchema.table("sop_verification_issues", 
 }, (table) => [
   index("sop_verification_issues_document_job").on(table.documentId, table.jobId),
   check("sop_verification_issues_severity", sql`${table.severity} in ('info','warning','error')`),
+]);
+
+export type VerificationIssueSummary = {
+  total: number;
+  resolved: number;
+  unresolved: number;
+  bySeverity: { error: number; warning: number; info: number };
+};
+
+export const sopVerificationRecords = appSchema.table("sop_verification_records", {
+  id: uuid().defaultRandom().primaryKey(),
+  documentId: uuid("document_id").notNull().references(() => sopDocuments.id),
+  sourceSha256: text("source_sha256").notNull(),
+  jobId: uuid("job_id").notNull().references(() => workflowJobs.id),
+  pipelineVersion: text("pipeline_version").notNull(),
+  attemptId: uuid("attempt_id").notNull(),
+  reviewerId: text("reviewer_id").notNull().references(() => authUsers.id),
+  decision: text().$type<"APPROVED" | "REJECTED">().notNull(),
+  notes: text(),
+  issueSummary: jsonb("issue_summary").$type<VerificationIssueSummary>().notNull(),
+  beforeStatus: text("before_status").$type<"PENDING_VERIFICATION">().notNull(),
+  afterStatus: text("after_status").$type<"ACTIVE" | "REJECTED">().notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index("sop_verification_records_document_created").on(table.documentId, table.createdAt),
+  check("sop_verification_records_sha256", sql`${table.sourceSha256} ~ '^[a-f0-9]{64}$'`),
+  check("sop_verification_records_decision", sql`${table.decision} in ('APPROVED','REJECTED')`),
+  check("sop_verification_records_notes", sql`${table.decision} = 'APPROVED' or (${table.notes} is not null and length(btrim(${table.notes})) > 0)`),
+  check("sop_verification_records_before_status", sql`${table.beforeStatus} = 'PENDING_VERIFICATION'`),
+  check("sop_verification_records_transition", sql`(${table.decision} = 'APPROVED' and ${table.afterStatus} = 'ACTIVE') or (${table.decision} = 'REJECTED' and ${table.afterStatus} = 'REJECTED')`),
 ]);
 
 export const workflowEvents = appSchema.table("workflow_events", {

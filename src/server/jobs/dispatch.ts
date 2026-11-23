@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { and, asc, eq, isNull, lte, or, sql } from "drizzle-orm";
+import { and, asc, eq, isNull, lte, ne, or, sql } from "drizzle-orm";
 import { getDatabase } from "../db/client";
 import { auditEvents, sopDocuments, workflowJobs } from "../db/schema";
 import { appendEvent, type JobDatabase } from "./service";
@@ -35,7 +35,7 @@ export async function reconcileJobs(database: JobDatabase = getDatabase()) {
             status: "FAILED",
             processingErrorCode: "INGESTION_TIMEOUT",
             updatedAt: sql`clock_timestamp()`,
-          }).where(eq(sopDocuments.id, job.documentId));
+          }).where(and(eq(sopDocuments.id, job.documentId), ne(sopDocuments.status, "ACTIVE")));
           await transaction.insert(auditEvents).values({
             actorId: job.ownerId,
             action: "document.ingestion_failed",
@@ -69,7 +69,7 @@ export async function reconcileJobs(database: JobDatabase = getDatabase()) {
             status: "UPLOADED",
             processingErrorCode: null,
             updatedAt: sql`clock_timestamp()`,
-          }).where(eq(sopDocuments.id, job.documentId));
+          }).where(and(eq(sopDocuments.id, job.documentId), ne(sopDocuments.status, "ACTIVE")));
         }
       }
     }
