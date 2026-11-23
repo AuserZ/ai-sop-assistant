@@ -5,8 +5,10 @@ Source: [approved technical PRD](<AI SOP Assistant — Technical Product Req.md>
 ## Current state
 
 - **Verified sprints:** `S01`–`S07` are **VERIFIED** against their recorded candidates (detailed S01–S07 history archived in [verification history](docs/verification/history.md)).
-- **Latest implemented sprint (S08):** Published source `effb4d375c009b3afd7a29e313bdf21ee8daee01` (tree `d109f9c2f00f880ad3d157718c71638739256932`) on `codex/s08-deletion-unindexing` — **IMPLEMENTED** (local `check:prd`, `lint`, `typecheck`, `74/74` unit tests, `8/8` storage-fixture tests, `next build --webpack`, and hosted CI [run 45179719721](https://github.com/AuserZ/ai-sop-assistant/actions/runs/45179719721) Steps 1–13 incl. `0006` migration & PostgreSQL `verify-db` PASS; Step 14 Playwright failed and is deferred per user instruction to skip hosted CI for now). [S08 evidence](docs/verification/S08.md).
-- **Next permitted sprint:** **S09** — verified ACTIVE hybrid retrieval and reranking (`C2`, `ADR 10/23`, Phase 2).
+- **Implemented sprints (local verified; hosted CI / `security-expert` deferred per 23 Nov 2026 user instruction):**
+  - `S08` (`effb4d375c009b3afd7a29e313bdf21ee8daee01` + `526b9ae51f613450a29744379d39f9ec27e8d54a`) on `codex/s08-deletion-unindexing` — **IMPLEMENTED** ([S08 evidence](docs/verification/S08.md)).
+  - `S09` (`996d653dfc0384349eb4bb9c2bed1ae2cb33fa47`, tree `63c13dbee321a9c561f15c904dfbeb5677d8d0b3`) on `codex/s09-hybrid-retrieval` — **IMPLEMENTED** (local `check:prd`, `lint`, `typecheck`, `93/93` unit tests, `next build --webpack`, and Pass 1 QA `validate-rag` PASS; real PostgreSQL `test:db`, hosted CI, and `security-expert` deferred until pre-V01 closure). [S09 evidence](docs/verification/S09.md).
+- **Next permitted sprint:** **S10** — evidence-validated procedural answers and citations (`C2`/`C3`/`C4`/`C5`, `ADR 12`, Phase 2).
 - **Team & workflow cadence (updated 23 Nov 2026 per user instructions):** Project manager orchestrates fresh per-sprint specialist subagents (up to 3 concurrent; invoke DevOps only when Docker/Compose/CI/runtime files change) using [sprint preflight checklist](docs/sprint-preflight-checklist.md). Per user instructions on 23 Nov 2026, both `security-expert` invocation AND hosted CI waits are **deferred** during intermediate sprints (`S08`–`S16`) as long as local checks (`check:prd`, `lint`, `typecheck`, `npm test`, infra unit tests, `next build --webpack`) and Pass 1 QA review pass; intermediate sprints record `IMPLEMENTED` (never falsely `VERIFIED`), and full hosted CI (including S08 Step 14 Playwright), `security-expert` audit, and full `VERIFIED` closure remain mandatory before V01 release-candidate acceptance ([development-team.md](docs/development-team.md), [coding-standards.md](docs/coding-standards.md)).
 - **Standing constraints:** Preserve P0 order, 3-menu cap, protected PRDs, and all PRD section 16 open gates below. Open S14/pre-V01 item: 4 moderate dev-chain Node advisories (`GHSA-67mh-4wv8-2f99`); do not describe full audit as clean.
 
@@ -24,7 +26,7 @@ Default execution order is S01–S16. Each sprint depends on the VERIFIED predec
 | S06 | Assisted verification and revision-bound activation | 1 | D3; ADR 17 | VERIFIED | [S06.md](docs/verification/S06.md) |
 | S07 | SOP library search and authorized original access | 1 | D1/D5 | VERIFIED | [S07.md](docs/verification/S07.md) |
 | S08 | SOP deletion and reliable unindexing | 1 | D4 | IMPLEMENTED | [S08.md](docs/verification/S08.md) |
-| S09 | Verified ACTIVE hybrid retrieval and reranking | 2 | C2; ADR 10/23 | PLANNED | — |
+| S09 | Verified ACTIVE hybrid retrieval and reranking | 2 | C2; ADR 10/23 | IMPLEMENTED | [S09.md](docs/verification/S09.md) |
 | S10 | Evidence-validated procedural answers and citations | 2 | C2/C3/C4/C5; ADR 12 | PLANNED | — |
 | S11 | Chat SSE and persisted current-session conversation | 3 | C1–C5; ADR 18/19 | PLANNED | — |
 | S12 | Admin user directory and account management | 3 | U1/U2/U3/U4 | PLANNED | — |
@@ -184,7 +186,7 @@ Verify after development:
 - [ ] Duplicate/expired invitations, invalid input, email failures and audit redaction behave safely; no passwords are emailed.
 
 ### S13 — responsive three-menu experience
-**Outcome:** The complete P0 experience works on current desktop/mobile browsers with exactly the approved menus. **Depends on:** S12 and prior document/chat interfaces. **Mapping:** C1/D1/D5/U1/U4, ADR 20.
+**Outcome:** The complete P0 experience works on current desktop/mobile browsers with exactly the approved menus. **Depends on:** S12 and prior document/chat interfaces. **Mapping:** C1/D1/D5/U1/U4, ADR 20. **Approved visual spec:** [ui-design-system.md](docs/ui-design-system.md) (Option 1 · Clinical Precision, approved 23 Nov 2026).
 
 Development scope:
 - Integrate exactly Chat, List Document SOP and User Management; Staff sees only permitted navigation/actions and server checks remain authoritative.
