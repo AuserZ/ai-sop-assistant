@@ -76,3 +76,20 @@ Initial S09 tunable retrieval parameters (named defaults, NOT finalized producti
 - **Model entitlement & IDs:** ADR 23's label `"GPT-6 Luna"` is NOT a verified live API model ID and is explicitly rejected by configuration validation. Exact live OpenAI reranker, rewrite, answer, and judge model IDs require organization catalog/billing verification.
 - **Rubric & latency sign-off:** Final p50/p95 thresholds and scoring rubric require Product Owner and QA approval prior to V01 acceptance.
 - **Real SOP data:** Confidential company SOPs must not be processed until privacy, residency, and no-model-training approvals are recorded.
+
+## 6. S10 Tier A Synthetic-Fixture Baseline Evaluation Record (2026-11-23)
+
+This record covers **Tier A synthetic-fixture verification only** (`tests/unit/answer-benchmark.test.ts` on `tests/fixtures/benchmark-50.json` v`1.0.0`). It validates the end-to-end S09+S10 pipeline logic, deterministic evidence checks, independent judge contract, backend citation recheck, and exact no-evidence fallback without calling live OpenAI providers. **Tier B live-model evaluation remains NOT RUN and open until live answer/judge/reranker model IDs and entitlements are verified (PRD Section 16 / V01).**
+
+- **Mode & environment:** `synthetic_fixture` (`SOP_LOCAL_ANSWER_FIXTURE_ENABLED=1`, `SOP_LOCAL_RETRIEVAL_FIXTURE_ENABLED=1`, `SOP_LOCAL_EMBEDDING_FIXTURE_ENABLED=1`, loopback `AUTH_BASE_URL=http://127.0.0.1:3000`)
+- **Models:** embedding `text-embedding-3-small` (synthetic fixture 1,536 dims), rewrite `synthetic-fixture-rewrite-v1`, reranker `synthetic-fixture-reranker-v1`, generator `synthetic-fixture-answer-v1`, judge `synthetic-fixture-judge-v1`
+- **Retrieval parameters:** `semanticTopK=15`, `keywordTopK=15`, `finalTopK=5`, `rrfK=60`, `historyMaxTurns=8`, `minRerankScore=0.15`, `maxRerankCandidates=30`
+- **Measured results (50 cases):**
+  - Overall correctness: **50 / 50 (100%)** (threshold `>= 43 / 50`; all 11 categories passed: `exact_sop_code_title` 6/6, `paraphrase` 6/6, `multi_section_procedure` 5/5, `follow_up_question` 5/5, `unsupported_question` 6/6, `inactive_lifecycle_trap` 5/5, `near_duplicate_conflicting` 4/4, `scanned_numeric_table_trap` 5/5, `forged_invalid_citation_trap` 3/3, `prompt_injection_trap` 3/3, `revoked_source_case` 2/2)
+  - Supporting citation validity: **34 / 34 supported answers (100%)** (active snapshot identity, title/section match, PDF genuine pages preserved, DOCX `pageStart`/`pageEnd` omitted, backend `/api/documents/{id}/source` path)
+  - Invented procedural steps: **0**
+  - Exact `No SOP found for this question` with `sources: []`: **16 / 16** unsupported/inactive/forged/revoked cases
+- **Measured synthetic per-stage timings (in-process fixture, excludes live network/LLM latency):**
+  - `p50`: `retrievalMs=2.10`, `generateMs=0.25`, `deterministicCheckMs=0.59`, `judgeMs=0.26`, `citationResolveMs=0.06`, `totalMs=3.23`
+  - `p95`: `retrievalMs=10.02`, `generateMs=2.50`, `deterministicCheckMs=5.73`, `judgeMs=1.74`, `citationResolveMs=0.21`, `totalMs=15.58`
+- **Residual limit:** Passing Tier A synthetic-fixture checks does NOT establish live LLM accuracy, live OpenAI latency against the 3s/10s/30s PRD targets, or universal hallucination elimination. Tier B live-model benchmarking remains mandatory before V01 release acceptance.
