@@ -46,9 +46,12 @@ async function uploadAndWaitForReview(
     )
     .toBe("PENDING_VERIFICATION");
 
-  await page.getByRole("button", { name: "Refresh status", exact: true }).click();
-  await expect(page.getByRole("link", { name: "Review and verify", exact: true })).toBeVisible();
-  await page.getByRole("link", { name: "Review and verify", exact: true }).click();
+  const reviewLink = page.getByRole("link", { name: "Review and verify", exact: true });
+  if (!(await reviewLink.isVisible())) {
+    await page.getByRole("button", { name: "Refresh status", exact: true }).click();
+  }
+  await expect(reviewLink).toBeVisible();
+  await reviewLink.click();
   await expect(page).toHaveURL(new RegExp(`/documents/${documentId}/verify$`));
   return documentId!;
 }
@@ -69,20 +72,19 @@ test("S06 Admin assisted verification workspace: PDF zoom/reject/reprocess/appro
 
   await expect(page.getByTestId("document-status-badge")).toHaveText("PENDING_VERIFICATION");
 
+  expect((await page.request.get("/pdf.worker.min.mjs")).status()).toBe(200);
   const canvas = page.locator("canvas[aria-label^='PDF preview canvas']");
   await expect(canvas).toBeVisible({ timeout: 30_000 });
-  await expect
-    .poll(async () => canvas.evaluate((element: HTMLCanvasElement) => element.width > 0 && element.height > 0))
-    .toBe(true);
+  await expect(canvas).toHaveAttribute("data-rendered-zoom", "100", { timeout: 30_000 });
   await expect(page.getByText("Page 1 of 1", { exact: true })).toBeVisible();
 
   const initialWidth = (await canvas.boundingBox())?.width ?? 0;
   expect(initialWidth).toBeGreaterThan(0);
   await page.getByRole("button", { name: "Zoom in", exact: true }).click();
   await expect(page.getByText("125%", { exact: true })).toBeVisible();
-  await expect
-    .poll(async () => (await canvas.boundingBox())?.width ?? 0)
-    .toBeGreaterThan(initialWidth);
+  await expect(canvas).toHaveAttribute("data-rendered-zoom", "125", { timeout: 30_000 });
+  const zoomedWidth = (await canvas.boundingBox())?.width ?? 0;
+  expect(zoomedWidth).toBeGreaterThan(initialWidth);
   await page.getByRole("button", { name: "Reset zoom", exact: true }).click();
   await expect(page.getByText("100%", { exact: true })).toBeVisible();
 

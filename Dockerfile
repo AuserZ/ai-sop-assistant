@@ -18,6 +18,7 @@ WORKDIR /app
 ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1 HOSTNAME=0.0.0.0 PORT=3000
 COPY --from=build --chown=node:node /app/.next/standalone ./
 COPY --from=build --chown=node:node /app/.next/static ./.next/static
+COPY --from=dependencies --chown=node:node /app/node_modules/pdfjs-dist/build/pdf.worker.min.mjs ./public/pdf.worker.min.mjs
 USER node
 EXPOSE 3000
 CMD ["node", "server.js"]

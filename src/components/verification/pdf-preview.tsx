@@ -36,6 +36,7 @@ export function PdfPreview({
     errorMessage: string | null;
   }>({ url: null, status: "ready", pageCount: 0, errorMessage: null });
   const [renderError, setRenderError] = useState<string | null>(null);
+  const [renderedState, setRenderedState] = useState<{ page: number; zoom: number } | null>(null);
   const [zoomPercent, setZoomPercent] = useState(100);
 
   const status: "idle" | "loading" | "ready" | "error" = !previewUrl
@@ -65,10 +66,7 @@ export function PdfPreview({
         if (cancelled) return;
 
         const pdfjs = await import("pdfjs-dist");
-        pdfjs.GlobalWorkerOptions.workerSrc = new URL(
-          "pdfjs-dist/build/pdf.worker.min.mjs",
-          import.meta.url,
-        ).toString();
+        pdfjs.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs";
 
         const loadingTask = pdfjs.getDocument({
           data: new Uint8Array(buffer),
@@ -129,7 +127,10 @@ export function PdfPreview({
         const task = page.render({ canvas, viewport });
         renderTaskRef.current = task;
         await task.promise;
-        if (!cancelled) setRenderError(null);
+        if (!cancelled) {
+          setRenderError(null);
+          setRenderedState({ page: clampedPage, zoom: zoomPercent });
+        }
       } catch (error) {
         if (cancelled) return;
         const name = error && typeof error === "object" && "name" in error ? String(error.name) : "";
@@ -234,6 +235,8 @@ export function PdfPreview({
         <canvas
           ref={canvasRef}
           aria-label={`PDF preview canvas page ${clampedPage}`}
+          data-rendered-page={renderedState?.page ?? ""}
+          data-rendered-zoom={renderedState?.zoom ?? ""}
           className={status === "ready" ? "mx-auto block bg-white shadow-sm" : "hidden"}
         />
       </div>
