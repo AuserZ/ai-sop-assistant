@@ -1,6 +1,6 @@
 # Development team
 
-The user requested this five-role team on 19 November 2026, adding the principal DevOps engineer after the initial four roles and explicitly authorizing project-manager orchestration. S01–S03 are verified; the latest continuation and Cloudflare R2 selection carry S04 private uploads forward in sprint order. Predecessor checks, external decisions and deployment approval remain required. This is an execution agreement subordinate to the [technical PRD](<../AI SOP Assistant — Technical Product Req.md>), [original product PDF](<../PRD AI SOP Assistant.pdf>) and [sprint plan](../PLANS.md).
+The user requested this five-role team on 19 November 2026, adding the principal DevOps engineer after the initial four roles and explicitly authorizing project-manager orchestration. S01–S06 are VERIFIED; next permitted sprint is S07 (not started yet). Predecessor checks, external decisions and deployment approval remain required. This is an execution agreement subordinate to the [technical PRD](<../AI SOP Assistant — Technical Product Req.md>), [original product PDF](<../PRD AI SOP Assistant.pdf>) and [sprint plan](../PLANS.md).
 
 | Role | Responsibility | Detailed role guide | Codex definition |
 | --- | --- | --- | --- |
@@ -18,13 +18,16 @@ The main agent acts as project manager and schedules the four specialist roles i
 
 ## Working loop
 
-1. Read the complete protected PRDs, current plan and actual implementation. Run the integrity checker before edits. Select the earliest sprint whose prerequisites allow work.
-2. Assign fullstack and DevOps work with bounded file ownership and requirement IDs, coordinating shared interfaces. Tell workers they share the workspace and must preserve other edits. Request scoped security and QA review; coordinate generated files and runtime access within the three-child capacity.
-3. Implement the smallest coherent increment, fix demonstrated defects and run feature tests during development. Repeat affected checks after fixes.
-4. Run post-development verification against the finished candidate. Save real evidence with the [verification template](sprint-verification-template.md), update [PLANS.md](../PLANS.md) and rerun PRD integrity. Mark VERIFIED only when all mandatory checks pass.
-5. Advance in the existing phase/sprint order. Continue authorized P0 development without asking again for each implementation, test or fix. Keep unresolved section 16 decisions and external dependencies visible; finish independent work while requesting missing information.
+1. Read the complete protected PRDs, compact [PLANS.md](../PLANS.md) and actual implementation. Run `node .codex/scripts/check-prd-integrity.mjs` before edits. Select the earliest sprint whose prerequisites allow work.
+2. Spawn **fresh specialist subagents per sprint** (skip DevOps when Docker/Compose/CI/runtime files are untouched). Assign bounded file ownership, requirement IDs and [sprint preflight checklist](sprint-preflight-checklist.md) upfront. Tell workers they share the workspace and must preserve other edits.
+3. Implement the smallest coherent increment with real success/failure automated tests; run `check:prd`, `lint`, `typecheck` and `npm test` cleanly before review.
+4. **2-pass review & CI cadence:**
+   - **Pass 1 (Pre-push):** Independent Security and QA review the local implementation once.
+   - **Fix → Push → CI:** Implementer fixes findings, commits/pushes, and the lead waits once (~12 min for full CI unless local Docker or authenticated read-only `gh` CLI is available) rather than polling repeatedly. `.github/workflows/ci.yml` path-filters standalone `paddleocr` fail-safely when OCR/CI/PRD files did not change.
+   - **Pass 2 (Single closure pass):** Independent Security and QA verify the fix diff and green CI run together in one wakeup using compact table receipts ([verification template](sprint-verification-template.md)).
+5. Save compact evidence in `docs/verification/Sxx.md`, update compact `PLANS.md` (archiving narrative history in [verification history](verification/history.md)) and `AGENTS.md`, rerun PRD integrity, push closure, and recommend `/compact` or a fresh chat before starting the next sprint.
 
-S01–S03 are VERIFIED against their recorded evidence. The current sprint is S04 private Admin uploads; later sprints still require predecessor verification. Provider configuration and policy decisions remain gated, with synthetic fixtures where the plan permits. P1/P2, production release and real company-data processing retain their approval gates. V01 technical acceptance, production approval and V02 pilot acceptance remain separate outcomes.
+S01–S06 are VERIFIED against their recorded evidence (archived in [verification history](verification/history.md)). Next permitted sprint is S07; later sprints require predecessor verification. Provider configuration and policy decisions remain gated, with synthetic fixtures where the plan permits. P1/P2, production release and real company-data processing retain their approval gates. V01 technical acceptance, production approval and V02 pilot acceptance remain separate outcomes.
 
 ## Continuity
 

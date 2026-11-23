@@ -9,7 +9,46 @@ permissions:
   contents: read
 
 jobs:
+  changes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      paddleocr: ${{ steps.filter.outputs.paddleocr }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - id: filter
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "paddleocr=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BASE_SHA="${{ github.event.pull_request.base.sha }}"
+          else
+            BASE_SHA="${{ github.event.before }}"
+          fi
+          if [ -z "$BASE_SHA" ] || [ "$BASE_SHA" = "0000000000000000000000000000000000000000" ] || ! git cat-file -e "$BASE_SHA^{commit}" 2>/dev/null; then
+            echo "paddleocr=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if git diff --name-only "$BASE_SHA" HEAD -- \
+            infra/paddleocr \
+            .github/workflows/ci.yml \
+            .codex/scripts/check-prd-integrity.mjs \
+            'AI SOP Assistant — Technical Product Req.md' \
+            'PRD AI SOP Assistant.pdf' | grep -q .; then
+            echo "paddleocr=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "paddleocr=false" >> "$GITHUB_OUTPUT"
+          fi
+
   paddleocr:
+    needs: changes
+    if: needs.changes.outputs.paddleocr == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:

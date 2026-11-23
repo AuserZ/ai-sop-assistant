@@ -1,60 +1,40 @@
 # Sprint verification report template
 
-Use this template after an authorized feature sprint is implemented, following [PLANS.md](../PLANS.md) and the [testing matrix](testing.md). Create `docs/verification/Sxx.md` only when there is actual work/evidence to report. When copying this template into that deeper directory, adjust relative links accordingly. Do not edit the [approved technical PRD](<../AI SOP Assistant — Technical Product Req.md>) or original product PDF.
+Use this compact table-driven format for `docs/verification/Sxx.md`, `Sxx-qa.md`, and `Sxx-security.md` (adjust relative links from `docs/verification/`). Prefer terse factual tables and bullet receipts over long prose; never duplicate unchanged PRD boilerplate across all three reports. Never edit either protected PRD.
 
 ## Candidate and scope
 
 | Field | Recorded value |
 | --- | --- |
-| Sprint ID and feature | Not recorded |
-| Original requirement IDs / ADRs | Not recorded |
-| Phase, dependencies and acceptance checklist | Not recorded |
-| Implementation owner and verifier | Not recorded |
-| Candidate commit or exact working-copy identifier | Not recorded |
-| Image/workflow/pipeline/schema/configuration versions, if applicable | Not recorded |
-| Environment, fixture/dataset versions, configured models, if applicable | Not recorded |
-| Verification date and time | Not recorded |
-| Overall result | NOT RUN |
+| Sprint / mapping | Sxx — `<feature>` (`<IDs/ADRs>`) |
+| Candidate / branch | `<commit SHA>` (tree `<tree SHA>`) on `<branch>` |
+| Owners / verifiers | Implementer: `<role>`; Security: `Sxx-security.md`; QA: `Sxx-qa.md` |
+| Versions / environment | `<schema/image/workflow/model/CI env>` |
+| Date / overall result | `<date>` — **VERIFIED / FAIL / BLOCKED** (CI run `<id>`) |
 
-Identify the revision actually checked. Record applicable provider entitlement/configuration and approved scope without secrets. If there is no Git commit yet, use an explicit working-copy identifier and integrity/artifact references; do not invent a commit or imply repeatability that is missing.
+## Implemented changes (concise)
 
-## Implemented outcome
-
-Describe the feature's observable behavior, affected files and contracts/migrations/workflows, requirement mapping, and the completed acceptance scenarios. Record any scope reduction or unresolved dependency; do not equate a written plan or mocked interface with completed behavior.
+- Bullet list of schema/backend/UI/workflow/test changes and affected file groups (no narrative essays).
 
 ## Executed checks
 
-Use PASS, FAIL, BLOCKED or NOT RUN for applicable checks. NOT APPLICABLE needs a concrete reason and cannot waive a mandatory acceptance gate. Add one row per actual command/scenario; leave future checks explicitly NOT RUN.
+Use `PASS`, `FAIL`, `BLOCKED`, or `NOT RUN`.
 
-| Check / requirement | Exact command or exercised scenario | Result | Sanitized evidence / artifact | Failure or limitation |
+| Check / acceptance item | Exact command or scenario | Result | Evidence / SHA / run ID | Explicit limit |
 | --- | --- | --- | --- | --- |
-| Feature success and failure cases | Not run | NOT RUN | None | Not recorded |
-| Relevant unit / database / workflow / browser regressions | Not run | NOT RUN | None | Not recorded |
-| Applicable lint / type / build / security checks | Not run | NOT RUN | None | Not recorded |
-| PRD integrity | `node .codex/scripts/check-prd-integrity.mjs` | NOT RUN | None | Not recorded |
+| PRD integrity | `node .codex/scripts/check-prd-integrity.mjs` | NOT RUN | — | — |
+| Static & unit | `lint`, `typecheck`, `npm test` | NOT RUN | — | — |
+| Hosted CI | Run `<id>` (`foundation` / `paddleocr`) | NOT RUN | — | — |
+| Independent Security & QA | Pass 1 + Pass 2 closure receipts | NOT RUN | — | — |
 
-For relevant features include role/ownership/deactivation, verified ACTIVE filtering in both queries, idempotency, OCR/conversion failures, citation/source mapping, judge failures and captured stream safety. Link actual logs/results rather than copying sensitive output. Screenshots alone cannot prove server authorization or absence of prevalidation SSE bytes.
+## Findings, fixes & reruns
 
-## Failed checks, fixes and reruns
+| ID | Severity / area | Trigger & fix commit | Rerun verdict |
+| --- | --- | --- | --- |
+| — | None / list defects fixed in sprint | — | — |
 
-For each failure record its triggering scenario, affected requirement, fix/revision and subsequent executed checks/results. Unresolved required failures or missing external configuration keep the sprint in VERIFYING or BLOCKED. If code changes after a successful run, rerun the affected checks against the new revision.
+## Residual limits & closure
 
-## Benchmark and operations, when applicable
-
-For release-affecting model/retrieval/workflow changes, record the actual 50-question dataset/rubric and model/configuration versions, correct answers out of 50, valid supporting citations, invented-step count and per-case evidence. Required thresholds: ≥43 correct, 100% valid supporting citations and 0 invented procedural steps in that set. Distinguish first progress, first meaningful answer and completion timings with the agreed p50/p95 interpretation.
-
-For recovery/deployment features, link real isolated restore, smoke and rollback evidence plus immutable artifact identities. Keep production approval separate. For final candidate or pilot reviews, follow V01/V02 in the plan; never fill pilot adoption before observation or claim model-training/privacy controls without evidence.
-
-## Closure
-
-| Closure item | Recorded result |
-| --- | --- |
-| Every sprint acceptance item checked against the candidate | NOT RUN |
-| Required checks passed; failures fixed and affected checks rerun | NOT RUN |
-| Open gates/risks and owners recorded | NOT RUN |
-| Affected docs/contracts and PLANS.md status updated | NOT RUN |
-| Original PRD integrity confirmed after changes | NOT RUN |
-| Final sprint status | NOT RUN |
-| Next proposed authorized feature / required decision | Not recorded |
-
-Mark VERIFIED only after all applicable required checks pass. Report what changed, which files changed, actual checks/results, remaining risks and next proposed work. This report does not authorize unrelated implementation, real SOP processing, provider charges, or deployment.
+- Explicit limits (e.g. unauthenticated CI `/logs` 403, local Docker unavailable, single-page fixtures).
+- Reference `PLANS.md` for unchanged PRD section 16 open gates instead of repeating full tables.
+- **Final status:** `VERIFIED` / `BLOCKED` | **Next proposed sprint:** `Sxx` (no production/real-SOP authorization).

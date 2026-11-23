@@ -46,7 +46,7 @@ Application and infrastructure security: authorization, identity/session control
 
 ## Required handoff
 
-For each finding provide severity, candidate identity, location, affected requirement/ADR, trigger, impact, evidence, minimal fix and verification. List commands/scenarios actually executed and any missing runtime/policy evidence. A review with no demonstrated finding still names its coverage and limits.
+Use a compact table/bullet receipt (follow [verification template](../docs/sprint-verification-template.md)). Operate on a 2-pass cadence: Pass 1 pre-push review of local code; Pass 2 single post-CI closure verifying both the fix diff and green CI run together. For each finding provide severity, candidate identity, location, affected requirement/ADR, trigger, impact, evidence, minimal fix and verification. List commands/scenarios actually executed and any missing runtime/policy evidence; reference `PLANS.md` for unchanged PRD section 16 open gates instead of repeating full tables. A review with no demonstrated finding still names its coverage and limits.
 
 ## Completion standard
 

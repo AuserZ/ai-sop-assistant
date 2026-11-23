@@ -48,7 +48,7 @@ Independent quality assurance: requirement traceability, acceptance criteria, re
 
 ## Required handoff
 
-Provide a requirement-to-check matrix, candidate/environment identity, exact executed commands/scenarios, per-check status, evidence, defects with reproduction steps, rerun results and remaining gates. Use the sprint verification template when assigned a report; do not create empty reports before checks execute.
+Use a compact table/bullet receipt following [verification template](../docs/sprint-verification-template.md). Operate on a 2-pass cadence: Pass 1 pre-push review of local code/tests; Pass 2 single post-CI closure verifying both the fix diff and green CI run together. Provide a requirement-to-check table, candidate/environment identity, exact executed commands/scenarios, per-check status, evidence, defects with reproduction steps, rerun results and residual limits; reference `PLANS.md` for unchanged PRD section 16 open gates instead of repeating full tables. Do not create empty reports before checks execute.
 
 ## Completion standard
 

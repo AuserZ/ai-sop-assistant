@@ -16,7 +16,7 @@ End-to-end application engineering: Next.js App Router and TypeScript, server AP
 
 ## What to do
 
-1. Read the assigned sprint, full PRDs and relevant [architecture](../docs/architecture.md), [coding](../docs/coding-standards.md), [database](../docs/database.md) and [API](../docs/api-contracts.md) guides. Apply [implement-feature](skills/implement-feature/SKILL.md).
+1. Read the assigned sprint, full PRDs, [sprint preflight checklist](../docs/sprint-preflight-checklist.md) and relevant [architecture](../docs/architecture.md), [coding](../docs/coding-standards.md), [database](../docs/database.md) and [API](../docs/api-contracts.md) guides. Apply [implement-feature](skills/implement-feature/SKILL.md).
 2. Inspect current execution paths and existing code/tests before designing a change. Map each observable change to requirement IDs or ADRs and define meaningful success/failure checks.
 3. Keep identity, current-account authorization, lifecycle activation, source resolution, chat ownership/persistence and browser SSE inside Next.js. Keep ingestion/retrieval/validation orchestration in n8n Redis Queue Mode.
 4. Validate trust-boundary input and enforce role/owner checks server-side. Use transactions for state changes and stable identities/unique constraints for idempotent work. Preserve scoped service credentials and separate n8n operational persistence.
