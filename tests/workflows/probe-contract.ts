@@ -22,7 +22,7 @@ export function workflowNode(name: string) {
 
 export function expressionValue(expression: string, context: Record<string, unknown>) {
   if (!expression.startsWith("={{") || !expression.endsWith("}}")) throw new Error("Expected an n8n expression.");
-  return runInNewContext(expression.slice(3, -2), context, { timeout: 100 }) as unknown;
+  return runInNewContext(expression.slice(3, -2), context, { timeout: 1000 }) as unknown;
 }
 
 export function ingressAccepts(payload: unknown, body: unknown = {}, query: unknown = {}) {

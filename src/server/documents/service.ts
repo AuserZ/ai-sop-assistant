@@ -1,10 +1,20 @@
 import { createHash, randomUUID } from "node:crypto";
-import { and, eq, gt, sql } from "drizzle-orm";
+import { and, count, eq, gt, sql } from "drizzle-orm";
 import { getDatabase } from "../db/client";
-import { auditEvents, documentUploadIntents, sopDocuments, workflowJobs } from "../db/schema";
+import {
+  auditEvents,
+  documentUploadIntents,
+  sopChunks,
+  sopDocuments,
+  sopExtractionPages,
+  sopVerificationIssues,
+  workflowJobs,
+} from "../db/schema";
 import { lockCurrentAdmin, type CurrentAccount } from "../auth/authorization";
 import { AuthFailure } from "../auth/errors";
 import type { AuthDatabase } from "../auth/rate-limit";
+import { ingestionBounds } from "../jobs/contracts";
+import { appendEvent } from "../jobs/service";
 import { documentQuotaBytes } from "./config";
 import { documentBounds, ingestionPipelineVersion, uploadInput, type DocumentUploadDto } from "./contracts";
 import { validateDocumentObject } from "./format";
@@ -26,16 +36,82 @@ async function ownedIntent(transaction: Transaction, account: CurrentAccount, id
 
 async function documentDto(transaction: Transaction, intent: UploadIntent, expired = false, leaseActive = true): Promise<DocumentUploadDto> {
   const accepted = intent.state === "ACCEPTED";
-  const [job] = accepted ? await transaction.select({ id: workflowJobs.id }).from(workflowJobs).where(and(
-    eq(workflowJobs.documentId, intent.id), eq(workflowJobs.kind, "document_ingestion"),
-    eq(workflowJobs.sourceSha256, intent.sha256), eq(workflowJobs.pipelineVersion, ingestionPipelineVersion),
-  )) : [];
-  if (accepted && !job) throw new Error("Accepted document job missing.");
+  const [doc] = accepted
+    ? await transaction
+        .select({
+          status: sopDocuments.status,
+          previewKey: sopDocuments.previewKey,
+          processingErrorCode: sopDocuments.processingErrorCode,
+        })
+        .from(sopDocuments)
+        .where(eq(sopDocuments.id, intent.id))
+    : [];
+  const [job] = accepted
+    ? await transaction
+        .select({
+          id: workflowJobs.id,
+          state: workflowJobs.state,
+          stage: workflowJobs.stage,
+          attemptNumber: workflowJobs.attemptNumber,
+          errorCode: workflowJobs.errorCode,
+        })
+        .from(workflowJobs)
+        .where(
+          and(
+            eq(workflowJobs.documentId, intent.id),
+            eq(workflowJobs.kind, "document_ingestion"),
+            eq(workflowJobs.sourceSha256, intent.sha256),
+            eq(workflowJobs.pipelineVersion, ingestionPipelineVersion),
+          ),
+        )
+    : [];
+  if (accepted && (!job || !doc)) throw new Error("Accepted document job missing.");
+
+  let summary: DocumentUploadDto["summary"] = null;
+  if (accepted && doc && job && doc.status === "PENDING_VERIFICATION") {
+    const [pageSummary] = await transaction
+      .select({ total: count() })
+      .from(sopExtractionPages)
+      .where(eq(sopExtractionPages.jobId, job.id));
+    const [chunkSummary] = await transaction
+      .select({ total: count() })
+      .from(sopChunks)
+      .where(eq(sopChunks.jobId, job.id));
+    const [issueSummary] = await transaction
+      .select({ total: count() })
+      .from(sopVerificationIssues)
+      .where(eq(sopVerificationIssues.jobId, job.id));
+    summary = {
+      pageCount: pageSummary.total,
+      chunkCount: chunkSummary.total,
+      issueCount: issueSummary.total,
+      hasPreview: Boolean(doc.previewKey),
+    };
+  }
+
   const uploadStatus = accepted ? "ACCEPTED" : expired ? "EXPIRED" : intent.state === "FINALIZING" && !leaseActive ? "FAILED" : intent.state;
-  return { id: intent.id, title: intent.title, fileName: intent.fileName, mimeType: intent.mimeType,
-    sizeBytes: intent.sizeBytes, sha256: intent.sha256, uploadStatus, status: accepted ? "UPLOADED" : null,
+  return {
+    id: intent.id,
+    title: intent.title,
+    fileName: intent.fileName,
+    mimeType: intent.mimeType,
+    sizeBytes: intent.sizeBytes,
+    sha256: intent.sha256,
+    uploadStatus,
+    status: accepted && doc ? doc.status : null,
     failureCode: expired && !accepted ? "UPLOAD_EXPIRED" : uploadStatus === "FAILED" ? intent.failureCode ?? "UPLOAD_RETRY_REQUIRED" : null,
-    job: job ? { id: job.id, state: "WAITING_FOR_PIPELINE" } : null };
+    processingErrorCode: accepted && doc ? doc.processingErrorCode : null,
+    summary,
+    job: job
+      ? {
+          id: job.id,
+          state: job.state,
+          stage: job.stage,
+          attemptNumber: job.attemptNumber,
+          errorCode: job.errorCode,
+        }
+      : null,
+  };
 }
 
 export async function initializeDocumentUpload(account: CurrentAccount, input: unknown,
@@ -108,7 +184,65 @@ export async function finalizeDocumentUpload(account: CurrentAccount, id: string
   try {
     const claim = await database.transaction(async (transaction) => {
       const owned = await ownedIntent(transaction, account, id);
-      if (owned.intent.state === "ACCEPTED") return { document: await documentDto(transaction, owned.intent) };
+      if (owned.intent.state === "ACCEPTED") {
+        const [job] = await transaction
+          .select()
+          .from(workflowJobs)
+          .where(
+            and(
+              eq(workflowJobs.documentId, id),
+              eq(workflowJobs.kind, "document_ingestion"),
+              eq(workflowJobs.sourceSha256, owned.intent.sha256),
+              eq(workflowJobs.pipelineVersion, ingestionPipelineVersion),
+            ),
+          )
+          .for("update");
+        if (job && (job.state === "FAILED" || job.state === "WAITING_FOR_PIPELINE")) {
+          await transaction.delete(sopChunks).where(eq(sopChunks.jobId, job.id));
+          await transaction.delete(sopExtractionPages).where(eq(sopExtractionPages.jobId, job.id));
+          await transaction.delete(sopVerificationIssues).where(eq(sopVerificationIssues.jobId, job.id));
+          const [requeued] = await transaction
+            .update(workflowJobs)
+            .set({
+              state: "QUEUED",
+              stage: null,
+              errorCode: null,
+              attemptId: randomUUID(),
+              attemptNumber: 1,
+              dispatchNonce: randomUUID(),
+              dispatchCount: 0,
+              dispatchNextAt: sql`clock_timestamp()`,
+              dispatchLeaseToken: null,
+              dispatchLeaseUntil: null,
+              dispatchAcceptedAt: null,
+              runLeaseUntil: null,
+              executionId: null,
+              step: 0,
+              attemptDeadline: sql`clock_timestamp() + ${ingestionBounds.attemptMilliseconds} * interval '1 millisecond'`,
+              updatedAt: sql`clock_timestamp()`,
+            })
+            .where(eq(workflowJobs.id, job.id))
+            .returning();
+          await appendEvent(transaction, requeued, "accepted", 0);
+          await transaction
+            .update(sopDocuments)
+            .set({
+              status: "UPLOADED",
+              latestJobId: job.id,
+              processingErrorCode: null,
+              updatedAt: sql`clock_timestamp()`,
+            })
+            .where(eq(sopDocuments.id, id));
+          await transaction.insert(auditEvents).values({
+            actorId: account.id,
+            action: "document.ingestion_requeued",
+            targetId: id,
+            outcome: "queued",
+            metadata: { jobId: job.id, previousState: job.state },
+          });
+        }
+        return { document: await documentDto(transaction, owned.intent) };
+      }
       if (owned.expired) throw new AuthFailure("UPLOAD_EXPIRED", 410);
       if (owned.leaseActive) throw new AuthFailure("UPLOAD_FINALIZING", 409);
       const token = randomUUID();
@@ -139,13 +273,28 @@ export async function finalizeDocumentUpload(account: CurrentAccount, id: string
       if (!live) throw new AuthFailure("UPLOAD_STALE_FINALIZER", 409);
       await transaction.insert(sopDocuments).values({ id, title: live.title, fileName: live.fileName, mimeType: live.mimeType,
         sizeBytes: live.sizeBytes, sha256: live.sha256, originalKey: live.finalKey, uploadedBy: live.ownerId });
-      await transaction.insert(workflowJobs).values({ ownerId: live.ownerId, requestKey: live.requestKey,
-        inputHash: live.sha256, kind: "document_ingestion", documentId: id, sourceSha256: live.sha256,
-        pipelineVersion: ingestionPipelineVersion, state: "WAITING_FOR_PIPELINE", attemptId: randomUUID(), dispatchNonce: randomUUID() });
+      const [createdJob] = await transaction.insert(workflowJobs).values({
+        ownerId: live.ownerId,
+        requestKey: live.requestKey,
+        inputHash: live.sha256,
+        kind: "document_ingestion",
+        documentId: id,
+        sourceSha256: live.sha256,
+        pipelineVersion: ingestionPipelineVersion,
+        state: "QUEUED",
+        attemptId: randomUUID(),
+        dispatchNonce: randomUUID(),
+        attemptDeadline: sql`clock_timestamp() + ${ingestionBounds.attemptMilliseconds} * interval '1 millisecond'`,
+      }).returning();
+      await appendEvent(transaction, createdJob, "accepted", 0);
+      await transaction.update(sopDocuments).set({
+        latestJobId: createdJob.id,
+        updatedAt: sql`clock_timestamp()`,
+      }).where(eq(sopDocuments.id, id));
       const [accepted] = await transaction.update(documentUploadIntents).set({ state: "ACCEPTED", failureCode: null,
         finalizeLeaseToken: null, finalizeLeaseUntil: null }).where(and(eq(documentUploadIntents.id, id), eq(documentUploadIntents.finalizeLeaseToken, fence!))).returning();
       await transaction.insert(auditEvents).values({ actorId: account.id, action: "document.upload_accepted", targetId: id,
-        outcome: "uploaded", metadata: { sizeBytes: live.sizeBytes } });
+        outcome: "uploaded", metadata: { sizeBytes: live.sizeBytes, jobId: createdJob.id } });
       return { document: await documentDto(transaction, accepted), created: true };
     });
   } catch (error) {

@@ -14,6 +14,50 @@ const officeDocumentRelationships = new Set([
   "http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument",
   "http://purl.oclc.org/ooxml/officeDocument/relationships/officeDocument",
 ]);
+const externalHyperlinkRelationships = new Set([
+  "http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink",
+  "http://purl.oclc.org/ooxml/officeDocument/relationships/hyperlink",
+]);
+const wordprocessingNamespaces = new Set([
+  "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
+  "http://purl.oclc.org/ooxml/wordprocessingml/main",
+]);
+
+function validateRelationships(xml: string) {
+  const relationships = readMetadataElements(xml, "Relationships", relationshipsNamespace, "Relationship");
+  for (const relationship of relationships) {
+    const type = (relationship.Type ?? "").trim();
+    const target = (relationship.Target ?? "").trim();
+    const targetMode = (relationship.TargetMode ?? "").trim().toLowerCase();
+    const hasUriScheme = /^[a-z][a-z0-9+.-]*:/i.test(target) || target.startsWith("//") || target.startsWith("\\\\");
+    if (targetMode === "external" || hasUriScheme) {
+      if (!externalHyperlinkRelationships.has(type) || !/^https?:\/\//i.test(target)) {
+        invalidFormat();
+      }
+    }
+  }
+  return relationships;
+}
+
+function validateSettingsXml(xml: string) {
+  const parser = new SaxesParser({ xmlns: true });
+  let depth = 0;
+  let rootFound = false;
+  parser.on("error", invalidFormat);
+  parser.on("doctype", invalidFormat);
+  parser.on("opentag", (tag: SaxesTagNS) => {
+    if (depth === 0) {
+      if (rootFound || tag.local !== "settings" || !wordprocessingNamespaces.has(tag.uri)) invalidFormat();
+      rootFound = true;
+    }
+    const localLower = tag.local.toLowerCase();
+    if (localLower === "attachedtemplate" || localLower === "mailmerge") invalidFormat();
+    depth++;
+  });
+  parser.on("closetag", () => { depth--; });
+  parser.write(xml).close();
+  if (!rootFound || depth !== 0) invalidFormat();
+}
 
 function readMetadataElements(xml: string, root: string, namespace: string, child: string) {
   const parser = new SaxesParser({ xmlns: true });
@@ -75,7 +119,9 @@ async function validateDocx(bytes: Buffer, signal: AbortSignal) {
   let expandedBytes = 0;
   const names = new Set<string>();
   let contentTypes = "";
-  let relationships = "";
+  let rootRelationships = "";
+  const relsXmlEntries: string[] = [];
+  let settingsXml = "";
   try {
     if (archive.entryCount > documentBounds.maximumArchiveEntries) invalidFormat();
     await new Promise<void>((resolve, reject) => {
@@ -96,7 +142,12 @@ async function validateDocx(bytes: Buffer, signal: AbortSignal) {
               (entry.uncompressedSize > 1_000_000 && entry.uncompressedSize > Math.max(1, entry.compressedSize) * 100)) invalidFormat();
           names.add(canonicalName);
           if (name === "[Content_Types].xml") contentTypes = await readContainerXml(archive, entry, signal);
-          if (name === "_rels/.rels") relationships = await readContainerXml(archive, entry, signal);
+          if (canonicalName.endsWith(".rels")) {
+            const relsXml = await readContainerXml(archive, entry, signal);
+            relsXmlEntries.push(relsXml);
+            if (name === "_rels/.rels") rootRelationships = relsXml;
+          }
+          if (canonicalName === "word/settings.xml") settingsXml = await readContainerXml(archive, entry, signal);
           archive.readEntry();
         })().catch(reject);
       });
@@ -104,11 +155,13 @@ async function validateDocx(bytes: Buffer, signal: AbortSignal) {
     });
     const mainParts = readMetadataElements(contentTypes, "Types", contentTypesNamespace, "Override")
       .filter((element) => element.PartName === "/word/document.xml");
-    const mainRelationships = readMetadataElements(relationships, "Relationships", relationshipsNamespace, "Relationship")
+    for (const relsXml of relsXmlEntries) validateRelationships(relsXml);
+    const mainRelationships = validateRelationships(rootRelationships)
       .filter((element) => officeDocumentRelationships.has(element.Type));
+    if (settingsXml) validateSettingsXml(settingsXml);
     if (!names.has("word/document.xml") || mainParts.length !== 1 || mainParts[0].ContentType !== mainDocumentContentType ||
         mainRelationships.length !== 1 || !/^\/?word\/document\.xml$/.test(mainRelationships[0].Target) ||
-        mainRelationships[0].TargetMode === "External") invalidFormat();
+        (mainRelationships[0].TargetMode ?? "").toLowerCase() === "external") invalidFormat();
   } finally { archive.close(); }
 }
 

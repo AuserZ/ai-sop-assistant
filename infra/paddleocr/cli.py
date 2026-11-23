@@ -1,8 +1,9 @@
 import argparse
 import json
 import signal
+import sys
 
-from engine import OcrFailure, encode_result, read_input, recognize, self_test
+from engine import MAXIMUM_INPUT_BYTES, OcrFailure, encode_result, read_input, recognize, recognize_bytes, self_test
 
 
 class BoundedArguments(argparse.ArgumentParser):
@@ -23,13 +24,17 @@ def main():
         operation.add_argument("--self-test", action="store_true")
         operation.add_argument("--verify-bounds", action="store_true")
         operation.add_argument("--input")
+        operation.add_argument("--stdin", action="store_true")
         parsed = arguments.parse_args()
         if parsed.verify_bounds:
             from verify_cases import run_checks
             result = run_checks()
-        elif parsed.input:
+        elif parsed.input is not None:
             image, digest = read_input(parsed.input)
             result = recognize(image, digest)
+        elif parsed.stdin:
+            raw_bytes = sys.stdin.buffer.read(MAXIMUM_INPUT_BYTES + 1)
+            result = recognize_bytes(raw_bytes)
         else:
             result = self_test()
         print(encode_result(result), flush=True)

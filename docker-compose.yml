@@ -100,14 +100,24 @@ services:
       SOP_WORKFLOW_PROBE_ENABLED: "1"
       WORKFLOW_PROBE_CALLBACK_DELAY_MS: ${WORKFLOW_PROBE_CALLBACK_DELAY_MS:-0}
       WORKFLOW_DISPATCH_URL: http://n8n-main:5678/webhook/sop-s03-probe-v1
+      INGESTION_DISPATCH_ENABLED: "1"
+      INGESTION_DISPATCH_URL: http://n8n-main:5678/webhook/sop-s05-ingestion-v1
+      PADDLEOCR_URL: http://paddleocr:8091
+      CONVERSION_URL: http://convert-worker:8092
+      OPENAI_EMBEDDING_MODEL: text-embedding-3-small
+      OPENAI_EMBEDDING_DIMENSIONS: "1536"
       WORKFLOW_DISPATCH_PRIVATE_KEY_FILE: /run/secrets/workflow-dispatch-private
       WORKFLOW_CALLBACK_PUBLIC_KEY_FILE: /run/secrets/workflow-callback-public
     secrets: [app-runtime, auth-secret, workflow-dispatch-private, workflow-callback-public]
-    networks: [database, edge, workflow]
+    networks: [database, edge, workflow, ocr, conversion]
     depends_on:
       migrate:
         condition: service_completed_successfully
       n8n-worker:
+        condition: service_healthy
+      paddleocr:
+        condition: service_healthy
+      convert-worker:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/health/ready').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
@@ -224,6 +234,55 @@ services:
       migrate:
         condition: service_completed_successfully
 
+  paddleocr:
+    build:
+      context: ./infra/paddleocr
+    entrypoint: ["python", "/opt/ocr/server.py"]
+    user: "10001:10001"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    networks: [ocr]
+    mem_limit: 2g
+    memswap_limit: 2g
+    cpus: 2.0
+    pids_limit: 128
+    shm_size: 128m
+    tmpfs: ["/tmp:size=256m,mode=1777,nosuid,nodev"]
+    logging:
+      driver: none
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8091/healthz',timeout=3).status==200 else 1)"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+    stop_grace_period: 10s
+
+  convert-worker:
+    build:
+      context: ./infra/conversion
+    entrypoint: ["python3", "/opt/conversion/server.py"]
+    user: "10001:10001"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    networks: [conversion]
+    mem_limit: 1g
+    memswap_limit: 1g
+    cpus: 1.0
+    pids_limit: 128
+    tmpfs: ["/tmp:size=256m,mode=1777,nosuid,nodev"]
+    logging:
+      driver: none
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8092/healthz',timeout=3).status==200 else 1)"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+    stop_grace_period: 10s
+
   convert:
     profiles: [conversion]
     build: ./infra/conversion
@@ -240,6 +299,10 @@ networks:
   database:
     internal: true
   workflow:
+    internal: true
+  ocr:
+    internal: true
+  conversion:
     internal: true
   edge:
 

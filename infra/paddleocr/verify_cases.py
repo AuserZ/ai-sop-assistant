@@ -8,7 +8,7 @@ import time
 
 from PIL import Image
 from engine import (MANIFEST, MAXIMUM_INPUT_BYTES, MAXIMUM_RESULT_BYTES, OcrFailure, decode_image,
-                    encode_result, read_input, synthetic_image, validate_segments, verify_models)
+                    encode_result, read_input, recognize_bytes, synthetic_image, validate_segments, verify_models)
 
 
 def rejected(operation, expected):
@@ -29,9 +29,15 @@ def run_checks():
     for content in (b"", b"x" * (MAXIMUM_INPUT_BYTES + 1)):
         rejected(lambda: decode_image(content), "OCR_INPUT_SIZE")
     checks.append("empty and oversized bytes denied")
-    for content in (b"not an image", b"%PDF-1.7\n%%EOF"):
+    bmp_buffer = io.BytesIO()
+    Image.new("RGB", (16, 16), "white").save(bmp_buffer, format="BMP")
+    for content in (b"not an image", b"%PDF-1.7\n%%EOF", bmp_buffer.getvalue()):
         rejected(lambda: decode_image(content), "OCR_INPUT_FORMAT")
     checks.append("malformed and unsupported formats denied")
+    rejected(lambda: recognize_bytes(b""), "OCR_INPUT_SIZE")
+    rejected(lambda: recognize_bytes(b"x" * (MAXIMUM_INPUT_BYTES + 1)), "OCR_INPUT_SIZE")
+    rejected(lambda: recognize_bytes(bmp_buffer.getvalue()), "OCR_INPUT_FORMAT")
+    checks.append("recognize_bytes bounds denied")
     pixels = io.BytesIO()
     Image.new("1", (4000, 3001)).save(pixels, format="PNG")
     rejected(lambda: decode_image(pixels.getvalue()), "OCR_INPUT_PIXELS")

@@ -8,7 +8,7 @@ RUN python -m pip install --no-cache-dir --only-binary=:all: --require-hashes -r
     && python -m pip check
 COPY models.json download_models.py ./
 RUN python download_models.py
-COPY engine.py cli.py verify_cases.py ./
+COPY engine.py cli.py verify_cases.py server.py ./
 ENV HOME=/tmp PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 \
     PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK=True HF_HUB_OFFLINE=1 \
     TRANSFORMERS_OFFLINE=1 OMP_NUM_THREADS=2 OPENBLAS_NUM_THREADS=2 \

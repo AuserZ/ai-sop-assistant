@@ -25,6 +25,14 @@ export const uploadInput = z.object({
 export const emptyDocumentBody = z.object({}).strict();
 export const documentIdInput = z.uuid();
 export type UploadInput = z.infer<typeof uploadInput>;
+export type DocumentLifecycleStatus = "UPLOADED" | "PROCESSING" | "PENDING_VERIFICATION" | "FAILED";
+export type DocumentJobState = "QUEUED" | "RUNNING" | "COMPLETED" | "FAILED" | "WAITING_FOR_PIPELINE";
+export type DocumentProcessingSummary = {
+  pageCount: number;
+  chunkCount: number;
+  issueCount: number;
+  hasPreview: boolean;
+};
 export type DocumentUploadDto = {
   id: string;
   title: string;
@@ -33,9 +41,17 @@ export type DocumentUploadDto = {
   sizeBytes: number;
   sha256: string;
   uploadStatus: "AWAITING_UPLOAD" | "FINALIZING" | "FAILED" | "ACCEPTED" | "EXPIRED";
-  status: "UPLOADED" | null;
+  status: DocumentLifecycleStatus | null;
   failureCode: string | null;
-  job: { id: string; state: "WAITING_FOR_PIPELINE" } | null;
+  processingErrorCode: string | null;
+  summary: DocumentProcessingSummary | null;
+  job: {
+    id: string;
+    state: DocumentJobState;
+    stage: string | null;
+    attemptNumber: number;
+    errorCode: string | null;
+  } | null;
 };
 export type UploadAuthorization = {
   url: string;

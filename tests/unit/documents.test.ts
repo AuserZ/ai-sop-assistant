@@ -5,6 +5,7 @@ import { documentQuotaBytes, storageConfiguration } from "../../src/server/docum
 import { documentBounds, uploadInput } from "../../src/server/documents/contracts";
 import { validateDocumentObject } from "../../src/server/documents/format";
 import { createR2Storage, readBoundedObject } from "../../src/server/documents/storage";
+import { syntheticRichDocx, syntheticScannedPdf } from "../fixtures/document-files";
 
 const pdf = Buffer.from("%PDF-1.7\n1 0 obj<</Type/Catalog>>endobj\n%%EOF\n");
 const pdfMime = "application/pdf";
@@ -133,5 +134,36 @@ describe("D2/ADR03 upload contracts, formats and signed storage boundary", () =>
     const base = docxEntries();
     const bytes = zip([{ ...base[0], body: base[0].body.replace("main+xml", "ma&#105;n+xml") }, ...base.slice(1)]);
     await expect(validateDocumentObject({ bytes, contentType: docxMime }, metadata(bytes, docxMime), signal())).resolves.toBeUndefined();
+  });
+
+  it("R-S05b-1 rejects external OOXML relationships and attached templates while allowing https hyperlinks", async () => {
+    const base = docxEntries();
+    const externalImageRels = {
+      name: "word/_rels/document.xml.rels",
+      body: '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="http://app:3000/api/health/ready" TargetMode="External"/></Relationships>',
+    };
+    const externalSubDocRels = {
+      name: "word/_rels/document.xml.rels",
+      body: '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/subDocument" Target="file:///etc/passwd" TargetMode="External"/></Relationships>',
+    };
+    const attachedTemplateSettings = {
+      name: "word/settings.xml",
+      body: '<w:settings xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:attachedTemplate w:id="rId1"/></w:settings>',
+    };
+    const safeHyperlinkRels = {
+      name: "word/_rels/document.xml.rels",
+      body: '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="https://example.invalid/sop-ref" TargetMode="External"/></Relationships>',
+    };
+
+    for (const extra of [externalImageRels, externalSubDocRels, attachedTemplateSettings]) {
+      const bytes = zip([...base, extra]);
+      await expect(validateDocumentObject({ bytes, contentType: docxMime }, metadata(bytes, docxMime), signal())).rejects.toMatchObject({ code: "UPLOAD_INVALID_FORMAT" });
+    }
+    const allowed = zip([...base, safeHyperlinkRels]);
+    await expect(validateDocumentObject({ bytes: allowed, contentType: docxMime }, metadata(allowed, docxMime), signal())).resolves.toBeUndefined();
+    const scannedPdf = syntheticScannedPdf();
+    await expect(validateDocumentObject({ bytes: scannedPdf, contentType: pdfMime }, metadata(scannedPdf, pdfMime), signal())).resolves.toBeUndefined();
+    const richDocx = syntheticRichDocx();
+    await expect(validateDocumentObject({ bytes: richDocx, contentType: docxMime }, metadata(richDocx, docxMime), signal())).resolves.toBeUndefined();
   });
 });

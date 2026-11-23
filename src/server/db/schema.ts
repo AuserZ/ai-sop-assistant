@@ -1,7 +1,43 @@
-import { sql } from "drizzle-orm";
-import { bigint, boolean, check, index, integer, jsonb, pgSchema, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import { sql, type SQL } from "drizzle-orm";
+import {
+  bigint,
+  boolean,
+  check,
+  customType,
+  index,
+  integer,
+  jsonb,
+  pgSchema,
+  real,
+  text,
+  timestamp,
+  uniqueIndex,
+  uuid,
+  type AnyPgColumn,
+} from "drizzle-orm/pg-core";
 
 export const appSchema = pgSchema("app");
+
+const pgVector1536 = customType<{ data: number[]; driverData: string }>({
+  dataType() {
+    return "public.vector(1536)";
+  },
+  toDriver(value: number[]) {
+    return `[${value.join(",")}]`;
+  },
+  fromDriver(value: string) {
+    const trimmed = value.trim();
+    if (!trimmed.startsWith("[") || !trimmed.endsWith("]")) return [];
+    const inner = trimmed.slice(1, -1).trim();
+    return inner ? inner.split(",").map(Number) : [];
+  },
+});
+
+const pgTsvector = customType<{ data: string; driverData: string }>({
+  dataType() {
+    return "tsvector";
+  },
+});
 
 export const authUsers = appSchema.table("auth_users", {
   id: text().primaryKey(),
@@ -116,10 +152,16 @@ export const sopDocuments = appSchema.table("sop_documents", {
   sha256: text().notNull(),
   originalKey: text("original_key").notNull().unique(),
   uploadedBy: text("uploaded_by").notNull().references(() => authUsers.id),
-  status: text().$type<"UPLOADED">().default("UPLOADED").notNull(),
+  status: text().$type<"UPLOADED" | "PROCESSING" | "PENDING_VERIFICATION" | "FAILED">().default("UPLOADED").notNull(),
+  previewKey: text("preview_key").unique(),
+  latestJobId: uuid("latest_job_id").references((): AnyPgColumn => workflowJobs.id),
+  processedJobId: uuid("processed_job_id").references((): AnyPgColumn => workflowJobs.id),
+  processedPipelineVersion: text("processed_pipeline_version"),
+  processingErrorCode: text("processing_error_code"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
-  check("sop_documents_status", sql`${table.status} = 'UPLOADED'`),
+  check("sop_documents_status", sql`${table.status} in ('UPLOADED','PROCESSING','PENDING_VERIFICATION','FAILED')`),
   check("sop_documents_sha256", sql`${table.sha256} ~ '^[a-f0-9]{64}$'`),
   check("sop_documents_bytes", sql`${table.sizeBytes} between 1 and 20000000`),
 ]);
@@ -135,6 +177,8 @@ export const workflowJobs = appSchema.table("workflow_jobs", {
   sourceSha256: text("source_sha256"),
   pipelineVersion: text("pipeline_version"),
   state: text().$type<"QUEUED" | "RUNNING" | "COMPLETED" | "FAILED" | "WAITING_FOR_PIPELINE">().default("QUEUED").notNull(),
+  stage: text(),
+  errorCode: text("error_code"),
   attemptId: uuid("attempt_id").notNull(),
   attemptNumber: integer("attempt_number").default(1).notNull(),
   dispatchNonce: uuid("dispatch_nonce").notNull(),
@@ -156,8 +200,86 @@ export const workflowJobs = appSchema.table("workflow_jobs", {
   index("workflow_jobs_dispatch_due").on(table.state, table.dispatchNextAt),
   check("workflow_jobs_kind", sql`${table.kind} in ('synthetic_probe','document_ingestion')`),
   check("workflow_jobs_state", sql`${table.state} in ('QUEUED','RUNNING','COMPLETED','FAILED','WAITING_FOR_PIPELINE')`),
-  check("workflow_jobs_kind_state", sql`(${table.kind} = 'synthetic_probe' and ${table.scenario} in ('success','validation_failure') and ${table.scenario} is not null and ${table.attemptDeadline} is not null and ${table.state} <> 'WAITING_FOR_PIPELINE' and ${table.documentId} is null and ${table.sourceSha256} is null and ${table.pipelineVersion} is null) or (${table.kind} = 'document_ingestion' and ${table.scenario} is null and ${table.documentId} is not null and ${table.sourceSha256} ~ '^[a-f0-9]{64}$' and ${table.sourceSha256} is not null and ${table.pipelineVersion} is not null and ${table.state} = 'WAITING_FOR_PIPELINE' and ${table.attemptDeadline} is null and ${table.dispatchCount} = 0 and ${table.dispatchLeaseToken} is null and ${table.dispatchLeaseUntil} is null and ${table.dispatchAcceptedAt} is null and ${table.runLeaseUntil} is null and ${table.executionId} is null and ${table.step} = 0 and ${table.attemptNumber} = 1)`),
+  check("workflow_jobs_kind_state", sql`(${table.kind} = 'synthetic_probe' and ${table.scenario} in ('success','validation_failure') and ${table.scenario} is not null and ${table.attemptDeadline} is not null and ${table.state} <> 'WAITING_FOR_PIPELINE' and ${table.documentId} is null and ${table.sourceSha256} is null and ${table.pipelineVersion} is null) or (${table.kind} = 'document_ingestion' and ${table.scenario} is null and ${table.documentId} is not null and ${table.sourceSha256} ~ '^[a-f0-9]{64}$' and ${table.sourceSha256} is not null and ${table.pipelineVersion} is not null and ((${table.state} = 'WAITING_FOR_PIPELINE' and ${table.attemptDeadline} is null and ${table.dispatchCount} = 0 and ${table.dispatchLeaseToken} is null and ${table.dispatchLeaseUntil} is null and ${table.dispatchAcceptedAt} is null and ${table.runLeaseUntil} is null and ${table.executionId} is null and ${table.step} = 0 and ${table.attemptNumber} = 1) or (${table.state} in ('QUEUED','RUNNING','COMPLETED','FAILED') and ${table.attemptDeadline} is not null)))`),
   check("workflow_jobs_attempt_bounds", sql`${table.attemptNumber} between 1 and 3 and ${table.dispatchCount} between 0 and 3 and ${table.step} between 0 and 5`),
+]);
+
+export const sopExtractionPages = appSchema.table("sop_extraction_pages", {
+  id: uuid().defaultRandom().primaryKey(),
+  documentId: uuid("document_id").notNull().references(() => sopDocuments.id, { onDelete: "cascade" }),
+  jobId: uuid("job_id").notNull().references(() => workflowJobs.id, { onDelete: "cascade" }),
+  sourceSha256: text("source_sha256").notNull(),
+  pipelineVersion: text("pipeline_version").notNull(),
+  pageIndex: integer("page_index").notNull(),
+  pageKind: text("page_kind").$type<"native" | "scanned_ocr" | "mixed_ocr" | "blank" | "docx_section_flow">().notNull(),
+  sourceLocationKind: text("source_location_kind").$type<"pdf_page" | "docx_derivative_preview">().notNull(),
+  rawText: text("raw_text").notNull(),
+  normalizedText: text("normalized_text").notNull(),
+  ocrConfidence: real("ocr_confidence"),
+  ocrModel: text("ocr_model"),
+  layoutMetadata: jsonb("layout_metadata").$type<Record<string, unknown>>(),
+  verificationStatus: text("verification_status").$type<"UNVERIFIED">().default("UNVERIFIED").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("sop_extraction_pages_job_page").on(table.jobId, table.pageIndex),
+  index("sop_extraction_pages_document_job").on(table.documentId, table.jobId),
+  check("sop_extraction_pages_sha256", sql`${table.sourceSha256} ~ '^[a-f0-9]{64}$'`),
+  check("sop_extraction_pages_index", sql`${table.pageIndex} >= 1`),
+  check("sop_extraction_pages_kind", sql`${table.pageKind} in ('native','scanned_ocr','mixed_ocr','blank','docx_section_flow')`),
+  check("sop_extraction_pages_location", sql`${table.sourceLocationKind} in ('pdf_page','docx_derivative_preview')`),
+  check("sop_extraction_pages_confidence", sql`${table.ocrConfidence} is null or (${table.ocrConfidence} >= 0 and ${table.ocrConfidence} <= 1)`),
+  check("sop_extraction_pages_unverified", sql`${table.verificationStatus} = 'UNVERIFIED'`),
+]);
+
+export const sopChunks = appSchema.table("sop_chunks", {
+  id: uuid().defaultRandom().primaryKey(),
+  documentId: uuid("document_id").notNull().references(() => sopDocuments.id, { onDelete: "cascade" }),
+  jobId: uuid("job_id").notNull().references(() => workflowJobs.id, { onDelete: "cascade" }),
+  sourceSha256: text("source_sha256").notNull(),
+  pipelineVersion: text("pipeline_version").notNull(),
+  sequence: integer().notNull(),
+  sectionPath: text("section_path").notNull(),
+  pageStart: integer("page_start"),
+  pageEnd: integer("page_end"),
+  contentType: text("content_type").$type<"procedure" | "table" | "narrative" | "mixed">().notNull(),
+  text: text().notNull(),
+  contentHash: text("content_hash").notNull(),
+  tokenEstimate: integer("token_estimate").notNull(),
+  searchVector: pgTsvector("search_vector").generatedAlwaysAs((): SQL => sql`to_tsvector('simple', coalesce(section_path, '') || ' ' || text)`).notNull(),
+  embedding: pgVector1536("embedding"),
+  embeddingModel: text("embedding_model"),
+  embeddingDimensions: integer("embedding_dimensions"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("sop_chunks_job_sequence").on(table.jobId, table.sequence),
+  index("sop_chunks_search_vector").using("gin", table.searchVector),
+  index("sop_chunks_document_job").on(table.documentId, table.jobId),
+  check("sop_chunks_sha256", sql`${table.sourceSha256} ~ '^[a-f0-9]{64}$'`),
+  check("sop_chunks_sequence", sql`${table.sequence} >= 0`),
+  check("sop_chunks_pages", sql`(${table.pageStart} is null or ${table.pageStart} >= 1) and (${table.pageEnd} is null or (${table.pageStart} is not null and ${table.pageEnd} >= ${table.pageStart}))`),
+  check("sop_chunks_content_type", sql`${table.contentType} in ('procedure','table','narrative','mixed')`),
+  check("sop_chunks_text_nonempty", sql`length(btrim(${table.text})) > 0`),
+  check("sop_chunks_content_hash", sql`${table.contentHash} ~ '^[a-f0-9]{64}$'`),
+  check("sop_chunks_token_estimate", sql`${table.tokenEstimate} > 0`),
+  check("sop_chunks_embedding_dimensions", sql`${table.embeddingDimensions} is null or ${table.embeddingDimensions} = 1536`),
+]);
+
+export const sopVerificationIssues = appSchema.table("sop_verification_issues", {
+  id: uuid().defaultRandom().primaryKey(),
+  documentId: uuid("document_id").notNull().references(() => sopDocuments.id, { onDelete: "cascade" }),
+  jobId: uuid("job_id").notNull().references(() => workflowJobs.id, { onDelete: "cascade" }),
+  pageIndex: integer("page_index"),
+  sectionPath: text("section_path"),
+  severity: text().$type<"info" | "warning" | "error">().notNull(),
+  issueCode: text("issue_code").notNull(),
+  summary: text().notNull(),
+  region: jsonb().$type<Record<string, unknown>>(),
+  resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+  resolvedBy: text("resolved_by").references(() => authUsers.id),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index("sop_verification_issues_document_job").on(table.documentId, table.jobId),
+  check("sop_verification_issues_severity", sql`${table.severity} in ('info','warning','error')`),
 ]);
 
 export const workflowEvents = appSchema.table("workflow_events", {

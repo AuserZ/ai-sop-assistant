@@ -2,7 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { expect, it, vi } from "vitest";
 import type { CurrentAccount } from "../../src/server/auth/authorization";
 import type { AuthDatabase } from "../../src/server/auth/rate-limit";
-import { authSessions, authUsers, documentUploadIntents, workflowJobs } from "../../src/server/db/schema";
+import { authSessions, authUsers, documentUploadIntents, sopDocuments, workflowJobs } from "../../src/server/db/schema";
 import { initializeDocumentUpload } from "../../src/server/documents/service";
 import type { DocumentStorage } from "../../src/server/documents/storage";
 
@@ -25,7 +25,8 @@ it("D2 retry uses the locked accepted intent after an earlier pending snapshot",
       const rows = (locked: boolean) => {
         if (table === authUsers) return [{ id: owner.id, active: true, role: "ADMIN" }];
         if (table === authSessions) return [{ id: owner.sessionId }];
-        if (table === workflowJobs) return [{ id: jobId }];
+        if (table === sopDocuments) return [{ status: "UPLOADED", previewKey: null, processingErrorCode: null }];
+        if (table === workflowJobs) return [{ id: jobId, state: "QUEUED", stage: null, attemptNumber: 1, errorCode: null }];
         if (table === documentUploadIntents && fields?.intent) return [{ intent: locked ? accepted : pending, expired: false, leaseActive: false }];
         if (table === documentUploadIntents) return [pending];
         throw new Error("Unexpected synthetic query.");
@@ -43,6 +44,6 @@ it("D2 retry uses the locked accepted intent after an earlier pending snapshot",
     read: vi.fn(async () => null), create: vi.fn(async () => undefined),
   };
   const result = await initializeDocumentUpload(owner, input, database, storage, 1000);
-  expect(result).toMatchObject({ created: false, upload: null, document: { id: pending.id, uploadStatus: "ACCEPTED", status: "UPLOADED", job: { id: jobId } } });
+  expect(result).toMatchObject({ created: false, upload: null, document: { id: pending.id, uploadStatus: "ACCEPTED", status: "UPLOADED", job: { id: jobId, state: "QUEUED" } } });
   expect(storage.authorizeUpload).not.toHaveBeenCalled();
 });

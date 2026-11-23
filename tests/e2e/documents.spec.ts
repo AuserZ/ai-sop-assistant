@@ -2,7 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { expect, test, type Page } from "@playwright/test";
 import { z } from "zod";
-import { syntheticDocx, syntheticPdf } from "../fixtures/document-files";
+import { syntheticDocx, syntheticPdf, syntheticRichDocx, syntheticScannedPdf } from "../fixtures/document-files";
 
 const fixture = z.object({
   baseURL: z.literal("http://127.0.0.1:3000"), password: z.string(),
@@ -25,7 +25,7 @@ async function noOverflow(page: Page) {
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
 }
 
-test("D2 Admin direct PDF upload seals one private original and a parked ingestion intent", async ({ page }) => {
+test("D2 Admin direct PDF upload seals one private original and queues an ingestion job", async ({ page }) => {
   await openUpload(page);
   const pageErrors: string[] = [];
   page.on("pageerror", (error) => pageErrors.push(error.name));
@@ -47,9 +47,11 @@ test("D2 Admin direct PDF upload seals one private original and a parked ingesti
   const response = await page.request.get(`/api/documents/${id}`);
   expect(response.status()).toBe(200);
   const result = await response.json();
-  expect(result.document).toMatchObject({ uploadStatus: "ACCEPTED", status: "UPLOADED", sizeBytes: bytes.length,
-    sha256: createHash("sha256").update(bytes).digest("hex"), job: { state: "WAITING_FOR_PIPELINE" } });
-  expect(["objectKey", "url", "accessKeyId", "secretAccessKey"].some((key) => key in result.document)).toBe(false);
+  expect(result.document).toMatchObject({ uploadStatus: "ACCEPTED", sizeBytes: bytes.length,
+    sha256: createHash("sha256").update(bytes).digest("hex") });
+  expect(["UPLOADED", "PROCESSING", "PENDING_VERIFICATION"]).toContain(result.document.status);
+  expect(["QUEUED", "RUNNING", "COMPLETED"]).toContain(result.document.job.state);
+  expect(["objectKey", "originalKey", "previewKey", "url", "accessKeyId", "secretAccessKey"].some((key) => key in result.document)).toBe(false);
   expect((await page.request.get(`/api/jobs/${result.document.job.id}/events`)).status()).toBe(404);
   await page.reload();
   await expect(page.getByRole("heading", { name: "Upload saved", exact: true })).toBeVisible();
@@ -91,8 +93,11 @@ test("D2 the exact20MB boundary survives browser upload and server sealing", asy
   expect(z.uuid().safeParse(id).success).toBe(true);
   const response = await page.request.get(`/api/documents/${id}`);
   expect(response.status()).toBe(200);
-  expect((await response.json()).document).toMatchObject({ sizeBytes: 20_000_000, status: "UPLOADED", uploadStatus: "ACCEPTED",
-    sha256: createHash("sha256").update(bytes).digest("hex"), job: { state: "WAITING_FOR_PIPELINE" } });
+  const body = await response.json();
+  expect(body.document).toMatchObject({ sizeBytes: 20_000_000, uploadStatus: "ACCEPTED",
+    sha256: createHash("sha256").update(bytes).digest("hex") });
+  expect(["UPLOADED", "PROCESSING", "PENDING_VERIFICATION"]).toContain(body.document.status);
+  expect(["QUEUED", "RUNNING", "COMPLETED"]).toContain(body.document.job.state);
 });
 
 test("D2 field validation and safe service failure retry issue no premature success", async ({ page }) => {
@@ -119,6 +124,62 @@ test("D2 field validation and safe service failure retry issue no premature succ
   await expect(page.getByRole("heading", { name: "Upload saved", exact: true })).toHaveCount(0);
   await page.getByRole("button", { name: "Upload SOP", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Upload saved", exact: true })).toBeVisible();
+});
+
+test("D3 uploaded native PDF, scanned PDF (OCR) and rich DOCX process through n8n to PENDING_VERIFICATION without activating", async ({ page }) => {
+  test.setTimeout(180_000);
+  await openUpload(page);
+  const uploadAndWait = async (
+    title: string,
+    name: string,
+    mimeType: string,
+    buffer: Buffer,
+    expectPreview: boolean,
+    minimumIssues = 0,
+  ) => {
+    await page.getByLabel("SOP title", { exact: true }).fill(title);
+    await page.getByLabel("SOP file", { exact: true }).setInputFiles({ name, mimeType, buffer });
+    await page.getByRole("button", { name: "Upload SOP", exact: true }).click();
+    await expect(page.getByRole("heading", { name: "Upload saved", exact: true })).toBeVisible({ timeout: 30_000 });
+    const id = new URL(page.url()).searchParams.get("document");
+    expect(z.uuid().safeParse(id).success).toBe(true);
+    await expect.poll(async () => {
+      const response = await page.request.get(`/api/documents/${id}`);
+      if (!response.ok()) return null;
+      const body = await response.json();
+      return body.document?.status ?? null;
+    }, { timeout: 120_000, intervals: [500, 1000, 2000] }).toBe("PENDING_VERIFICATION");
+    const settled = await page.request.get(`/api/documents/${id}`);
+    expect(settled.status()).toBe(200);
+    const { document: finalDoc } = await settled.json();
+    expect(finalDoc).toMatchObject({
+      uploadStatus: "ACCEPTED",
+      status: "PENDING_VERIFICATION",
+      processingErrorCode: null,
+      job: { state: "COMPLETED" },
+      summary: { hasPreview: expectPreview },
+    });
+    expect(finalDoc.summary.pageCount).toBeGreaterThanOrEqual(1);
+    expect(finalDoc.summary.chunkCount).toBeGreaterThanOrEqual(1);
+    expect(finalDoc.summary.issueCount).toBeGreaterThanOrEqual(minimumIssues);
+    await page.getByRole("button", { name: "Choose another file", exact: true }).click();
+    return id!;
+  };
+
+  const nativePdfId = await uploadAndWait("Synthetic S05 Native PDF", "s05-native.pdf", "application/pdf", syntheticPdf(), false);
+  const scannedPdfId = await uploadAndWait("Synthetic S05 Scanned PDF", "s05-scanned.pdf", "application/pdf", syntheticScannedPdf(), false, 1);
+  const docxId = await uploadAndWait(
+    "Synthetic S05 Rich DOCX",
+    "s05-rich.docx",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    syntheticRichDocx(),
+    true,
+    2,
+  );
+  await signIn(page, "staff");
+  expect((await page.request.get(`/api/documents/${nativePdfId}`)).status()).toBe(403);
+  expect((await page.request.get(`/api/documents/${scannedPdfId}`)).status()).toBe(403);
+  expect((await page.request.get(`/api/documents/${docxId}`)).status()).toBe(403);
 });
 
 test("D2 anonymous and Staff cannot obtain upload authorization or Admin controls", async ({ page }) => {

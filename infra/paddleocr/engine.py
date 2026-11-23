@@ -54,13 +54,13 @@ def decode_image(content):
     try:
         with warnings.catch_warnings():
             warnings.simplefilter("error", Image.DecompressionBombWarning)
-            with Image.open(io.BytesIO(content)) as image:
+            with Image.open(io.BytesIO(content), formats=("PNG", "JPEG")) as image:
                 if image.format not in {"PNG", "JPEG"} or getattr(image, "n_frames", 1) != 1:
                     raise OcrFailure("OCR_INPUT_FORMAT")
                 if image.width * image.height > MAXIMUM_IMAGE_PIXELS:
                     raise OcrFailure("OCR_INPUT_PIXELS")
                 image.verify()
-            with Image.open(io.BytesIO(content)) as image:
+            with Image.open(io.BytesIO(content), formats=("PNG", "JPEG")) as image:
                 return image.convert("RGB")
     except OcrFailure:
         raise
@@ -159,6 +159,14 @@ def recognize(image, input_sha256):
     }
     encode_result(result)
     return result
+
+
+def recognize_bytes(raw: bytes):
+    if not isinstance(raw, (bytes, bytearray)):
+        raise OcrFailure("OCR_INPUT_FORMAT")
+    content = bytes(raw)
+    image = decode_image(content)
+    return recognize(image, hashlib.sha256(content).hexdigest())
 
 
 def encode_result(result):

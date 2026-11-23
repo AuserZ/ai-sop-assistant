@@ -11,10 +11,11 @@ services:
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
     mem_limit: 2g
+    memswap_limit: 2g
     cpus: 2.0
     pids_limit: 128
     shm_size: 128m
-    tmpfs: ["/tmp:size=256m,mode=1777"]
+    tmpfs: ["/tmp:size=256m,mode=1777,nosuid,nodev"]
     logging:
       driver: none
     stop_grace_period: 5s

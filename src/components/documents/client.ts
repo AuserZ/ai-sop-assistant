@@ -5,12 +5,30 @@ export const maximumUploadBytes = 20_000_000;
 const metadataTimeoutMilliseconds = 35_000;
 const mimeTypeSchema = z.enum(["application/pdf", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"]);
 const documentSchema = z.object({
-  id: z.uuid(), title: z.string(), fileName: z.string(), mimeType: mimeTypeSchema,
-  sizeBytes: z.number().int().positive().max(maximumUploadBytes), sha256: z.string().regex(/^[a-f0-9]{64}$/),
+  id: z.uuid(),
+  title: z.string(),
+  fileName: z.string(),
+  mimeType: mimeTypeSchema,
+  sizeBytes: z.number().int().positive().max(maximumUploadBytes),
+  sha256: z.string().regex(/^[a-f0-9]{64}$/),
   uploadStatus: z.enum(["AWAITING_UPLOAD", "FINALIZING", "FAILED", "ACCEPTED", "EXPIRED"]),
-  status: z.literal("UPLOADED").nullable(), failureCode: z.string().nullable(),
-  job: z.object({ id: z.uuid(), state: z.literal("WAITING_FOR_PIPELINE") }).nullable(),
-}).refine((document) => document.uploadStatus !== "ACCEPTED" || document.status === "UPLOADED" && document.job !== null);
+  status: z.enum(["UPLOADED", "PROCESSING", "PENDING_VERIFICATION", "FAILED"]).nullable(),
+  failureCode: z.string().nullable(),
+  processingErrorCode: z.string().nullable().optional().default(null),
+  summary: z.object({
+    pageCount: z.number().int().min(0),
+    chunkCount: z.number().int().min(0),
+    issueCount: z.number().int().min(0),
+    hasPreview: z.boolean(),
+  }).nullable().optional().default(null),
+  job: z.object({
+    id: z.uuid(),
+    state: z.enum(["QUEUED", "RUNNING", "COMPLETED", "FAILED", "WAITING_FOR_PIPELINE"]),
+    stage: z.string().nullable().optional().default(null),
+    attemptNumber: z.number().int().min(1).max(3).optional().default(1),
+    errorCode: z.string().nullable().optional().default(null),
+  }).nullable(),
+}).refine((document) => document.uploadStatus !== "ACCEPTED" || (document.status !== null && document.job !== null));
 const statusSchema = z.object({ document: documentSchema });
 const initSchema = statusSchema.extend({ upload: z.object({
   url: z.string().url(), method: z.literal("PUT"),
@@ -33,6 +51,17 @@ const messages: Record<string, string> = {
   UPLOAD_CHECKSUM_MISMATCH: "The uploaded bytes do not match the selected file. Choose the file again.",
   UPLOAD_INVALID_FORMAT: "This file is not a supported PDF or DOCX. Choose another file.",
   UPLOAD_STORAGE_UNAVAILABLE: "Upload storage is temporarily unavailable. Try again.",
+  INGESTION_TIMEOUT: "Document processing timed out. Retry processing.",
+  NO_EXTRACTABLE_TEXT: "No readable text could be extracted from this file. Check the source file or retry.",
+  DOCX_EXTRACTION_INVALID: "This DOCX file could not be extracted safely.",
+  DOCX_CONVERSION_FAILED: "The DOCX preview could not be rendered.",
+  DOCX_CONVERSION_TRANSIENT: "Document conversion is temporarily unavailable. Retry processing.",
+  PDF_INSPECT_INVALID: "This PDF file could not be inspected.",
+  PDF_EMPTY: "This PDF file contains no readable pages.",
+  OCR_PAGE_FAILED: "OCR could not read one or more scanned pages.",
+  OCR_WORKER_TRANSIENT: "OCR processing is temporarily unavailable. Retry processing.",
+  EMBEDDING_PROVIDER_TRANSIENT: "Indexing is temporarily unavailable. Retry processing.",
+  EMBEDDING_PROVIDER_REJECTED: "Indexing failed to generate embeddings for this document.",
 };
 
 export class DocumentRequestError extends Error {
@@ -64,4 +93,8 @@ export async function readUpload(id: string, signal: AbortSignal): Promise<Uploa
 }
 export function uploadFailureMessage(document: DocumentUploadDto) {
   return new DocumentRequestError(document.failureCode ?? "UPLOAD_UNAVAILABLE").message;
+}
+export function processingFailureMessage(document: DocumentUploadDto) {
+  const code = document.processingErrorCode ?? document.job?.errorCode;
+  return code && messages[code] ? messages[code] : "Document processing did not finish. Retry processing.";
 }

@@ -3,6 +3,10 @@ import { spawnSync } from "node:child_process";
 import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
 
 const temporaryFile = "/tmp/sop-import/credentials.json";
+const managedWorkflows = [
+  { id: "sop-s03-probe-v1", path: "/opt/sop/workflows/s03-probe.v1.json" },
+  { id: "sop-s05-ingestion-v1", path: "/opt/sop/workflows/s05-ingestion.v1.json" },
+];
 const dispatchPublic = createPublicKey(await readFile("/run/secrets/workflow-dispatch-public", "utf8"));
 const callbackPrivate = createPrivateKey(await readFile("/run/secrets/workflow-callback-private", "utf8"));
 for (const key of [dispatchPublic, callbackPrivate]) {
@@ -39,11 +43,11 @@ try {
     },
   ]), { flag: "wx", mode: 0o600 });
   if (runCommand(["import:credentials", `--input=${temporaryFile}`]) && !process.argv.includes("--credentials-only")) {
-    const workflowPath = "/opt/sop/workflows/s03-probe.v1.json";
-    const workflow = JSON.parse(await readFile(workflowPath, "utf8"));
-    if (workflow.id !== "sop-s03-probe-v1") throw new Error("Unexpected workflow identity.");
-    if (runCommand(["import:workflow", `--input=${workflowPath}`])) {
-      runCommand(["publish:workflow", "--id=sop-s03-probe-v1"]);
+    for (const { id, path } of managedWorkflows) {
+      const workflow = JSON.parse(await readFile(path, "utf8"));
+      if (workflow.id !== id) throw new Error(`Unexpected workflow identity for ${id}.`);
+      if (!runCommand(["import:workflow", `--input=${path}`])) break;
+      if (!runCommand(["publish:workflow", `--id=${id}`])) break;
     }
   }
 } finally {

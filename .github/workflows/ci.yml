@@ -27,7 +27,7 @@ jobs:
 
   foundation:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     env:
       NEXT_TELEMETRY_DISABLED: 1
       WORKFLOW_PROBE_CALLBACK_DELAY_MS: "2000"
@@ -47,6 +47,12 @@ jobs:
       - run: npm test
       - run: node --test infra/n8n/local-secrets.test.mjs
       - run: node --test infra/storage-fixture/gateway.test.mjs infra/storage-fixture/secrets.test.mjs
+      - name: Check infrastructure verification and bootstrap scripts
+        run: |
+          node --check infra/paddleocr/verify.mjs
+          node --check infra/conversion/verify.mjs
+          node --check infra/n8n/bootstrap.mjs
+          node infra/conversion/verify.mjs
       - run: npm run build
       - name: Check Compose and run application smoke and database tests
         run: |
@@ -54,8 +60,9 @@ jobs:
           node infra/storage-fixture/create-secrets.mjs
           docker compose --profile verify --profile conversion config --quiet
           docker compose --profile verify build app migrate verify-db
-          docker compose build storage-fixture
+          docker compose build storage-fixture paddleocr convert-worker
           SOP_STORAGE_FIXTURE_VERIFY=1 SOP_STORAGE_FIXTURE_IMAGE=ai-sop-assistant-storage-fixture node infra/storage-fixture/verify-native.mjs
+          SOP_CONVERSION_VERIFY_DOCKER=1 SOP_CONVERSION_IMAGE=ai-sop-assistant-convert-worker node infra/conversion/verify.mjs
           docker compose up --wait --wait-timeout 180 postgres
           docker compose run --rm --no-deps migrate
           docker compose --profile verify run --rm --no-deps verify-db

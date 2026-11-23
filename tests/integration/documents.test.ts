@@ -97,11 +97,11 @@ describe("D2/D1/ADR03 private upload transactions and parked ingestion", () => {
     expect(await quota()).toBe(maximum);
   });
 
-  it("accepts immutable bytes and one parked job; retries and staged replay preserve the final object", async () => {
+  it("accepts immutable bytes and one queued ingestion job; retries and staged replay preserve the final object", async () => {
     const { intent, storage } = await initialized();
     const before = await quota();
     const accepted = await finalizeDocumentUpload(owner, intent.id, database, storage);
-    expect(accepted.document).toMatchObject({ uploadStatus: "ACCEPTED", status: "UPLOADED", job: { state: "WAITING_FOR_PIPELINE" } });
+    expect(accepted.document).toMatchObject({ uploadStatus: "ACCEPTED", status: "UPLOADED", job: { state: "QUEUED" } });
     storage.objects.set(intent.stagingKey, { bytes: Buffer.from("overwritten staging"), contentType: "text/plain" });
     const outcomes = await Promise.allSettled(Array.from({ length: 4 }, () => finalizeDocumentUpload(owner, intent.id, database, storage)));
     const retried = [];
@@ -277,7 +277,7 @@ describe("D2/D1/ADR03 private upload transactions and parked ingestion", () => {
     } finally { release.release(); await Promise.allSettled([first]); }
   });
 
-  it("does not dispatch, reconcile, stream or accept synthetic callbacks for parked ingestion", async () => {
+  it("does not dispatch via synthetic probe, stream via probe SSE or accept synthetic callbacks for ingestion jobs", async () => {
     const { intent, storage } = await initialized();
     const accepted = await finalizeDocumentUpload(owner, intent.id, database, storage);
     const [before] = await database.select().from(schema.workflowJobs).where(eq(schema.workflowJobs.id, accepted.document.job!.id));
@@ -286,7 +286,8 @@ describe("D2/D1/ADR03 private upload transactions and parked ingestion", () => {
     await dispatchJobs(database, send, async () => "synthetic-token", "http://n8n-main:5678/webhook/sop-s03-probe-v1");
     const [after] = await database.select().from(schema.workflowJobs).where(eq(schema.workflowJobs.id, before.id));
     expect(after).toEqual(before);
-    expect(before).toMatchObject({ state: "WAITING_FOR_PIPELINE", dispatchCount: 0, attemptDeadline: null, runLeaseUntil: null, executionId: null });
+    expect(before).toMatchObject({ state: "QUEUED", dispatchCount: 0, runLeaseUntil: null, executionId: null });
+    expect(before.attemptDeadline).toBeInstanceOf(Date);
     await expect(withOwnedEvents(owner, before.id, 0, () => undefined, database)).rejects.toMatchObject({ code: "NOT_FOUND" });
     const now = Math.floor(Date.now() / 1000);
     await expect(applyWorkflowCallback({ v: 1, workflow: workflowVersion, purpose: "claim", iss: "sop-n8n", aud: "sop-app", method: "POST",
@@ -297,16 +298,17 @@ describe("D2/D1/ADR03 private upload transactions and parked ingestion", () => {
     await database.delete(schema.workflowJobs).where(eq(schema.workflowJobs.id, probe.jobId));
   });
 
-  it("enforces immutable reservations, original identity and ingestion source binding in PostgreSQL", async () => {
+  it("enforces immutable reservations, original identity, non-ACTIVE status and ingestion source binding in PostgreSQL", async () => {
     const { intent, storage } = await initialized();
     await finalizeDocumentUpload(owner, intent.id, database, storage);
     await expect(database.update(schema.documentUploadIntents).set({ finalKey: "foreign-key" }).where(eq(schema.documentUploadIntents.id, intent.id))).rejects.toMatchObject({ cause: { code: "23514" } });
     await expect(database.delete(schema.documentUploadIntents).where(eq(schema.documentUploadIntents.id, intent.id))).rejects.toMatchObject({ cause: { code: "42501" } });
     await expect(database.update(schema.sopDocuments).set({ sha256: "0".repeat(64) }).where(eq(schema.sopDocuments.id, intent.id))).rejects.toMatchObject({ cause: { code: "42501" } });
+    await expect(connection`update app.sop_documents set status = 'ACTIVE' where id = ${intent.id}`).rejects.toMatchObject({ code: "23514" });
     await expect(database.insert(schema.workflowJobs).values({ ownerId: owner.id, requestKey: randomUUID(), inputHash: "0".repeat(64),
       kind: "document_ingestion", documentId: intent.id, sourceSha256: "0".repeat(64), pipelineVersion: "forged-v1", state: "WAITING_FOR_PIPELINE",
       attemptId: randomUUID(), dispatchNonce: randomUUID() })).rejects.toMatchObject({ cause: { code: "23514" } });
-    await expect(database.update(schema.workflowJobs).set({ state: "QUEUED", attemptDeadline: new Date(Date.now() + 60000) })
+    await expect(database.update(schema.workflowJobs).set({ state: "QUEUED", attemptDeadline: null })
       .where(eq(schema.workflowJobs.documentId, intent.id))).rejects.toMatchObject({ cause: { code: "23514" } });
   });
 

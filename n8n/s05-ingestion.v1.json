@@ -1,0 +1,1055 @@
+{
+  "id": "sop-s05-ingestion-v1",
+  "name": "S05 SOP document ingestion",
+  "active": false,
+  "nodes": [
+    {
+      "id": "ingress",
+      "name": "Signed dispatch",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.2,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "sop-s05-ingestion-v1",
+        "authentication": "jwtAuth",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "credentials": {
+        "jwtAuth": {
+          "id": "sop-s03-dispatch-v1",
+          "name": "sop-s03-dispatch-v1"
+        }
+      },
+      "onError": "stopWorkflow",
+      "webhookId": "sop-s05-ingestion-v1"
+    },
+    {
+      "id": "gate",
+      "name": "Validate dispatch policy",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        220,
+        0
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "valid",
+              "leftValue": "={{ (() => { const p=$json.jwtPayload; const b=$json.body; const now=Math.floor(Date.now()/1000); const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i; const hex64=/^[a-f0-9]{64}$/; return p && typeof p==='object' && !Array.isArray(p) && b && typeof b==='object' && !Array.isArray(b) && Object.keys(b).length===0 && Object.keys($json.query||{}).length===0 && JSON.stringify(Object.keys(p).sort())===JSON.stringify([\"v\",\"workflow\",\"purpose\",\"iss\",\"aud\",\"method\",\"path\",\"jobId\",\"documentId\",\"sourceSha256\",\"pipelineVersion\",\"attemptId\",\"attemptNumber\",\"dispatchNonce\",\"jti\",\"iat\",\"nbf\",\"exp\"].sort()) && p.v===1 && p.workflow==='s05-ingestion-v1' && p.purpose==='dispatch' && p.iss==='sop-app' && p.aud==='sop-n8n' && p.method==='POST' && p.path==='/webhook/sop-s05-ingestion-v1' && uuid.test(p.jobId) && uuid.test(p.documentId) && hex64.test(p.sourceSha256) && typeof p.pipelineVersion==='string' && p.pipelineVersion.length>=1 && p.pipelineVersion.length<=64 && uuid.test(p.attemptId) && uuid.test(p.dispatchNonce) && p.jti===p.dispatchNonce && Number.isInteger(p.attemptNumber) && p.attemptNumber>=1 && p.attemptNumber<=3 && [p.iat,p.nbf,p.exp].every(Number.isInteger) && p.iat<=now+3 && p.iat>=now-60 && p.nbf<=p.iat && p.nbf<=now+3 && p.exp>now-3 && p.exp>p.iat && p.exp-p.iat<=60; })() }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "onError": "stopWorkflow"
+    },
+    {
+      "id": "reject",
+      "name": "Reject invalid dispatch",
+      "type": "n8n-nodes-base.stopAndError",
+      "typeVersion": 1,
+      "position": [
+        440,
+        180
+      ],
+      "parameters": {
+        "errorType": "errorMessage",
+        "errorMessage": "INVALID_WORKFLOW_DISPATCH"
+      },
+      "onError": "stopWorkflow"
+    },
+    {
+      "id": "build-claim",
+      "name": "Build claim",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        440,
+        0
+      ],
+      "parameters": {
+        "mode": "raw",
+        "includeOtherFields": false,
+        "jsonOutput": "={{ JSON.stringify((() => { const p=$('Signed dispatch').first().json.jwtPayload; const now=Math.floor(Date.now()/1000); return {v:1,workflow:'s05-ingestion-v1',jobId:p.jobId,documentId:p.documentId,sourceSha256:p.sourceSha256,pipelineVersion:p.pipelineVersion,attemptId:p.attemptId,attemptNumber:p.attemptNumber,dispatchNonce:p.dispatchNonce,jti:p.attemptId+':'+$execution.id+':claim',iat:now,nbf:now,exp:now+30,iss:'sop-n8n',aud:'sop-app',purpose:'claim',method:'POST',path:'/api/internal/ingestion/'+p.jobId+'/claim',executionId:String($execution.id)}; })()) }}",
+        "options": {}
+      },
+      "onError": "stopWorkflow"
+    },
+    {
+      "id": "sign-claim",
+      "name": "Sign claim",
+      "type": "n8n-nodes-base.jwt",
+      "typeVersion": 1,
+      "position": [
+        660,
+        0
+      ],
+      "parameters": {
+        "operation": "sign",
+        "useJson": true,
+        "claimsJson": "={{ JSON.stringify($json) }}",
+        "headerClaims": "{\"typ\":\"JWT\"}",
+        "options": {
+          "algorithm": "RS256"
+        }
+      },
+      "credentials": {
+        "jwtAuth": {
+          "id": "sop-s03-callback-v1",
+          "name": "sop-s03-callback-v1"
+        }
+      },
+      "onError": "stopWorkflow"
+    },
+    {
+      "id": "send-claim",
+      "name": "Send claim",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        880,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ 'http://app:3000' + $('Build claim').first().json.path }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $json.token }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "{}",
+        "options": {
+          "timeout": 10000,
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          },
+          "redirect": {
+            "redirect": {
+              "followRedirects": false
+            }
+          }
+        }
+      },
+      "onError": "stopWorkflow"
+    },
+    {
+      "id": "build-extract",
+      "name": "Build extract",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1100,
+        0
+      ],
+      "parameters": {
+        "mode": "raw",
+        "includeOtherFields": false,
+        "jsonOutput": "={{ JSON.stringify((() => { const p=$('Signed dispatch').first().json.jwtPayload; const now=Math.floor(Date.now()/1000); return {v:1,workflow:'s05-ingestion-v1',jobId:p.jobId,documentId:p.documentId,sourceSha256:p.sourceSha256,pipelineVersion:p.pipelineVersion,attemptId:p.attemptId,attemptNumber:p.attemptNumber,dispatchNonce:p.dispatchNonce,jti:p.attemptId+':'+$execution.id+':extract',iat:now,nbf:now,exp:now+30,iss:'sop-n8n',aud:'sop-app',purpose:'extract',method:'POST',path:'/api/internal/ingestion/'+p.jobId+'/extract',executionId:String($execution.id)}; })()) }}",
+        "options": {}
+      },
+      "onError": "stopWorkflow"
+    },
+    {
+      "id": "sign-extract",
+      "name": "Sign extract",
+      "type": "n8n-nodes-base.jwt",
+      "typeVersion": 1,
+      "position": [
+        1320,
+        0
+      ],
+      "parameters": {
+        "operation": "sign",
+        "useJson": true,
+        "claimsJson": "={{ JSON.stringify($json) }}",
+        "headerClaims": "{\"typ\":\"JWT\"}",
+        "options": {
+          "algorithm": "RS256"
+        }
+      },
+      "credentials": {
+        "jwtAuth": {
+          "id": "sop-s03-callback-v1",
+          "name": "sop-s03-callback-v1"
+        }
+      },
+      "onError": "stopWorkflow"
+    },
+    {
+      "id": "send-extract",
+      "name": "Send extract",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1540,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ 'http://app:3000' + $('Build extract').first().json.path }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $json.token }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ fileRefToken: $('Send claim').first().json.fileRefToken }) }}",
+        "options": {
+          "timeout": 180000,
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          },
+          "redirect": {
+            "redirect": {
+              "followRedirects": false
+            }
+          }
+        }
+      },
+      "onError": "stopWorkflow"
+    },
+    {
+      "id": "check-extract-ref-expired",
+      "name": "Check extract ref expired",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1760,
+        0
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "expired",
+              "leftValue": "={{ $json.statusCode === 401 && Boolean($json.body && $json.body.error && $json.body.error.code === 'SOURCE_REF_EXPIRED') }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "onError": "stopWorkflow"
+    },
+    {
+      "id": "build-renew-ref",
+      "name": "Build renew source ref",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1980,
+        -180
+      ],
+      "parameters": {
+        "mode": "raw",
+        "includeOtherFields": false,
+        "jsonOutput": "={{ JSON.stringify((() => { const p=$('Signed dispatch').first().json.jwtPayload; const now=Math.floor(Date.now()/1000); return {v:1,workflow:'s05-ingestion-v1',jobId:p.jobId,documentId:p.documentId,sourceSha256:p.sourceSha256,pipelineVersion:p.pipelineVersion,attemptId:p.attemptId,attemptNumber:p.attemptNumber,dispatchNonce:p.dispatchNonce,jti:p.attemptId+':'+$execution.id+':renew-ref',iat:now,nbf:now,exp:now+30,iss:'sop-n8n',aud:'sop-app',purpose:'renew-source-ref',method:'POST',path:'/api/internal/ingestion/'+p.jobId+'/renew-source-ref',executionId:String($execution.id)}; })()) }}",
+        "options": {}
+      },
+      "onError": "stopWorkflow"
+    },
+    {
+      "id": "sign-renew-ref",
+      "name": "Sign renew source ref",
+      "type": "n8n-nodes-base.jwt",
+      "typeVersion": 1,
+      "position": [
+        2200,
+        -180
+      ],
+      "parameters": {
+        "operation": "sign",
+        "useJson": true,
+        "claimsJson": "={{ JSON.stringify($json) }}",
+        "headerClaims": "{\"typ\":\"JWT\"}",
+        "options": {
+          "algorithm": "RS256"
+        }
+      },
+      "credentials": {
+        "jwtAuth": {
+          "id": "sop-s03-callback-v1",
+          "name": "sop-s03-callback-v1"
+        }
+      },
+      "onError": "stopWorkflow"
+    },
+    {
+      "id": "send-renew-ref",
+      "name": "Send renew source ref",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2420,
+        -180
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ 'http://app:3000' + $('Build renew source ref').first().json.path }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $json.token }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "{}",
+        "options": {
+          "timeout": 10000,
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          },
+          "redirect": {
+            "redirect": {
+              "followRedirects": false
+            }
+          }
+        }
+      },
+      "onError": "stopWorkflow"
+    },
+    {
+      "id": "build-extract-retry",
+      "name": "Build extract retry",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        2640,
+        -180
+      ],
+      "parameters": {
+        "mode": "raw",
+        "includeOtherFields": false,
+        "jsonOutput": "={{ JSON.stringify((() => { const p=$('Signed dispatch').first().json.jwtPayload; const now=Math.floor(Date.now()/1000); return {v:1,workflow:'s05-ingestion-v1',jobId:p.jobId,documentId:p.documentId,sourceSha256:p.sourceSha256,pipelineVersion:p.pipelineVersion,attemptId:p.attemptId,attemptNumber:p.attemptNumber,dispatchNonce:p.dispatchNonce,jti:p.attemptId+':'+$execution.id+':extract-retry',iat:now,nbf:now,exp:now+30,iss:'sop-n8n',aud:'sop-app',purpose:'extract',method:'POST',path:'/api/internal/ingestion/'+p.jobId+'/extract',executionId:String($execution.id)}; })()) }}",
+        "options": {}
+      },
+      "onError": "stopWorkflow"
+    },
+    {
+      "id": "sign-extract-retry",
+      "name": "Sign extract retry",
+      "type": "n8n-nodes-base.jwt",
+      "typeVersion": 1,
+      "position": [
+        2860,
+        -180
+      ],
+      "parameters": {
+        "operation": "sign",
+        "useJson": true,
+        "claimsJson": "={{ JSON.stringify($json) }}",
+        "headerClaims": "{\"typ\":\"JWT\"}",
+        "options": {
+          "algorithm": "RS256"
+        }
+      },
+      "credentials": {
+        "jwtAuth": {
+          "id": "sop-s03-callback-v1",
+          "name": "sop-s03-callback-v1"
+        }
+      },
+      "onError": "stopWorkflow"
+    },
+    {
+      "id": "send-extract-retry",
+      "name": "Send extract retry",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3080,
+        -180
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ 'http://app:3000' + $('Build extract retry').first().json.path }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $json.token }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ fileRefToken: $('Send renew source ref').first().json.fileRefToken }) }}",
+        "options": {
+          "timeout": 180000,
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          },
+          "redirect": {
+            "redirect": {
+              "followRedirects": false
+            }
+          }
+        }
+      },
+      "onError": "stopWorkflow"
+    },
+    {
+      "id": "check-extract-ok",
+      "name": "Check extract ok",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1980,
+        120
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "accepted",
+              "leftValue": "={{ $json.statusCode >= 200 && $json.statusCode < 300 && Boolean($json.body && $json.body.accepted === true) }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "onError": "stopWorkflow"
+    },
+    {
+      "id": "stop-extract-error",
+      "name": "Stop extract error",
+      "type": "n8n-nodes-base.stopAndError",
+      "typeVersion": 1,
+      "position": [
+        2200,
+        240
+      ],
+      "parameters": {
+        "errorType": "errorMessage",
+        "errorMessage": "INGESTION_EXTRACT_FAILED"
+      },
+      "onError": "stopWorkflow"
+    },
+    {
+      "id": "build-chunk",
+      "name": "Build chunk",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        3300,
+        0
+      ],
+      "parameters": {
+        "mode": "raw",
+        "includeOtherFields": false,
+        "jsonOutput": "={{ JSON.stringify((() => { const p=$('Signed dispatch').first().json.jwtPayload; const now=Math.floor(Date.now()/1000); return {v:1,workflow:'s05-ingestion-v1',jobId:p.jobId,documentId:p.documentId,sourceSha256:p.sourceSha256,pipelineVersion:p.pipelineVersion,attemptId:p.attemptId,attemptNumber:p.attemptNumber,dispatchNonce:p.dispatchNonce,jti:p.attemptId+':'+$execution.id+':chunk',iat:now,nbf:now,exp:now+30,iss:'sop-n8n',aud:'sop-app',purpose:'chunk',method:'POST',path:'/api/internal/ingestion/'+p.jobId+'/chunk',executionId:String($execution.id)}; })()) }}",
+        "options": {}
+      },
+      "onError": "stopWorkflow"
+    },
+    {
+      "id": "sign-chunk",
+      "name": "Sign chunk",
+      "type": "n8n-nodes-base.jwt",
+      "typeVersion": 1,
+      "position": [
+        3520,
+        0
+      ],
+      "parameters": {
+        "operation": "sign",
+        "useJson": true,
+        "claimsJson": "={{ JSON.stringify($json) }}",
+        "headerClaims": "{\"typ\":\"JWT\"}",
+        "options": {
+          "algorithm": "RS256"
+        }
+      },
+      "credentials": {
+        "jwtAuth": {
+          "id": "sop-s03-callback-v1",
+          "name": "sop-s03-callback-v1"
+        }
+      },
+      "onError": "stopWorkflow"
+    },
+    {
+      "id": "send-chunk",
+      "name": "Send chunk",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3740,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ 'http://app:3000' + $('Build chunk').first().json.path }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $json.token }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "{}",
+        "options": {
+          "timeout": 30000,
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          },
+          "redirect": {
+            "redirect": {
+              "followRedirects": false
+            }
+          }
+        }
+      },
+      "onError": "stopWorkflow"
+    },
+    {
+      "id": "build-embed",
+      "name": "Build embed",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        3960,
+        0
+      ],
+      "parameters": {
+        "mode": "raw",
+        "includeOtherFields": false,
+        "jsonOutput": "={{ JSON.stringify((() => { const p=$('Signed dispatch').first().json.jwtPayload; const now=Math.floor(Date.now()/1000); return {v:1,workflow:'s05-ingestion-v1',jobId:p.jobId,documentId:p.documentId,sourceSha256:p.sourceSha256,pipelineVersion:p.pipelineVersion,attemptId:p.attemptId,attemptNumber:p.attemptNumber,dispatchNonce:p.dispatchNonce,jti:p.attemptId+':'+$execution.id+':embed',iat:now,nbf:now,exp:now+30,iss:'sop-n8n',aud:'sop-app',purpose:'embed',method:'POST',path:'/api/internal/ingestion/'+p.jobId+'/embed',executionId:String($execution.id)}; })()) }}",
+        "options": {}
+      },
+      "onError": "stopWorkflow"
+    },
+    {
+      "id": "sign-embed",
+      "name": "Sign embed",
+      "type": "n8n-nodes-base.jwt",
+      "typeVersion": 1,
+      "position": [
+        4180,
+        0
+      ],
+      "parameters": {
+        "operation": "sign",
+        "useJson": true,
+        "claimsJson": "={{ JSON.stringify($json) }}",
+        "headerClaims": "{\"typ\":\"JWT\"}",
+        "options": {
+          "algorithm": "RS256"
+        }
+      },
+      "credentials": {
+        "jwtAuth": {
+          "id": "sop-s03-callback-v1",
+          "name": "sop-s03-callback-v1"
+        }
+      },
+      "onError": "stopWorkflow"
+    },
+    {
+      "id": "send-embed",
+      "name": "Send embed",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        4400,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ 'http://app:3000' + $('Build embed').first().json.path }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $json.token }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "{}",
+        "options": {
+          "timeout": 90000,
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          },
+          "redirect": {
+            "redirect": {
+              "followRedirects": false
+            }
+          }
+        }
+      },
+      "onError": "stopWorkflow"
+    },
+    {
+      "id": "build-complete",
+      "name": "Build complete",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        4620,
+        0
+      ],
+      "parameters": {
+        "mode": "raw",
+        "includeOtherFields": false,
+        "jsonOutput": "={{ JSON.stringify((() => { const p=$('Signed dispatch').first().json.jwtPayload; const now=Math.floor(Date.now()/1000); return {v:1,workflow:'s05-ingestion-v1',jobId:p.jobId,documentId:p.documentId,sourceSha256:p.sourceSha256,pipelineVersion:p.pipelineVersion,attemptId:p.attemptId,attemptNumber:p.attemptNumber,dispatchNonce:p.dispatchNonce,jti:p.attemptId+':'+$execution.id+':complete',iat:now,nbf:now,exp:now+30,iss:'sop-n8n',aud:'sop-app',purpose:'complete',method:'POST',path:'/api/internal/ingestion/'+p.jobId+'/complete',executionId:String($execution.id)}; })()) }}",
+        "options": {}
+      },
+      "onError": "stopWorkflow"
+    },
+    {
+      "id": "sign-complete",
+      "name": "Sign complete",
+      "type": "n8n-nodes-base.jwt",
+      "typeVersion": 1,
+      "position": [
+        4840,
+        0
+      ],
+      "parameters": {
+        "operation": "sign",
+        "useJson": true,
+        "claimsJson": "={{ JSON.stringify($json) }}",
+        "headerClaims": "{\"typ\":\"JWT\"}",
+        "options": {
+          "algorithm": "RS256"
+        }
+      },
+      "credentials": {
+        "jwtAuth": {
+          "id": "sop-s03-callback-v1",
+          "name": "sop-s03-callback-v1"
+        }
+      },
+      "onError": "stopWorkflow"
+    },
+    {
+      "id": "send-complete",
+      "name": "Send complete",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        5060,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ 'http://app:3000' + $('Build complete').first().json.path }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $json.token }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "{}",
+        "options": {
+          "timeout": 15000,
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          },
+          "redirect": {
+            "redirect": {
+              "followRedirects": false
+            }
+          }
+        }
+      },
+      "onError": "stopWorkflow"
+    }
+  ],
+  "connections": {
+    "Signed dispatch": {
+      "main": [
+        [
+          {
+            "node": "Validate dispatch policy",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate dispatch policy": {
+      "main": [
+        [
+          {
+            "node": "Build claim",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Reject invalid dispatch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build claim": {
+      "main": [
+        [
+          {
+            "node": "Sign claim",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sign claim": {
+      "main": [
+        [
+          {
+            "node": "Send claim",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send claim": {
+      "main": [
+        [
+          {
+            "node": "Build extract",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build extract": {
+      "main": [
+        [
+          {
+            "node": "Sign extract",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sign extract": {
+      "main": [
+        [
+          {
+            "node": "Send extract",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send extract": {
+      "main": [
+        [
+          {
+            "node": "Check extract ref expired",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check extract ref expired": {
+      "main": [
+        [
+          {
+            "node": "Build renew source ref",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Check extract ok",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build renew source ref": {
+      "main": [
+        [
+          {
+            "node": "Sign renew source ref",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sign renew source ref": {
+      "main": [
+        [
+          {
+            "node": "Send renew source ref",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send renew source ref": {
+      "main": [
+        [
+          {
+            "node": "Build extract retry",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build extract retry": {
+      "main": [
+        [
+          {
+            "node": "Sign extract retry",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sign extract retry": {
+      "main": [
+        [
+          {
+            "node": "Send extract retry",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send extract retry": {
+      "main": [
+        [
+          {
+            "node": "Build chunk",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check extract ok": {
+      "main": [
+        [
+          {
+            "node": "Build chunk",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Stop extract error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build chunk": {
+      "main": [
+        [
+          {
+            "node": "Sign chunk",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sign chunk": {
+      "main": [
+        [
+          {
+            "node": "Send chunk",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send chunk": {
+      "main": [
+        [
+          {
+            "node": "Build embed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build embed": {
+      "main": [
+        [
+          {
+            "node": "Sign embed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sign embed": {
+      "main": [
+        [
+          {
+            "node": "Send embed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send embed": {
+      "main": [
+        [
+          {
+            "node": "Build complete",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build complete": {
+      "main": [
+        [
+          {
+            "node": "Sign complete",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sign complete": {
+      "main": [
+        [
+          {
+            "node": "Send complete",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveDataErrorExecution": "none",
+    "saveDataSuccessExecution": "none",
+    "saveManualExecutions": false,
+    "saveExecutionProgress": false,
+    "executionTimeout": 300
+  },
+  "pinData": {},
+  "staticData": null,
+  "tags": []
+}
