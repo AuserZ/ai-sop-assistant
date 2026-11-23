@@ -10,7 +10,11 @@ export function requireMutationOrigin(request: Request, baseURL = authConfigurat
       request.headers.get("sec-fetch-site") === "cross-site") {
     throw new AuthFailure("INVALID_ORIGIN", 403);
   }
-  if (request.headers.get("content-type")?.split(";")[0]?.trim().toLowerCase() !== "application/json") {
+  const contentType = request.headers.get("content-type");
+  if (request.method.toUpperCase() === "DELETE" && contentType === null) {
+    return;
+  }
+  if (contentType?.split(";")[0]?.trim().toLowerCase() !== "application/json") {
     throw new AuthFailure("INVALID_CONTENT_TYPE", 415);
   }
 }

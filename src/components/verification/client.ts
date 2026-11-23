@@ -44,7 +44,7 @@ const reviewSchema = z.object({
     mimeType: z.string(),
     sizeBytes: z.number().int().positive(),
     sha256: z.string().regex(/^[a-f0-9]{64}$/),
-    status: z.enum(["UPLOADED", "PROCESSING", "PENDING_VERIFICATION", "ACTIVE", "REJECTED", "FAILED"]),
+    status: z.enum(["UPLOADED", "PROCESSING", "PENDING_VERIFICATION", "ACTIVE", "REJECTED", "FAILED", "DELETED"]),
     latestJobId: z.uuid().nullable(),
     processedJobId: z.uuid().nullable(),
     processedPipelineVersion: z.string().nullable(),
@@ -119,6 +119,7 @@ const verificationErrorMessages: Record<string, string> = {
   VERIFICATION_INCOMPLETE_ARTIFACTS: "Extracted pages, chunks, or embeddings are incomplete. Reprocess before activating.",
   DOCUMENT_ALREADY_ACTIVE: "This SOP is already ACTIVE and cannot be modified in place.",
   DOCUMENT_ALREADY_PROCESSING: "This SOP is already queued or processing.",
+  DOCUMENT_DELETED: "This SOP document has been deleted and can no longer be verified or reprocessed.",
   PREVIEW_NOT_AVAILABLE: "No PDF preview is currently available for this document.",
 };
 

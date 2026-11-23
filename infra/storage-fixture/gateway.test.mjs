@@ -16,7 +16,7 @@ async function fixture(t, respond, options = {}) {
   const upstream = createServer((incoming, outgoing) => {
     const chunks = [];
     incoming.on("data", chunk => chunks.push(chunk));
-    incoming.on("end", () => { received.push({ url: incoming.url, headers: incoming.headers, body: Buffer.concat(chunks).toString() }); respond(outgoing); });
+    incoming.on("end", () => { received.push({ method: incoming.method, url: incoming.url, headers: incoming.headers, body: Buffer.concat(chunks).toString() }); respond(outgoing); });
   });
   const upstreamOrigin = await listen(upstream);
   const gateway = createStorageGateway({ upstreamOrigin, bucket: "synthetic", ...options });
@@ -28,7 +28,7 @@ async function fixture(t, respond, options = {}) {
 test("only the bounded S3 surface is reachable", async t => {
   const f = await fixture(t, response => response.end("ok"));
   for (const path of ["/cdn-cgi/local/r2/public/synthetic/key", "/cdn-cgi/local/explorer", "/", "/cdn-cgi/local/r2/s3/other/key", "/cdn-cgi/local/r2/s3/synthetic/../other/key"]) assert.equal((await fetch(f.origin + path)).status, 404);
-  for (const method of ["POST", "DELETE"]) assert.equal((await fetch(f.target, { method })).status, 404);
+  assert.equal((await fetch(f.target, { method: "POST" })).status, 404);
   assert.equal((await fetch(f.target + "?uploadId=unsupported", { method: "PUT" })).status, 404);
   assert.equal(f.received.length, 0);
 });
@@ -93,4 +93,26 @@ test("100-continue is terminated before the native workerd transport", async t =
   assert.equal(status, 200);
   assert.equal(f.received[0].headers.expect, undefined);
   assert.equal(f.received[0].body, "data");
+});
+
+test("DELETE requires server-side SigV4 Authorization and rejects browser origins", async t => {
+  const f = await fixture(t, response => { response.writeHead(204); response.end(); });
+  const sigV4 = "AWS4-HMAC-SHA256 Credential=synthetic/20261123/auto/s3/aws4_request, SignedHeaders=host, Signature=00";
+  assert.equal((await fetch(f.target, { method: "DELETE" })).status, 403);
+  assert.equal((await fetch(f.target + "?X-Amz-Signature=synthetic", { method: "DELETE" })).status, 403);
+  assert.equal((await fetch(f.target, { method: "DELETE", headers: { Authorization: "Bearer synthetic" } })).status, 403);
+  assert.equal((await fetch(f.target, { method: "DELETE", headers: { Authorization: sigV4, Origin: "http://127.0.0.1:3000" } })).status, 403);
+  assert.equal((await fetch(f.target, { method: "DELETE", headers: { Authorization: sigV4, Cookie: "session=synthetic" } })).status, 403);
+  assert.equal(f.received.length, 0);
+  const response = await fetch(f.target + "?x-id=DeleteObject", {
+    method: "DELETE",
+    headers: { Authorization: sigV4, "amz-sdk-invocation-id": "synthetic-delete", "amz-sdk-request": "attempt=1; max=1" },
+  });
+  assert.equal(response.status, 204);
+  assert.equal(f.received.length, 1);
+  assert.equal(f.received[0].method, "DELETE");
+  assert.equal(f.received[0].url, "/cdn-cgi/local/r2/s3/synthetic/staging/object?x-id=DeleteObject");
+  assert.equal(f.received[0].headers.authorization, sigV4);
+  assert.equal(f.received[0].headers.origin, undefined);
+  assert.equal(f.received[0].headers.cookie, undefined);
 });

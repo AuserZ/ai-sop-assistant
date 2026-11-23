@@ -16,6 +16,9 @@ function memoryStorage(initial: Record<string, StoredObject> = {}) {
       if (objects.has(key)) throw new Error("PreconditionFailed");
       objects.set(key, object);
     }),
+    delete: vi.fn(async (key: string) => {
+      objects.delete(key);
+    }),
   };
   return { storage, objects };
 }

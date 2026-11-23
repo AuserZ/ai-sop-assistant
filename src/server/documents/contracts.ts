@@ -13,6 +13,9 @@ export const documentBounds = {
   maximumArchiveEntries: 2048,
   maximumArchiveExpandedBytes: 100_000_000,
   maximumContainerXmlBytes: 262_144,
+  cleanupLeaseSeconds: 45,
+  cleanupBatchSize: 5,
+  cleanupBackoffMaxSeconds: 60,
 } as const;
 export const ingestionPipelineVersion = "document-ingestion-v1";
 export const documentMimeTypes = ["application/pdf", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"] as const;
@@ -22,6 +25,13 @@ export const documentLifecycleStatuses = [
   "PENDING_VERIFICATION",
   "ACTIVE",
   "REJECTED",
+  "FAILED",
+  "DELETED",
+] as const;
+export const documentCleanupStates = [
+  "PENDING",
+  "RUNNING",
+  "COMPLETED",
   "FAILED",
 ] as const;
 export const documentJobStates = [
@@ -58,7 +68,58 @@ export const emptyDocumentBody = z.object({}).strict();
 export const documentIdInput = z.uuid();
 export type UploadInput = z.infer<typeof uploadInput>;
 export type DocumentLifecycleStatus = typeof documentLifecycleStatuses[number];
+export type DocumentCleanupState = typeof documentCleanupStates[number];
 export type DocumentJobState = typeof documentJobStates[number];
+export type DocumentCleanupDto = {
+  state: DocumentCleanupState;
+  attempts: number;
+  errorCode: string | null;
+  completedAt: string | null;
+};
+export type DocumentDeleteResponse = {
+  deleted: true;
+  created: boolean;
+  document: {
+    id: string;
+    status: "DELETED";
+    deletedAt: string;
+    cleanup: DocumentCleanupDto;
+  };
+};
+export type EligibleActiveChunkDto = {
+  chunkId: string;
+  documentId: string;
+  documentTitle: string;
+  fileName: string;
+  jobId: string;
+  pipelineVersion: string;
+  sourceSha256: string;
+  sequence: number;
+  sectionPath: string;
+  pageStart: number | null;
+  pageEnd: number | null;
+  contentType: "procedure" | "table" | "narrative" | "mixed";
+  text: string;
+  contentHash: string;
+  tokenEstimate: number;
+};
+export type DocumentCitationAvailabilityDto =
+  | {
+      available: true;
+      documentId: string;
+      title: string;
+      status: "ACTIVE";
+    }
+  | {
+      available: false;
+      documentId: string;
+      reason: "UNAVAILABLE" | "DELETED";
+    };
+export function calculateCleanupBackoffSeconds(attempts: number): number {
+  const normalized = Number.isFinite(attempts) ? Math.max(1, Math.floor(attempts)) : 1;
+  if (normalized >= 6) return documentBounds.cleanupBackoffMaxSeconds;
+  return Math.min(2 ** normalized, documentBounds.cleanupBackoffMaxSeconds);
+}
 export type DocumentProcessingSummary = {
   pageCount: number;
   chunkCount: number;
@@ -209,6 +270,7 @@ export type DocumentLibraryDiagnosticsDto = {
   chunkCount: number;
   issueCount: number;
   hasPreview: boolean;
+  cleanup: DocumentCleanupDto | null;
 };
 
 export type DocumentLibraryItemDto = {
@@ -221,6 +283,7 @@ export type DocumentLibraryItemDto = {
   uploaderName: string;
   uploadedAt: string;
   verifiedAt: string | null;
+  deletedAt: string | null;
   status: DocumentLifecycleStatus;
   diagnostics: DocumentLibraryDiagnosticsDto | null;
 };

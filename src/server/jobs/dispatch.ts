@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { and, asc, eq, isNull, lte, ne, or, sql } from "drizzle-orm";
 import { getDatabase } from "../db/client";
 import { auditEvents, sopDocuments, workflowJobs } from "../db/schema";
+import { reconcileDocumentDeletions } from "../documents/service";
 import { appendEvent, type JobDatabase } from "./service";
 import { ingestionBounds, ingestionWorkflowVersion, workflowBounds, workflowVersion } from "./contracts";
 import {
@@ -21,6 +22,23 @@ export async function reconcileJobs(database: JobDatabase = getDatabase()) {
       or(lte(workflowJobs.attemptDeadline, sql`clock_timestamp()`), and(eq(workflowJobs.state, "RUNNING"), lte(workflowJobs.runLeaseUntil, sql`clock_timestamp()`))),
     )).limit(workflowBounds.dispatchBatch).for("update", { skipLocked: true });
     for (const job of abandoned) {
+      if (job.kind === "document_ingestion" && job.documentId) {
+        const [doc] = await transaction
+          .select({ status: sopDocuments.status })
+          .from(sopDocuments)
+          .where(eq(sopDocuments.id, job.documentId));
+        if (doc?.status === "DELETED") {
+          await transaction.update(workflowJobs).set({
+            state: "FAILED",
+            errorCode: "DOCUMENT_DELETED",
+            dispatchLeaseToken: null,
+            dispatchLeaseUntil: null,
+            runLeaseUntil: null,
+            updatedAt: sql`clock_timestamp()`,
+          }).where(eq(workflowJobs.id, job.id));
+          continue;
+        }
+      }
       const maximumAttempts = job.kind === "document_ingestion" ? ingestionBounds.maximumAttempts : workflowBounds.maximumAttempts;
       const attemptMilliseconds = job.kind === "document_ingestion" ? ingestionBounds.attemptMilliseconds : workflowBounds.attemptMilliseconds;
       if (job.attemptNumber >= maximumAttempts) {
@@ -35,7 +53,7 @@ export async function reconcileJobs(database: JobDatabase = getDatabase()) {
             status: "FAILED",
             processingErrorCode: "INGESTION_TIMEOUT",
             updatedAt: sql`clock_timestamp()`,
-          }).where(and(eq(sopDocuments.id, job.documentId), ne(sopDocuments.status, "ACTIVE")));
+          }).where(and(eq(sopDocuments.id, job.documentId), ne(sopDocuments.status, "ACTIVE"), ne(sopDocuments.status, "DELETED")));
           await transaction.insert(auditEvents).values({
             actorId: job.ownerId,
             action: "document.ingestion_failed",
@@ -69,7 +87,7 @@ export async function reconcileJobs(database: JobDatabase = getDatabase()) {
             status: "UPLOADED",
             processingErrorCode: null,
             updatedAt: sql`clock_timestamp()`,
-          }).where(and(eq(sopDocuments.id, job.documentId), ne(sopDocuments.status, "ACTIVE")));
+          }).where(and(eq(sopDocuments.id, job.documentId), ne(sopDocuments.status, "ACTIVE"), ne(sopDocuments.status, "DELETED")));
         }
       }
     }
@@ -136,6 +154,7 @@ export async function dispatchIngestionJobs(database: JobDatabase = getDatabase(
       sql`${workflowJobs.dispatchCount} < ${ingestionBounds.maximumDispatches}`,
       sql`${workflowJobs.attemptDeadline} > clock_timestamp()`,
       or(isNull(workflowJobs.dispatchLeaseUntil), lte(workflowJobs.dispatchLeaseUntil, sql`clock_timestamp()`)),
+      sql`exists (select 1 from app.sop_documents d where d.id = ${workflowJobs.documentId} and d.status <> 'DELETED')`,
     )).orderBy(asc(workflowJobs.dispatchNextAt)).limit(workflowBounds.dispatchBatch).for("update", { skipLocked: true });
     for (const job of due) {
       job.dispatchLeaseToken = randomUUID();
@@ -187,6 +206,7 @@ export function startWorkflowDispatcher() {
     running = true;
     void (async () => {
       await reconcileJobs();
+      await reconcileDocumentDeletions(undefined, undefined, { signal: controller.signal });
       if (process.env.WORKFLOW_DISPATCH_ENABLED === "1" && workflowProbeEnabled()) {
         await dispatchJobs(undefined, undefined, undefined, undefined, controller.signal);
       }

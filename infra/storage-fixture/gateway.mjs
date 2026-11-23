@@ -1,6 +1,6 @@
 import { createServer, request as upstreamRequest } from "node:http";
 
-const allowedMethods = new Set(["PUT", "GET", "HEAD", "OPTIONS"]);
+const allowedMethods = new Set(["PUT", "GET", "HEAD", "OPTIONS", "DELETE"]);
 const allowedHeaders = new Set(["host", "origin", "content-type", "content-length", "content-md5", "authorization", "amz-sdk-invocation-id", "amz-sdk-request", "if-match", "if-none-match", "if-modified-since", "if-unmodified-since", "access-control-request-method", "access-control-request-headers"]);
 const allowedErrorCodes = new Set(["SignatureDoesNotMatch", "ExpiredRequest", "Unauthorized", "InvalidArgument", "InvalidRequest", "NoSuchKey", "NoSuchBucket", "PreconditionFailed", "BadDigest", "XAmzContentSHA256Mismatch", "RequestTimeTooSkewed", "NotImplemented"]);
 const maximumErrorBytes = 65_536;
@@ -24,6 +24,7 @@ export function createStorageGateway({ upstreamOrigin, bucket, browserOrigin = "
     const url = new URL(incoming.url, `http://${host}`);
     if (!url.pathname.startsWith(prefix) || url.pathname.length === prefix.length || url.searchParams.has("uploadId") || url.searchParams.has("uploads") || url.searchParams.has("partNumber")) { reject(outgoing, 404); return; }
     if (incoming.headers.cookie || incoming.headers["proxy-authorization"] || (incoming.headers.authorization && !incoming.headers.authorization.startsWith("AWS4-HMAC-SHA256 "))) { reject(outgoing, 403); return; }
+    if (incoming.method === "DELETE" && (incoming.headers.origin !== undefined || !incoming.headers.authorization?.startsWith("AWS4-HMAC-SHA256 "))) { reject(outgoing, 403); return; }
     if (incoming.headers.origin && incoming.headers.origin !== browserOrigin) { reject(outgoing, 403); return; }
     if (incoming.headers["x-amz-copy-source"]) { reject(outgoing, 400); return; }
     const length = incoming.headers["content-length"];

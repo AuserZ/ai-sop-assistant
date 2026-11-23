@@ -75,6 +75,13 @@ async function verifyAndConsumeCallback(
     .returning({ id: workflowNonceReceipts.id });
   if (!receipt) throw new AuthFailure("WORKFLOW_REPLAY", 409);
 
+  const [doc] = await transaction
+    .select({ status: sopDocuments.status })
+    .from(sopDocuments)
+    .where(eq(sopDocuments.id, job.documentId!));
+  if (!doc) throw new AuthFailure("NOT_FOUND", 404);
+  if (doc.status === "DELETED") throw new AuthFailure("DOCUMENT_DELETED", 409);
+
   return job;
 }
 
@@ -93,6 +100,26 @@ async function applyFailureTransition(
   errorCode: string,
   transient: boolean,
 ) {
+  if (job.documentId) {
+    const [doc] = await transaction
+      .select({ status: sopDocuments.status })
+      .from(sopDocuments)
+      .where(eq(sopDocuments.id, job.documentId));
+    if (doc?.status === "DELETED") {
+      await transaction
+        .update(workflowJobs)
+        .set({
+          state: "FAILED",
+          errorCode: "DOCUMENT_DELETED",
+          dispatchLeaseToken: null,
+          dispatchLeaseUntil: null,
+          runLeaseUntil: null,
+          updatedAt: sql`clock_timestamp()`,
+        })
+        .where(eq(workflowJobs.id, job.id));
+      return false;
+    }
+  }
   const willRetry = transient && job.attemptNumber < ingestionBounds.maximumAttempts;
   if (willRetry) {
     await appendEvent(transaction, job, "retrying", 7);
@@ -121,7 +148,7 @@ async function applyFailureTransition(
       await transaction
         .update(sopDocuments)
         .set({ status: "UPLOADED", processingErrorCode: null, updatedAt: sql`clock_timestamp()` })
-        .where(and(eq(sopDocuments.id, job.documentId), ne(sopDocuments.status, "ACTIVE")));
+        .where(and(eq(sopDocuments.id, job.documentId), ne(sopDocuments.status, "ACTIVE"), ne(sopDocuments.status, "DELETED")));
     }
     return true;
   }
@@ -140,7 +167,7 @@ async function applyFailureTransition(
     await transaction
       .update(sopDocuments)
       .set({ status: "FAILED", processingErrorCode: errorCode, updatedAt: sql`clock_timestamp()` })
-      .where(and(eq(sopDocuments.id, job.documentId), ne(sopDocuments.status, "ACTIVE")));
+      .where(and(eq(sopDocuments.id, job.documentId), ne(sopDocuments.status, "ACTIVE"), ne(sopDocuments.status, "DELETED")));
     await transaction.insert(auditEvents).values({
       actorId: job.ownerId,
       action: "document.ingestion_failed",
@@ -206,6 +233,7 @@ export async function claimIngestionStage(
       .where(eq(sopDocuments.id, job.documentId!))
       .for("update");
     if (!doc) throw new AuthFailure("NOT_FOUND", 404);
+    if (doc.status === "DELETED") throw new AuthFailure("DOCUMENT_DELETED", 409);
     if (doc.status === "ACTIVE") throw new AuthFailure("DOCUMENT_ALREADY_ACTIVE", 409);
 
     await transaction
@@ -358,6 +386,14 @@ export async function extractIngestionStage(
   }
 
   return database.transaction(async (transaction) => {
+    const [doc] = await transaction
+      .select({ status: sopDocuments.status })
+      .from(sopDocuments)
+      .where(eq(sopDocuments.id, claims.documentId))
+      .for("update");
+    if (!doc) throw new AuthFailure("NOT_FOUND", 404);
+    if (doc.status === "DELETED") throw new AuthFailure("DOCUMENT_DELETED", 409);
+
     const [job] = await transaction
       .select()
       .from(workflowJobs)
@@ -573,6 +609,14 @@ export async function embedIngestionStage(
   }
 
   return database.transaction(async (transaction) => {
+    const [doc] = await transaction
+      .select({ status: sopDocuments.status })
+      .from(sopDocuments)
+      .where(eq(sopDocuments.id, claims.documentId))
+      .for("update");
+    if (!doc) throw new AuthFailure("NOT_FOUND", 404);
+    if (doc.status === "DELETED") throw new AuthFailure("DOCUMENT_DELETED", 409);
+
     const [job] = await transaction
       .select()
       .from(workflowJobs)
@@ -671,6 +715,7 @@ export async function completeIngestionStage(
       .where(eq(sopDocuments.id, job.documentId!))
       .for("update");
     if (!doc) throw new AuthFailure("NOT_FOUND", 404);
+    if (doc.status === "DELETED") throw new AuthFailure("DOCUMENT_DELETED", 409);
     if (doc.status === "ACTIVE") throw new AuthFailure("DOCUMENT_ALREADY_ACTIVE", 409);
 
     await transaction
@@ -696,7 +741,7 @@ export async function completeIngestionStage(
         processingErrorCode: null,
         updatedAt: sql`clock_timestamp()`,
       })
-      .where(and(eq(sopDocuments.id, job.documentId!), ne(sopDocuments.status, "ACTIVE")));
+      .where(and(eq(sopDocuments.id, job.documentId!), ne(sopDocuments.status, "ACTIVE"), ne(sopDocuments.status, "DELETED")));
 
     await transaction.insert(auditEvents).values({
       actorId: job.ownerId,

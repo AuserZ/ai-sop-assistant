@@ -41,7 +41,7 @@ it("D2 retry uses the locked accepted intent after an earlier pending snapshot",
   const storage: DocumentStorage = {
     authorizeUpload: vi.fn(async () => ({ url: "http://127.0.0.1/synthetic", method: "PUT" as const,
       headers: { "Content-Type": input.mimeType, "If-None-Match": "*" as const }, sizeBytes: 1, expiresAt: pending.uploadExpiresAt.toISOString() })),
-    read: vi.fn(async () => null), create: vi.fn(async () => undefined),
+    read: vi.fn(async () => null), create: vi.fn(async () => undefined), delete: vi.fn(async () => undefined),
   };
   const result = await initializeDocumentUpload(owner, input, database, storage, 1000);
   expect(result).toMatchObject({ created: false, upload: null, document: { id: pending.id, uploadStatus: "ACCEPTED", status: "UPLOADED", job: { id: jobId, state: "QUEUED" } } });

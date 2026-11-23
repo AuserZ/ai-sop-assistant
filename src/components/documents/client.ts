@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type {
+  DocumentDeleteResponse,
   DocumentLibraryResponse,
   DocumentSourceAuthorizationResponse,
   DocumentUploadDto,
@@ -10,7 +11,14 @@ import type {
 export const maximumUploadBytes = 20_000_000;
 const metadataTimeoutMilliseconds = 35_000;
 const mimeTypeSchema = z.enum(["application/pdf", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"]);
-const lifecycleStatusSchema = z.enum(["UPLOADED", "PROCESSING", "PENDING_VERIFICATION", "ACTIVE", "REJECTED", "FAILED"]);
+const lifecycleStatusSchema = z.enum(["UPLOADED", "PROCESSING", "PENDING_VERIFICATION", "ACTIVE", "REJECTED", "FAILED", "DELETED"]);
+const cleanupStateSchema = z.enum(["PENDING", "RUNNING", "COMPLETED", "FAILED"]);
+const cleanupSchema = z.object({
+  state: cleanupStateSchema,
+  attempts: z.number().int().min(0),
+  errorCode: z.string().nullable(),
+  completedAt: z.string().datetime().nullable(),
+});
 const jobStateSchema = z.enum(["QUEUED", "RUNNING", "COMPLETED", "FAILED", "WAITING_FOR_PIPELINE"]);
 const documentSchema = z.object({
   id: z.uuid(),
@@ -62,6 +70,7 @@ const libraryDiagnosticsSchema = z.object({
   chunkCount: z.number().int().min(0),
   issueCount: z.number().int().min(0),
   hasPreview: z.boolean(),
+  cleanup: cleanupSchema.nullable().optional().default(null),
 });
 
 const libraryItemSchema = z.object({
@@ -74,6 +83,7 @@ const libraryItemSchema = z.object({
   uploaderName: z.string(),
   uploadedAt: z.string().datetime(),
   verifiedAt: z.string().datetime().nullable(),
+  deletedAt: z.string().datetime().nullable().optional().default(null),
   status: lifecycleStatusSchema,
   diagnostics: libraryDiagnosticsSchema.nullable(),
 });
@@ -81,6 +91,17 @@ const libraryItemSchema = z.object({
 const libraryResponseSchema = z.object({
   items: z.array(libraryItemSchema),
   nextCursor: z.string().nullable(),
+});
+
+const deleteResponseSchema = z.object({
+  deleted: z.literal(true),
+  created: z.boolean(),
+  document: z.object({
+    id: z.uuid(),
+    status: z.literal("DELETED"),
+    deletedAt: z.string().datetime(),
+    cleanup: cleanupSchema,
+  }),
 });
 
 const sourceAuthorizationSchema = z.object({
@@ -129,13 +150,15 @@ const messages: Record<string, string> = {
   OCR_WORKER_TRANSIENT: "OCR processing is temporarily unavailable. Retry processing.",
   EMBEDDING_PROVIDER_TRANSIENT: "Indexing is temporarily unavailable. Retry processing.",
   EMBEDDING_PROVIDER_REJECTED: "Indexing failed to generate embeddings for this document.",
+  DOCUMENT_DELETED: "This SOP document has been deleted and is no longer available.",
+  CLEANUP_STORAGE_UNAVAILABLE: "Storage cleanup is temporarily unavailable and will retry.",
 };
 
 export class DocumentRequestError extends Error {
   constructor(readonly code: string) { super(messages[code] ?? "This upload request is temporarily unavailable. Try again."); }
 }
 
-async function requestDocument(path: string, method: "GET" | "POST", signal: AbortSignal, body?: unknown) {
+async function requestDocument(path: string, method: "GET" | "POST" | "DELETE", signal: AbortSignal, body?: unknown) {
   const response = await fetch(path, { method, credentials: "same-origin", cache: "no-store",
     headers: method === "POST" ? { "Content-Type": "application/json" } : undefined,
     body: method === "POST" ? JSON.stringify(body ?? {}) : undefined,
@@ -157,6 +180,9 @@ export async function processUpload(id: string, signal: AbortSignal): Promise<Up
 }
 export async function readUpload(id: string, signal: AbortSignal): Promise<UploadStatusResponse> {
   return statusSchema.parse(await requestDocument(`/api/documents/${id}`, "GET", signal));
+}
+export async function deleteDocument(id: string, signal: AbortSignal): Promise<DocumentDeleteResponse> {
+  return deleteResponseSchema.parse(await requestDocument(`/api/documents/${id}`, "DELETE", signal));
 }
 export async function listLibraryDocuments(
   query: { q?: string; limit?: number; cursor?: string },

@@ -43,6 +43,13 @@
       "when": 1795408485801,
       "tag": "0005_assisted_verification",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1795429057894,
+      "tag": "0006_document_deletion",
+      "breakpoints": true
     }
   ]
 }

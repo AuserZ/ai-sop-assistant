@@ -9,11 +9,17 @@ import type {
 } from "@/server/documents/contracts";
 import { buttonClassName, inputClassName } from "@/components/auth/client";
 import {
+  deleteDocument,
   DocumentRequestError,
   listLibraryDocuments,
   processingErrorCodeMessage,
   requestDocumentSource,
 } from "./client";
+
+const dangerButtonClassName =
+  "min-h-11 cursor-pointer rounded-md border border-[#991b1b] bg-[#991b1b] px-4 py-2 font-medium text-white hover:bg-[#7f1d1d] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#991b1b] disabled:cursor-not-allowed disabled:opacity-60";
+const secondaryButtonClassName =
+  "min-h-11 cursor-pointer rounded-md border border-black bg-white px-4 py-2 font-medium text-black hover:bg-[#f3f4f6] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-black disabled:cursor-not-allowed disabled:opacity-60";
 
 type LibraryPanelProps = {
   role: "ADMIN" | "STAFF";
@@ -73,9 +79,13 @@ export function LibraryPanel({
   const [sourceBusyId, setSourceBusyId] = useState<string | null>(null);
   const [sourcePhase, setSourcePhase] = useState<string | null>(null);
   const [activeSource, setActiveSource] = useState<ActiveSourceSummary | null>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [deleteBusyId, setDeleteBusyId] = useState<string | null>(null);
+  const [deleteNotice, setDeleteNotice] = useState<string | null>(null);
   const [urlContext] = useState<DocumentSourceContextDto>(() => readUrlContext());
   const listController = useRef<AbortController | null>(null);
   const sourceController = useRef<AbortController | null>(null);
+  const deleteController = useRef<AbortController | null>(null);
   const lastRefreshSignal = useRef(refreshSignal);
 
   async function fetchLibrary(
@@ -122,8 +132,87 @@ export function LibraryPanel({
     return () => {
       listController.current?.abort();
       sourceController.current?.abort();
+      deleteController.current?.abort();
     };
   }, []);
+
+  const hasPendingCleanup =
+    role === "ADMIN" &&
+    items.some(
+      (item) =>
+        item.status === "DELETED" &&
+        (item.diagnostics?.cleanup?.state === "PENDING" ||
+          item.diagnostics?.cleanup?.state === "RUNNING"),
+    );
+
+  useEffect(() => {
+    if (!hasPendingCleanup) return;
+    const controller = new AbortController();
+    const timer = setInterval(() => {
+      void listLibraryDocuments({ q: appliedQuery }, controller.signal)
+        .then((response) => {
+          if (controller.signal.aborted) return;
+          setItems(response.items);
+          setNextCursor(response.nextCursor);
+        })
+        .catch(() => undefined);
+    }, 1000);
+    return () => {
+      clearInterval(timer);
+      controller.abort();
+    };
+  }, [hasPendingCleanup, appliedQuery]);
+
+  async function handleDeleteDocument(item: DocumentLibraryItemDto) {
+    deleteController.current?.abort();
+    const controller = new AbortController();
+    deleteController.current = controller;
+    setDeleteBusyId(item.id);
+    setError(null);
+    setDeleteNotice(null);
+    try {
+      const result = await deleteDocument(item.id, controller.signal);
+      if (controller.signal.aborted) return;
+      setConfirmDeleteId(null);
+      setItems((previous) =>
+        previous.map((entry) =>
+          entry.id === item.id
+            ? {
+                ...entry,
+                status: "DELETED",
+                deletedAt: result.document.deletedAt,
+                diagnostics: entry.diagnostics
+                  ? {
+                      ...entry.diagnostics,
+                      hasPreview: false,
+                      cleanup: result.document.cleanup,
+                    }
+                  : null,
+              }
+            : entry,
+        ),
+      );
+      if (activeSource?.documentId === item.id) {
+        setActiveSource(null);
+      }
+      setDeleteNotice(
+        result.created
+          ? `Deleted "${item.title}". Retrieval and source access were removed immediately; cleanup is ${result.document.cleanup.state}.`
+          : `Cleanup re-queued for "${item.title}" (${result.document.cleanup.state}).`,
+      );
+    } catch (failure) {
+      if (controller.signal.aborted) return;
+      setError(
+        failure instanceof DocumentRequestError
+          ? failure.message
+          : "Document deletion is temporarily unavailable. Try again.",
+      );
+    } finally {
+      if (deleteController.current === controller && !controller.signal.aborted) {
+        setDeleteBusyId(null);
+      }
+    }
+  }
 
   async function handleSourceAccess(
     item: DocumentLibraryItemDto,
@@ -305,6 +394,16 @@ export function LibraryPanel({
         </div>
       )}
 
+      {deleteNotice && (
+        <div
+          role="status"
+          data-testid="delete-action-status"
+          className="rounded-md border border-black bg-[#f9fafb] p-3 text-sm break-words"
+        >
+          {deleteNotice}
+        </div>
+      )}
+
       {error && (
         <p role="alert" className="text-[#991b1b]">
           {error}
@@ -334,11 +433,17 @@ export function LibraryPanel({
             </thead>
             <tbody className="block divide-y divide-[#d1d5db] sm:table-row-group">
               {items.map((item) => {
+                const isDeleted = item.status === "DELETED";
                 const canReview =
                   role === "ADMIN" &&
                   (item.status === "PENDING_VERIFICATION" ||
                     item.status === "ACTIVE" ||
                     item.status === "REJECTED");
+                const isConfirmingDelete = role === "ADMIN" && !isDeleted && confirmDeleteId === item.id;
+                const canRetryCleanup =
+                  role === "ADMIN" &&
+                  isDeleted &&
+                  item.diagnostics?.cleanup?.state === "FAILED";
 
                 return (
                   <tr
@@ -365,6 +470,11 @@ export function LibraryPanel({
                           Verified {formatDate(item.verifiedAt)}
                         </p>
                       )}
+                      {item.deletedAt && (
+                        <p className="text-xs text-[#991b1b]">
+                          Deleted {formatDate(item.deletedAt)}
+                        </p>
+                      )}
                     </td>
                     <td className="block min-w-0 text-sm sm:table-cell sm:px-3 sm:py-3 sm:align-top">
                       <span
@@ -378,6 +488,23 @@ export function LibraryPanel({
                           className="mt-1.5 space-y-1 text-xs text-[#4b5563] break-words"
                           data-testid={`library-diagnostics-${item.id}`}
                         >
+                          {item.diagnostics.cleanup && (
+                            <p
+                              data-testid={`library-cleanup-${item.id}`}
+                              className={
+                                item.diagnostics.cleanup.state === "FAILED"
+                                  ? "font-medium text-[#991b1b]"
+                                  : "font-medium text-black"
+                              }
+                            >
+                              Cleanup: {item.diagnostics.cleanup.state}
+                            </p>
+                          )}
+                          {item.diagnostics.cleanup?.errorCode && (
+                            <p className="text-[#991b1b]">
+                              {processingErrorCodeMessage(item.diagnostics.cleanup.errorCode)}
+                            </p>
+                          )}
                           {item.diagnostics.latestJob && (
                             <p>
                               Job: {item.diagnostics.latestJob.state}
@@ -411,22 +538,26 @@ export function LibraryPanel({
                     </td>
                     <td className="block min-w-0 sm:table-cell sm:px-3 sm:py-3 sm:align-top">
                       <div className="flex flex-wrap gap-2">
-                        <button
-                          type="button"
-                          disabled={sourceBusyId === item.id}
-                          className={buttonClassName}
-                          onClick={() => void handleSourceAccess(item, "inline")}
-                        >
-                          Open original
-                        </button>
-                        <button
-                          type="button"
-                          disabled={sourceBusyId === item.id}
-                          className={buttonClassName}
-                          onClick={() => void handleSourceAccess(item, "attachment")}
-                        >
-                          Download original
-                        </button>
+                        {!isDeleted && (
+                          <>
+                            <button
+                              type="button"
+                              disabled={sourceBusyId === item.id || deleteBusyId === item.id}
+                              className={buttonClassName}
+                              onClick={() => void handleSourceAccess(item, "inline")}
+                            >
+                              Open original
+                            </button>
+                            <button
+                              type="button"
+                              disabled={sourceBusyId === item.id || deleteBusyId === item.id}
+                              className={buttonClassName}
+                              onClick={() => void handleSourceAccess(item, "attachment")}
+                            >
+                              Download original
+                            </button>
+                          </>
+                        )}
                         {canReview && (
                           <Link
                             href={`/documents/${item.id}/verify`}
@@ -436,7 +567,60 @@ export function LibraryPanel({
                             Review and verify
                           </Link>
                         )}
+                        {role === "ADMIN" && !isDeleted && !isConfirmingDelete && (
+                          <button
+                            type="button"
+                            aria-label={`Delete SOP ${item.title}`}
+                            disabled={deleteBusyId === item.id}
+                            className={dangerButtonClassName}
+                            onClick={() => {
+                              setConfirmDeleteId(item.id);
+                              setError(null);
+                            }}
+                          >
+                            Delete SOP
+                          </button>
+                        )}
+                        {canRetryCleanup && (
+                          <button
+                            type="button"
+                            disabled={deleteBusyId === item.id}
+                            className={secondaryButtonClassName}
+                            onClick={() => void handleDeleteDocument(item)}
+                          >
+                            Retry cleanup
+                          </button>
+                        )}
                       </div>
+                      {isConfirmingDelete && (
+                        <div
+                          data-testid={`delete-confirm-${item.id}`}
+                          className="mt-2 space-y-2 rounded-md border border-[#991b1b] bg-[#fef2f2] p-3 text-xs text-[#7f1d1d]"
+                        >
+                          <p className="break-words">
+                            Deleting removes retrieval and source access immediately. Approved backup
+                            retention may outlast live deletion.
+                          </p>
+                          <div className="flex flex-wrap gap-2">
+                            <button
+                              type="button"
+                              disabled={deleteBusyId === item.id}
+                              className={dangerButtonClassName}
+                              onClick={() => void handleDeleteDocument(item)}
+                            >
+                              Confirm delete
+                            </button>
+                            <button
+                              type="button"
+                              disabled={deleteBusyId === item.id}
+                              className={secondaryButtonClassName}
+                              onClick={() => setConfirmDeleteId(null)}
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        </div>
+                      )}
                     </td>
                   </tr>
                 );

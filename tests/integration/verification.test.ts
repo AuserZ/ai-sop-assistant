@@ -66,6 +66,9 @@ class MemoryStorage implements DocumentStorage {
     if (this.objects.has(key)) throw new Error("PreconditionFailed");
     this.objects.set(key, { bytes: Buffer.from(object.bytes), contentType: object.contentType });
   }
+  async delete(key: string) {
+    this.objects.delete(key);
+  }
 }
 
 function makeClaims(

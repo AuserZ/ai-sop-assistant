@@ -138,7 +138,8 @@ async function loadDocumentReview(transaction: Transaction, documentId: string):
     .where(eq(sopVerificationRecords.documentId, doc.id))
     .orderBy(desc(sopVerificationRecords.createdAt));
 
-  const hasPreview = doc.mimeType === "application/pdf" || Boolean(doc.previewKey);
+  const hasPreview =
+    doc.status !== "DELETED" && (doc.mimeType === "application/pdf" || Boolean(doc.previewKey));
   const previewVersion = doc.processedAttemptId ?? doc.updatedAt.toISOString();
   const verificationHistory: VerificationRecordDto[] = historyRows.map((row) => ({
     ...row,
@@ -203,6 +204,7 @@ export async function readDocumentPreview(
     await lockCurrentAdmin(account, transaction);
     const [doc] = await transaction
       .select({
+        status: sopDocuments.status,
         mimeType: sopDocuments.mimeType,
         sizeBytes: sopDocuments.sizeBytes,
         fileName: sopDocuments.fileName,
@@ -211,7 +213,7 @@ export async function readDocumentPreview(
       })
       .from(sopDocuments)
       .where(eq(sopDocuments.id, documentId));
-    if (!doc) throw new AuthFailure("NOT_FOUND", 404);
+    if (!doc || doc.status === "DELETED") throw new AuthFailure("NOT_FOUND", 404);
     const isPdf = doc.mimeType === "application/pdf";
     const storageKey = isPdf ? doc.originalKey : doc.previewKey;
     if (!storageKey) throw new AuthFailure("PREVIEW_NOT_AVAILABLE", 404);
@@ -251,6 +253,7 @@ export async function verifyDocument(
       .where(eq(sopDocuments.id, documentId))
       .for("update");
     if (!doc) throw new AuthFailure("NOT_FOUND", 404);
+    if (doc.status === "DELETED") throw new AuthFailure("DOCUMENT_DELETED", 409);
     if (doc.status === "ACTIVE") throw new AuthFailure("DOCUMENT_ALREADY_ACTIVE", 409);
     if (doc.status !== "PENDING_VERIFICATION") throw new AuthFailure("VERIFICATION_STATE_CONFLICT", 409);
 
@@ -444,6 +447,7 @@ export async function reprocessDocument(
       .where(eq(sopDocuments.id, documentId))
       .for("update");
     if (!doc) throw new AuthFailure("NOT_FOUND", 404);
+    if (doc.status === "DELETED") throw new AuthFailure("DOCUMENT_DELETED", 409);
     if (doc.status === "ACTIVE") throw new AuthFailure("DOCUMENT_ALREADY_ACTIVE", 409);
     if (doc.status === "UPLOADED" || doc.status === "PROCESSING") {
       throw new AuthFailure("DOCUMENT_ALREADY_PROCESSING", 409);

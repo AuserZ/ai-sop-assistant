@@ -38,6 +38,9 @@ class SyntheticStorage implements DocumentStorage {
     if (this.objects.has(key)) throw new Error("Synthetic PreconditionFailed");
     this.objects.set(key, { bytes: Buffer.from(object.bytes), contentType: object.contentType }); this.writes++;
   }
+  async delete(key: string) {
+    this.objects.delete(key);
+  }
 }
 
 function barrier() {

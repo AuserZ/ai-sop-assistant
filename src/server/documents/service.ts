@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { and, count, desc, eq, gt, inArray, sql, type SQL } from "drizzle-orm";
+import { and, asc, count, desc, eq, gt, inArray, lte, ne, or, sql, type SQL } from "drizzle-orm";
 import { getDatabase } from "../db/client";
 import {
   auditEvents,
@@ -19,6 +19,7 @@ import { ingestionBounds } from "../jobs/contracts";
 import { appendEvent } from "../jobs/service";
 import { documentQuotaBytes } from "./config";
 import {
+  calculateCleanupBackoffSeconds,
   decodeDocumentLibraryCursor,
   documentBounds,
   documentIdInput,
@@ -33,11 +34,14 @@ import {
   sourceLinkTtlSeconds,
   uploadInput,
   verifyDocumentSourceToken,
+  type DocumentCitationAvailabilityDto,
+  type DocumentDeleteResponse,
   type DocumentLibraryDiagnosticsDto,
   type DocumentLibraryItemDto,
   type DocumentLibraryResponse,
   type DocumentSourceAuthorizationResponse,
   type DocumentUploadDto,
+  type EligibleActiveChunkDto,
 } from "./contracts";
 import { validateDocumentObject } from "./format";
 import { getDocumentStorage, type DocumentStorage, type StoredObject } from "./storage";
@@ -241,6 +245,7 @@ export async function finalizeDocumentUpload(account: CurrentAccount, id: string
           .from(sopDocuments)
           .where(eq(sopDocuments.id, id))
           .for("update");
+        if (doc?.status === "DELETED") throw new AuthFailure("DOCUMENT_DELETED", 409);
         if (doc && doc.status !== "ACTIVE" && job && (job.state === "FAILED" || job.state === "WAITING_FOR_PIPELINE")) {
           await transaction.delete(sopChunks).where(eq(sopChunks.jobId, job.id));
           await transaction.delete(sopExtractionPages).where(eq(sopExtractionPages.jobId, job.id));
@@ -428,10 +433,15 @@ export async function listDocuments(
         createdAt: sopDocuments.createdAt,
         cursorCreatedAt: sql<string>`to_char(${sopDocuments.createdAt} at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`,
         verifiedAt: sopDocuments.verifiedAt,
+        deletedAt: sopDocuments.deletedAt,
         status: sopDocuments.status,
         previewKey: sopDocuments.previewKey,
         processingErrorCode: sopDocuments.processingErrorCode,
         rejectionReason: sopDocuments.rejectionReason,
+        cleanupState: sopDocuments.cleanupState,
+        cleanupAttempts: sopDocuments.cleanupAttempts,
+        cleanupErrorCode: sopDocuments.cleanupErrorCode,
+        cleanupCompletedAt: sopDocuments.cleanupCompletedAt,
         latestJobId: sopDocuments.latestJobId,
         processedJobId: sopDocuments.processedJobId,
         activeJobId: sopDocuments.activeJobId,
@@ -520,7 +530,18 @@ export async function listDocuments(
               pageCount: snapshotJobId ? (pageCountMap.get(snapshotJobId) ?? 0) : 0,
               chunkCount: snapshotJobId ? (chunkCountMap.get(snapshotJobId) ?? 0) : 0,
               issueCount: snapshotJobId ? (issueCountMap.get(snapshotJobId) ?? 0) : 0,
-              hasPreview: row.mimeType === "application/pdf" || Boolean(row.previewKey),
+              hasPreview:
+                row.status !== "DELETED" &&
+                (row.mimeType === "application/pdf" || Boolean(row.previewKey)),
+              cleanup:
+                row.status === "DELETED" && row.cleanupState
+                  ? {
+                      state: row.cleanupState,
+                      attempts: row.cleanupAttempts,
+                      errorCode: row.cleanupErrorCode,
+                      completedAt: row.cleanupCompletedAt ? row.cleanupCompletedAt.toISOString() : null,
+                    }
+                  : null,
             }
           : null;
 
@@ -534,6 +555,7 @@ export async function listDocuments(
         uploaderName: row.uploaderName,
         uploadedAt: row.createdAt.toISOString(),
         verifiedAt: row.verifiedAt ? row.verifiedAt.toISOString() : null,
+        deletedAt: row.deletedAt ? row.deletedAt.toISOString() : null,
         status: row.status,
         diagnostics,
       };
@@ -561,7 +583,7 @@ export async function authorizeDocumentSource(
     const liveAccount = await lockCurrentUser(account, transaction);
     const whereClause =
       liveAccount.role === "ADMIN"
-        ? eq(sopDocuments.id, documentId)
+        ? and(eq(sopDocuments.id, documentId), ne(sopDocuments.status, "DELETED"))
         : and(eq(sopDocuments.id, documentId), eq(sopDocuments.status, "ACTIVE"));
 
     const [doc] = await transaction
@@ -653,7 +675,7 @@ export async function readDocumentSourceContent(
     }
     const whereClause =
       liveAccount.role === "ADMIN"
-        ? eq(sopDocuments.id, documentId)
+        ? and(eq(sopDocuments.id, documentId), ne(sopDocuments.status, "DELETED"))
         : and(eq(sopDocuments.id, documentId), eq(sopDocuments.status, "ACTIVE"));
 
     const [doc] = await transaction
@@ -701,4 +723,393 @@ export async function readDocumentSourceContent(
     mimeType: target.mimeType,
     disposition: claims.disposition,
   };
+}
+
+function toDeleteResponse(
+  row: {
+    id: string;
+    deletedAt: Date | null;
+    cleanupState: "PENDING" | "RUNNING" | "COMPLETED" | "FAILED" | null;
+    cleanupAttempts: number;
+    cleanupErrorCode: string | null;
+    cleanupCompletedAt: Date | null;
+  },
+  created: boolean,
+): DocumentDeleteResponse {
+  if (!row.deletedAt || !row.cleanupState) {
+    throw new Error("Deleted tombstone metadata missing.");
+  }
+  return {
+    deleted: true,
+    created,
+    document: {
+      id: row.id,
+      status: "DELETED",
+      deletedAt: row.deletedAt.toISOString(),
+      cleanup: {
+        state: row.cleanupState,
+        attempts: row.cleanupAttempts,
+        errorCode: row.cleanupErrorCode,
+        completedAt: row.cleanupCompletedAt ? row.cleanupCompletedAt.toISOString() : null,
+      },
+    },
+  };
+}
+
+export async function deleteDocument(
+  account: CurrentAccount,
+  id: string,
+  database: AuthDatabase = getDatabase(),
+): Promise<DocumentDeleteResponse> {
+  if (!documentIdInput.safeParse(id).success) {
+    throw new AuthFailure("NOT_FOUND", 404);
+  }
+
+  return database.transaction(async (transaction) => {
+    await lockCurrentAdmin(account, transaction);
+    const [doc] = await transaction
+      .select()
+      .from(sopDocuments)
+      .where(eq(sopDocuments.id, id))
+      .for("update");
+    if (!doc) throw new AuthFailure("NOT_FOUND", 404);
+
+    if (doc.status === "DELETED") {
+      if (doc.cleanupState === "FAILED") {
+        const [requeued] = await transaction
+          .update(sopDocuments)
+          .set({
+            cleanupState: "PENDING",
+            cleanupNextAt: sql`clock_timestamp()`,
+            cleanupErrorCode: null,
+            updatedAt: sql`clock_timestamp()`,
+          })
+          .where(eq(sopDocuments.id, id))
+          .returning();
+        return toDeleteResponse(requeued, false);
+      }
+      return toDeleteResponse(doc, false);
+    }
+
+    const previousStatus = doc.status;
+    const hadActiveSnapshot = Boolean(doc.activeJobId);
+    const [deleted] = await transaction
+      .update(sopDocuments)
+      .set({
+        status: "DELETED",
+        activeJobId: null,
+        activePipelineVersion: null,
+        activeAttemptId: null,
+        rejectionReason: null,
+        deletedBy: account.id,
+        deletedAt: sql`clock_timestamp()`,
+        cleanupState: "PENDING",
+        cleanupAttempts: 0,
+        cleanupErrorCode: null,
+        cleanupNextAt: sql`clock_timestamp()`,
+        cleanupLeaseToken: null,
+        cleanupLeaseUntil: null,
+        cleanupCompletedAt: null,
+        updatedAt: sql`clock_timestamp()`,
+      })
+      .where(eq(sopDocuments.id, id))
+      .returning();
+
+    await transaction
+      .update(workflowJobs)
+      .set({
+        state: "FAILED",
+        errorCode: "DOCUMENT_DELETED",
+        dispatchLeaseToken: null,
+        dispatchLeaseUntil: null,
+        runLeaseUntil: null,
+        attemptDeadline: sql`coalesce(${workflowJobs.attemptDeadline}, clock_timestamp())`,
+        updatedAt: sql`clock_timestamp()`,
+      })
+      .where(
+        and(
+          eq(workflowJobs.documentId, id),
+          inArray(workflowJobs.state, ["QUEUED", "RUNNING", "WAITING_FOR_PIPELINE"]),
+        ),
+      );
+
+    await transaction.insert(auditEvents).values({
+      actorId: account.id,
+      action: "document.deleted",
+      targetId: id,
+      outcome: "deleted",
+      metadata: { previousStatus, hadActiveSnapshot },
+    });
+
+    return toDeleteResponse(deleted, true);
+  });
+}
+
+export async function reconcileDocumentDeletions(
+  database: AuthDatabase = getDatabase(),
+  storage: DocumentStorage = getDocumentStorage(),
+  options?: { signal?: AbortSignal; limit?: number; documentIds?: string[] },
+): Promise<{ processed: number; completed: number; failed: number }> {
+  const batchSize = Math.max(1, Math.min(options?.limit ?? documentBounds.cleanupBatchSize, 50));
+  const claimed = await database.transaction(async (transaction) => {
+    const conditions: SQL[] = [
+      eq(sopDocuments.status, "DELETED"),
+      or(
+        and(
+          inArray(sopDocuments.cleanupState, ["PENDING", "FAILED"]),
+          lte(sopDocuments.cleanupNextAt, sql`clock_timestamp()`),
+        ),
+        and(
+          eq(sopDocuments.cleanupState, "RUNNING"),
+          lte(sopDocuments.cleanupLeaseUntil, sql`clock_timestamp()`),
+        ),
+      )!,
+    ];
+    if (options?.documentIds && options.documentIds.length > 0) {
+      conditions.push(inArray(sopDocuments.id, options.documentIds));
+    }
+
+    const due = await transaction
+      .select({
+        id: sopDocuments.id,
+        deletedBy: sopDocuments.deletedBy,
+        originalKey: sopDocuments.originalKey,
+        previewKey: sopDocuments.previewKey,
+        cleanupAttempts: sopDocuments.cleanupAttempts,
+      })
+      .from(sopDocuments)
+      .where(and(...conditions))
+      .orderBy(asc(sopDocuments.cleanupNextAt), asc(sopDocuments.deletedAt))
+      .limit(batchSize)
+      .for("update", { skipLocked: true });
+
+    const stagingMap = new Map<string, string>();
+    if (due.length > 0) {
+      const intents = await transaction
+        .select({ id: documentUploadIntents.id, stagingKey: documentUploadIntents.stagingKey })
+        .from(documentUploadIntents)
+        .where(inArray(documentUploadIntents.id, due.map((row) => row.id)));
+      for (const intent of intents) {
+        stagingMap.set(intent.id, intent.stagingKey);
+      }
+    }
+
+    const leases: Array<{
+      id: string;
+      deletedBy: string;
+      originalKey: string;
+      previewKey: string | null;
+      stagingKey: string | null;
+      leaseToken: string;
+      attempts: number;
+    }> = [];
+
+    for (const row of due) {
+      if (!row.deletedBy) continue;
+      const leaseToken = randomUUID();
+      const attempts = row.cleanupAttempts + 1;
+      await transaction
+        .update(sopDocuments)
+        .set({
+          cleanupState: "RUNNING",
+          cleanupAttempts: attempts,
+          cleanupLeaseToken: leaseToken,
+          cleanupLeaseUntil: sql`clock_timestamp() + ${documentBounds.cleanupLeaseSeconds} * interval '1 second'`,
+          updatedAt: sql`clock_timestamp()`,
+        })
+        .where(eq(sopDocuments.id, row.id));
+      leases.push({
+        id: row.id,
+        deletedBy: row.deletedBy,
+        originalKey: row.originalKey,
+        previewKey: row.previewKey,
+        stagingKey: stagingMap.get(row.id) ?? null,
+        leaseToken,
+        attempts,
+      });
+    }
+    return leases;
+  });
+
+  let completed = 0;
+  let failed = 0;
+
+  for (const item of claimed) {
+    if (options?.signal?.aborted) break;
+
+    const purgedDb = await database.transaction(async (transaction) => {
+      const [fenced] = await transaction
+        .select({ id: sopDocuments.id })
+        .from(sopDocuments)
+        .where(
+          and(
+            eq(sopDocuments.id, item.id),
+            eq(sopDocuments.status, "DELETED"),
+            eq(sopDocuments.cleanupLeaseToken, item.leaseToken),
+          ),
+        )
+        .for("update");
+      if (!fenced) return false;
+
+      await transaction.delete(sopChunks).where(eq(sopChunks.documentId, item.id));
+      await transaction.delete(sopExtractionPages).where(eq(sopExtractionPages.documentId, item.id));
+      await transaction.delete(sopVerificationIssues).where(eq(sopVerificationIssues.documentId, item.id));
+      return true;
+    });
+    if (!purgedDb) continue;
+
+    const keys = Array.from(
+      new Set(
+        [item.originalKey, item.previewKey, item.stagingKey].filter(
+          (key): key is string => Boolean(key),
+        ),
+      ),
+    );
+
+    try {
+      for (const key of keys) {
+        const timeoutSignal = AbortSignal.timeout(documentBounds.storageTimeoutMilliseconds);
+        const boundedSignal = options?.signal
+          ? AbortSignal.any([options.signal, timeoutSignal])
+          : timeoutSignal;
+        await storage.delete(key, boundedSignal);
+      }
+      await database.transaction(async (transaction) => {
+        const [updated] = await transaction
+          .update(sopDocuments)
+          .set({
+            cleanupState: "COMPLETED",
+            cleanupErrorCode: null,
+            cleanupNextAt: null,
+            cleanupLeaseToken: null,
+            cleanupLeaseUntil: null,
+            cleanupCompletedAt: sql`clock_timestamp()`,
+            previewKey: null,
+            updatedAt: sql`clock_timestamp()`,
+          })
+          .where(
+            and(
+              eq(sopDocuments.id, item.id),
+              eq(sopDocuments.status, "DELETED"),
+              eq(sopDocuments.cleanupLeaseToken, item.leaseToken),
+            ),
+          )
+          .returning({ id: sopDocuments.id });
+        if (updated) {
+          await transaction.insert(auditEvents).values({
+            actorId: item.deletedBy,
+            action: "document.cleanup_completed",
+            targetId: item.id,
+            outcome: "completed",
+            metadata: { attempts: item.attempts },
+          });
+        }
+      });
+      completed++;
+    } catch {
+      const backoffSeconds = calculateCleanupBackoffSeconds(item.attempts);
+      await database.transaction(async (transaction) => {
+        const [updated] = await transaction
+          .update(sopDocuments)
+          .set({
+            cleanupState: "FAILED",
+            cleanupErrorCode: "CLEANUP_STORAGE_UNAVAILABLE",
+            cleanupLeaseToken: null,
+            cleanupLeaseUntil: null,
+            cleanupNextAt: sql`clock_timestamp() + ${backoffSeconds} * interval '1 second'`,
+            updatedAt: sql`clock_timestamp()`,
+          })
+          .where(
+            and(
+              eq(sopDocuments.id, item.id),
+              eq(sopDocuments.status, "DELETED"),
+              eq(sopDocuments.cleanupLeaseToken, item.leaseToken),
+            ),
+          )
+          .returning({ id: sopDocuments.id });
+        if (updated) {
+          await transaction.insert(auditEvents).values({
+            actorId: item.deletedBy,
+            action: "document.cleanup_failed",
+            targetId: item.id,
+            outcome: "failed",
+            metadata: { errorCode: "CLEANUP_STORAGE_UNAVAILABLE", attempts: item.attempts },
+          });
+        }
+      });
+      failed++;
+    }
+  }
+
+  return { processed: claimed.length, completed, failed };
+}
+
+export async function queryEligibleActiveChunks(
+  database: AuthDatabase = getDatabase(),
+  options?: { documentId?: string },
+): Promise<EligibleActiveChunkDto[]> {
+  const conditions: SQL[] = [
+    eq(sopDocuments.status, "ACTIVE"),
+    eq(sopChunks.jobId, sopDocuments.activeJobId),
+    eq(sopChunks.pipelineVersion, sopDocuments.activePipelineVersion),
+    eq(sopChunks.sourceSha256, sopDocuments.sha256),
+  ];
+  if (options?.documentId) {
+    if (!documentIdInput.safeParse(options.documentId).success) return [];
+    conditions.push(eq(sopDocuments.id, options.documentId));
+  }
+
+  return database
+    .select({
+      chunkId: sopChunks.id,
+      documentId: sopDocuments.id,
+      documentTitle: sopDocuments.title,
+      fileName: sopDocuments.fileName,
+      jobId: sopChunks.jobId,
+      pipelineVersion: sopChunks.pipelineVersion,
+      sourceSha256: sopChunks.sourceSha256,
+      sequence: sopChunks.sequence,
+      sectionPath: sopChunks.sectionPath,
+      pageStart: sopChunks.pageStart,
+      pageEnd: sopChunks.pageEnd,
+      contentType: sopChunks.contentType,
+      text: sopChunks.text,
+      contentHash: sopChunks.contentHash,
+      tokenEstimate: sopChunks.tokenEstimate,
+    })
+    .from(sopChunks)
+    .innerJoin(sopDocuments, eq(sopChunks.documentId, sopDocuments.id))
+    .where(and(...conditions))
+    .orderBy(asc(sopDocuments.createdAt), asc(sopChunks.sequence));
+}
+
+export async function resolveDocumentCitationAvailability(
+  account: CurrentAccount,
+  documentId: string,
+  database: AuthDatabase = getDatabase(),
+): Promise<DocumentCitationAvailabilityDto> {
+  return database.transaction(async (transaction) => {
+    const liveAccount = await lockCurrentUser(account, transaction);
+    if (!documentIdInput.safeParse(documentId).success) {
+      return { available: false, documentId, reason: "UNAVAILABLE" };
+    }
+    const [doc] = await transaction
+      .select({
+        id: sopDocuments.id,
+        title: sopDocuments.title,
+        status: sopDocuments.status,
+      })
+      .from(sopDocuments)
+      .where(eq(sopDocuments.id, documentId));
+    if (!doc) {
+      return { available: false, documentId, reason: "UNAVAILABLE" };
+    }
+    if (doc.status === "ACTIVE") {
+      return { available: true, documentId: doc.id, title: doc.title, status: "ACTIVE" };
+    }
+    if (liveAccount.role === "ADMIN" && doc.status === "DELETED") {
+      return { available: false, documentId: doc.id, reason: "DELETED" };
+    }
+    return { available: false, documentId: doc.id, reason: "UNAVAILABLE" };
+  });
 }

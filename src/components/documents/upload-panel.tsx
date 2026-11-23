@@ -212,6 +212,7 @@ export function UploadPanel() {
     if (saved.status === "PENDING_VERIFICATION") return "Extracted and ready for Admin verification.";
     if (saved.status === "ACTIVE") return "Verified and active for retrieval.";
     if (saved.status === "REJECTED") return "Extraction rejected during Admin verification.";
+    if (saved.status === "DELETED") return "This SOP document has been deleted.";
     if (saved.status === "FAILED") return processingFailureMessage(saved);
     return "Queued for processing.";
   }

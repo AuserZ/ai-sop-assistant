@@ -5,7 +5,7 @@ import { lstat, readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { Readable } from "node:stream";
 import { setTimeout as delay } from "node:timers/promises";
-import { S3Client, GetObjectCommand, HeadObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
+import { S3Client, DeleteObjectCommand, GetObjectCommand, HeadObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
 if (process.env.SOP_STORAGE_FIXTURE_VERIFY !== "1") throw new Error("Explicit synthetic storage verification is required.");
@@ -143,6 +143,15 @@ async function main() {
       assert.deepEqual(Buffer.from(await received.Body.transformToByteArray()), bytes);
       await assert.rejects(authorizationClient.send(new PutObjectCommand(input)), error => error.name === "PreconditionFailed" && error.$metadata.httpStatusCode === 412);
       console.log(JSON.stringify({ check: "native Authorization-signed SDK.send", put: 200, get: 200, bodyMatches: true, replay: 412, signedHeaderNames: sdkHeaderSets }));
+      const deleteKey = `staging/${randomUUID()}`;
+      const deleteWritten = await authorizationClient.send(new PutObjectCommand({ Bucket: bucket, Key: deleteKey, Body: bytes, ContentLength: bytes.length, ContentType: "application/pdf", IfNoneMatch: "*" }));
+      assert.equal(deleteWritten.$metadata.httpStatusCode, 200);
+      const deleted = await authorizationClient.send(new DeleteObjectCommand({ Bucket: bucket, Key: deleteKey }));
+      assert.equal(deleted.$metadata.httpStatusCode, 204);
+      await assert.rejects(authorizationClient.send(new GetObjectCommand({ Bucket: bucket, Key: deleteKey })), error => error.name === "NoSuchKey" && error.$metadata.httpStatusCode === 404);
+      const deletedAgain = await authorizationClient.send(new DeleteObjectCommand({ Bucket: bucket, Key: deleteKey }));
+      assert.equal(deletedAgain.$metadata.httpStatusCode, 204);
+      console.log(JSON.stringify({ check: "native Authorization-signed DeleteObject", put: 200, delete: deleted.$metadata.httpStatusCode, getAfterDelete: 404, idempotentDelete: deletedAgain.$metadata.httpStatusCode }));
     } finally { authorizationClient.destroy(); }
     const unsigned = run([{ check: "native unsigned object denial", url: `${endpoint}/${bucket}/${key}`, method: "GET" }])[0];
     assert.ok([400, 401, 403].includes(unsigned.status));
@@ -179,6 +188,8 @@ async function main() {
       { check: "gateway cookie denial", url: fresh, method: "PUT", headers: { ...headers, cookie: "session=synthetic" }, body },
       { check: "gateway bearer denial", url: fresh, method: "PUT", headers: { ...headers, authorization: "Bearer synthetic" }, body },
       { check: "gateway foreign Origin denial", url: fresh, method: "PUT", headers: { ...headers, origin: "https://example.invalid" }, body },
+      { check: "gateway unsigned DELETE denial", url: `${endpoint}/${bucket}/${key}`, method: "DELETE" },
+      { check: "gateway browser Origin DELETE denial", url: `${endpoint}/${bucket}/${key}`, method: "DELETE", headers: { origin: "http://127.0.0.1:3000", authorization: "AWS4-HMAC-SHA256 Credential=synthetic/20261123/auto/s3/aws4_request, SignedHeaders=host, Signature=00" } },
       { check: "gateway unsigned public route denial", url: `http://127.0.0.1:8787/cdn-cgi/local/r2/public/${bucket}/${key}`, method: "GET" },
       { check: "gateway explorer denial", url: "http://127.0.0.1:8787/cdn-cgi/local/explorer", method: "GET" },
     ]);

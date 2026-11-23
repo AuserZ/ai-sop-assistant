@@ -61,7 +61,7 @@ function severityBadgeClass(severity: "info" | "warning" | "error") {
 
 function statusBadgeClass(status: DocumentReviewDto["document"]["status"]) {
   if (status === "ACTIVE") return "bg-[#dcfce7] text-[#166534]";
-  if (status === "REJECTED" || status === "FAILED") return "bg-[#fee2e2] text-[#991b1b]";
+  if (status === "REJECTED" || status === "FAILED" || status === "DELETED") return "bg-[#fee2e2] text-[#991b1b]";
   if (status === "PENDING_VERIFICATION") return "bg-[#fef3c7] text-[#92400e]";
   return "bg-[#e5e7eb] text-[#1f2937]";
 }
@@ -705,6 +705,12 @@ export function ReviewWorkspace({ documentId }: { documentId: string }) {
             {doc.status === "ACTIVE" && (
               <p className="rounded border border-[#bbf7d0] bg-[#f0fdf4] p-3 text-sm text-[#166534]">
                 This SOP is verified and ACTIVE for retrieval. ACTIVE originals cannot be mutated in place.
+              </p>
+            )}
+
+            {doc.status === "DELETED" && (
+              <p className="rounded border border-[#fecaca] bg-[#fef2f2] p-3 text-sm text-[#991b1b]">
+                This SOP document has been deleted and is excluded from retrieval, verification, and source access.
               </p>
             )}
 

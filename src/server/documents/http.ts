@@ -12,11 +12,13 @@ import {
 } from "./contracts";
 import {
   authorizeDocumentSource,
+  deleteDocument,
   finalizeDocumentUpload,
   getDocumentUploadStatus,
   initializeDocumentUpload,
   listDocuments,
   readDocumentSourceContent,
+  reconcileDocumentDeletions,
 } from "./service";
 
 function readSearchParamsObject(
@@ -53,6 +55,25 @@ export async function handleDocumentRequest(request: Request, operation: "init" 
     const { created, ...response } = await finalizeDocumentUpload(account, id!);
     return Response.json(response, { status: created ? 202 : 200, headers });
   } catch (error) { return authErrorResponse(error); }
+}
+
+export async function handleDocumentDeleteRequest(request: Request, id: string) {
+  try {
+    requireMutationOrigin(request);
+    const account = await requireCurrentAccount(request.headers);
+    requireRole(account, "ADMIN");
+    await consumeRateLimit("document-global", "all", { maximum: 120, windowSeconds: 60 });
+    await consumeRateLimit("document-delete", account.id, { maximum: 30, windowSeconds: 60 });
+    if (!documentIdInput.safeParse(id).success) throw new AuthFailure("NOT_FOUND", 404);
+    const result = await deleteDocument(account, id);
+    void reconcileDocumentDeletions().catch(() => undefined);
+    return Response.json(result, {
+      status: result.created ? 202 : 200,
+      headers: { "Cache-Control": "private, no-store" },
+    });
+  } catch (error) {
+    return authErrorResponse(error);
+  }
 }
 
 export async function handleDocumentLibraryRequest(request: Request) {
