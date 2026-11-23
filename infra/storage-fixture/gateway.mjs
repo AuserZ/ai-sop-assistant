@@ -10,7 +10,7 @@ function reject(response, status, code = "InvalidRequest") {
   response.end(`<Error><Code>${code}</Code><Message>Storage fixture request rejected.</Message></Error>`);
 }
 
-export function createStorageGateway({ upstreamOrigin, bucket, browserOrigin = "http://127.0.0.1:3000", maximumBodyBytes = 21_000_000, requestTimeoutMilliseconds = 15_000 }) {
+export function createStorageGateway({ upstreamOrigin, bucket, browserOrigin = "http://127.0.0.1:3000", maximumBodyBytes = 21_000_000, requestTimeoutMilliseconds = 30_000 }) {
   const upstream = new URL(upstreamOrigin);
   if (upstream.protocol !== "http:" || upstream.hostname !== "127.0.0.1" || upstream.pathname !== "/") throw new Error("The fixture upstream must be loopback HTTP.");
   const prefix = `/cdn-cgi/local/r2/s3/${bucket}/`;
