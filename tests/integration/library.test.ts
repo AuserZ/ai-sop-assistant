@@ -184,6 +184,10 @@ async function seedUploadedDocument(
     .select()
     .from(schema.sopDocuments)
     .where(eq(schema.sopDocuments.id, intent.id));
+  await database
+    .update(schema.workflowJobs)
+    .set({ dispatchNextAt: new Date(Date.now() + 60_000) })
+    .where(eq(schema.workflowJobs.documentId, intent.id));
   const [job] = await database
     .select()
     .from(schema.workflowJobs)
@@ -712,7 +716,8 @@ describe("S07/D1/D5 searchable SOP library and authorized original source access
       ),
     ).rejects.toMatchObject({ code: "NOT_FOUND", status: 404 });
 
-    // Admin demoted to STAFF after link issuance also loses access to the REJECTED document immediately (404 NOT_FOUND).
+    // Admin demoted to STAFF after link issuance: auth_users_revoke_sessions revokes old session (401),
+    // and even with a new STAFF session for the same accountId, live role+ACTIVE recheck rejects REJECTED doc (404).
     await database
       .update(schema.authUsers)
       .set({ role: "STAFF" })
@@ -726,11 +731,31 @@ describe("S07/D1/D5 searchable SOP library and authorized original source access
         storage,
         { nowSeconds: nowSeconds + 5 },
       ),
+    ).rejects.toMatchObject({ code: "UNAUTHENTICATED", status: 401 });
+    const demotedSession = await seedSyntheticSession(database, {
+      id: adminAccount.id,
+      email: adminAccount.email,
+      role: "STAFF",
+    });
+    await expect(
+      readDocumentSourceContent(
+        demotedSession,
+        statusChangeSeed.documentId,
+        { token: adminPreRejectToken },
+        database,
+        storage,
+        { nowSeconds: nowSeconds + 5 },
+      ),
     ).rejects.toMatchObject({ code: "NOT_FOUND", status: 404 });
     await database
       .update(schema.authUsers)
       .set({ role: "ADMIN" })
       .where(eq(schema.authUsers.id, adminAccount.id));
+    adminAccount = await seedSyntheticSession(database, {
+      id: adminAccount.id,
+      email: adminAccount.email,
+      role: "ADMIN",
+    });
 
     // 7. Deactivated account or expired session after link issuance immediately fails with 401 UNAUTHENTICATED.
     await database
