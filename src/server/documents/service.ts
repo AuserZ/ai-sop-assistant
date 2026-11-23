@@ -1,8 +1,10 @@
 import { createHash, randomUUID } from "node:crypto";
-import { and, count, eq, gt, sql } from "drizzle-orm";
+import { and, count, desc, eq, gt, inArray, sql, type SQL } from "drizzle-orm";
 import { getDatabase } from "../db/client";
 import {
   auditEvents,
+  authSessions,
+  authUsers,
   documentUploadIntents,
   sopChunks,
   sopDocuments,
@@ -16,9 +18,29 @@ import type { AuthDatabase } from "../auth/rate-limit";
 import { ingestionBounds } from "../jobs/contracts";
 import { appendEvent } from "../jobs/service";
 import { documentQuotaBytes } from "./config";
-import { documentBounds, ingestionPipelineVersion, uploadInput, type DocumentUploadDto } from "./contracts";
+import {
+  decodeDocumentLibraryCursor,
+  documentBounds,
+  documentIdInput,
+  documentMimeTypes,
+  documentSourceContentQueryInput,
+  documentSourceQueryInput,
+  encodeDocumentLibraryCursor,
+  escapeIlikePattern,
+  ingestionPipelineVersion,
+  listDocumentsQueryInput,
+  signDocumentSourceToken,
+  sourceLinkTtlSeconds,
+  uploadInput,
+  verifyDocumentSourceToken,
+  type DocumentLibraryDiagnosticsDto,
+  type DocumentLibraryItemDto,
+  type DocumentLibraryResponse,
+  type DocumentSourceAuthorizationResponse,
+  type DocumentUploadDto,
+} from "./contracts";
 import { validateDocumentObject } from "./format";
-import { getDocumentStorage, type DocumentStorage } from "./storage";
+import { getDocumentStorage, type DocumentStorage, type StoredObject } from "./storage";
 
 type UploadIntent = typeof documentUploadIntents.$inferSelect;
 type Transaction = Parameters<Parameters<AuthDatabase["transaction"]>[0]>[0];
@@ -331,4 +353,352 @@ export async function finalizeDocumentUpload(account: CurrentAccount, id: string
     }
     throw failure;
   } finally { activeFinalizers--; }
+}
+
+async function lockCurrentUser(account: CurrentAccount, transaction: Transaction): Promise<CurrentAccount> {
+  const [user] = await transaction
+    .select({
+      id: authUsers.id,
+      name: authUsers.name,
+      email: authUsers.email,
+      role: authUsers.role,
+      active: authUsers.active,
+    })
+    .from(authUsers)
+    .where(eq(authUsers.id, account.id))
+    .for("share");
+  if (!user?.active) throw new AuthFailure("UNAUTHENTICATED", 401);
+  const [session] = await transaction
+    .select({ id: authSessions.id, expiresAt: authSessions.expiresAt })
+    .from(authSessions)
+    .where(
+      and(
+        eq(authSessions.id, account.sessionId),
+        eq(authSessions.userId, account.id),
+        gt(authSessions.expiresAt, sql`clock_timestamp()`),
+      ),
+    )
+    .for("share");
+  if (!session) throw new AuthFailure("UNAUTHENTICATED", 401);
+  return {
+    id: user.id,
+    name: user.name,
+    email: user.email,
+    role: user.role,
+    sessionId: session.id,
+    sessionExpiresAt: session.expiresAt,
+  };
+}
+
+export async function listDocuments(
+  account: CurrentAccount,
+  rawQuery: unknown = {},
+  database: AuthDatabase = getDatabase(),
+): Promise<DocumentLibraryResponse> {
+  const parsed = listDocumentsQueryInput.safeParse(rawQuery ?? {});
+  if (!parsed.success) throw new AuthFailure("INVALID_INPUT", 400);
+  const query = parsed.data;
+  const decodedCursor = query.cursor ? decodeDocumentLibraryCursor(query.cursor) : null;
+  if (query.cursor && !decodedCursor) throw new AuthFailure("INVALID_INPUT", 400);
+
+  return database.transaction(async (transaction) => {
+    const liveAccount = await lockCurrentUser(account, transaction);
+    const conditions: SQL[] = [];
+    if (liveAccount.role !== "ADMIN") {
+      conditions.push(eq(sopDocuments.status, "ACTIVE"));
+    }
+    if (query.q.length > 0) {
+      const pattern = `%${escapeIlikePattern(query.q)}%`;
+      conditions.push(sql`${sopDocuments.title} ilike ${pattern} escape '\\'`);
+    }
+    if (decodedCursor) {
+      conditions.push(
+        sql`(${sopDocuments.createdAt} < ${decodedCursor.createdAt}::timestamptz or (${sopDocuments.createdAt} = ${decodedCursor.createdAt}::timestamptz and ${sopDocuments.id} < ${decodedCursor.id}::uuid))`,
+      );
+    }
+
+    const rows = await transaction
+      .select({
+        id: sopDocuments.id,
+        title: sopDocuments.title,
+        fileName: sopDocuments.fileName,
+        mimeType: sopDocuments.mimeType,
+        sizeBytes: sopDocuments.sizeBytes,
+        uploaderName: authUsers.name,
+        createdAt: sopDocuments.createdAt,
+        cursorCreatedAt: sql<string>`to_char(${sopDocuments.createdAt} at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`,
+        verifiedAt: sopDocuments.verifiedAt,
+        status: sopDocuments.status,
+        previewKey: sopDocuments.previewKey,
+        processingErrorCode: sopDocuments.processingErrorCode,
+        rejectionReason: sopDocuments.rejectionReason,
+        latestJobId: sopDocuments.latestJobId,
+        processedJobId: sopDocuments.processedJobId,
+        activeJobId: sopDocuments.activeJobId,
+      })
+      .from(sopDocuments)
+      .innerJoin(authUsers, eq(sopDocuments.uploadedBy, authUsers.id))
+      .where(conditions.length > 0 ? and(...conditions) : undefined)
+      .orderBy(desc(sopDocuments.createdAt), desc(sopDocuments.id))
+      .limit(query.limit + 1);
+
+    const hasMore = rows.length > query.limit;
+    const pageRows = hasMore ? rows.slice(0, query.limit) : rows;
+    const lastRow = pageRows[pageRows.length - 1];
+    const nextCursor =
+      hasMore && lastRow
+        ? encodeDocumentLibraryCursor({ createdAt: lastRow.cursorCreatedAt, id: lastRow.id })
+        : null;
+
+    const latestJobMap = new Map<
+      string,
+      NonNullable<DocumentLibraryDiagnosticsDto["latestJob"]>
+    >();
+    const pageCountMap = new Map<string, number>();
+    const chunkCountMap = new Map<string, number>();
+    const issueCountMap = new Map<string, number>();
+
+    if (liveAccount.role === "ADMIN" && pageRows.length > 0) {
+      const latestJobIds = Array.from(
+        new Set(pageRows.map((row) => row.latestJobId).filter((id): id is string => Boolean(id))),
+      );
+      if (latestJobIds.length > 0) {
+        const jobs = await transaction
+          .select({
+            id: workflowJobs.id,
+            state: workflowJobs.state,
+            stage: workflowJobs.stage,
+            attemptNumber: workflowJobs.attemptNumber,
+            errorCode: workflowJobs.errorCode,
+          })
+          .from(workflowJobs)
+          .where(inArray(workflowJobs.id, latestJobIds));
+        for (const job of jobs) {
+          latestJobMap.set(job.id, job);
+        }
+      }
+
+      const snapshotJobIds = Array.from(
+        new Set(
+          pageRows
+            .map((row) => row.activeJobId ?? row.processedJobId ?? row.latestJobId)
+            .filter((id): id is string => Boolean(id)),
+        ),
+      );
+      if (snapshotJobIds.length > 0) {
+        const pageCounts = await transaction
+          .select({ jobId: sopExtractionPages.jobId, total: count() })
+          .from(sopExtractionPages)
+          .where(inArray(sopExtractionPages.jobId, snapshotJobIds))
+          .groupBy(sopExtractionPages.jobId);
+        for (const entry of pageCounts) pageCountMap.set(entry.jobId, entry.total);
+
+        const chunkCounts = await transaction
+          .select({ jobId: sopChunks.jobId, total: count() })
+          .from(sopChunks)
+          .where(inArray(sopChunks.jobId, snapshotJobIds))
+          .groupBy(sopChunks.jobId);
+        for (const entry of chunkCounts) chunkCountMap.set(entry.jobId, entry.total);
+
+        const issueCounts = await transaction
+          .select({ jobId: sopVerificationIssues.jobId, total: count() })
+          .from(sopVerificationIssues)
+          .where(inArray(sopVerificationIssues.jobId, snapshotJobIds))
+          .groupBy(sopVerificationIssues.jobId);
+        for (const entry of issueCounts) issueCountMap.set(entry.jobId, entry.total);
+      }
+    }
+
+    const items: DocumentLibraryItemDto[] = pageRows.map((row) => {
+      const snapshotJobId = row.activeJobId ?? row.processedJobId ?? row.latestJobId;
+      const diagnostics: DocumentLibraryDiagnosticsDto | null =
+        liveAccount.role === "ADMIN"
+          ? {
+              processingErrorCode: row.processingErrorCode,
+              rejectionReason: row.rejectionReason,
+              latestJob: row.latestJobId ? (latestJobMap.get(row.latestJobId) ?? null) : null,
+              pageCount: snapshotJobId ? (pageCountMap.get(snapshotJobId) ?? 0) : 0,
+              chunkCount: snapshotJobId ? (chunkCountMap.get(snapshotJobId) ?? 0) : 0,
+              issueCount: snapshotJobId ? (issueCountMap.get(snapshotJobId) ?? 0) : 0,
+              hasPreview: row.mimeType === "application/pdf" || Boolean(row.previewKey),
+            }
+          : null;
+
+      return {
+        id: row.id,
+        title: row.title,
+        fileName: row.fileName,
+        mimeType: row.mimeType as typeof documentMimeTypes[number],
+        fileType: row.mimeType === "application/pdf" ? "PDF" : "DOCX",
+        sizeBytes: row.sizeBytes,
+        uploaderName: row.uploaderName,
+        uploadedAt: row.createdAt.toISOString(),
+        verifiedAt: row.verifiedAt ? row.verifiedAt.toISOString() : null,
+        status: row.status,
+        diagnostics,
+      };
+    });
+
+    return { items, nextCursor };
+  });
+}
+
+export async function authorizeDocumentSource(
+  account: CurrentAccount,
+  documentId: string,
+  rawQuery: unknown = {},
+  database: AuthDatabase = getDatabase(),
+  options?: { nowSeconds?: number; signingKey?: Buffer },
+): Promise<DocumentSourceAuthorizationResponse> {
+  if (!documentIdInput.safeParse(documentId).success) {
+    throw new AuthFailure("NOT_FOUND", 404);
+  }
+  const parsed = documentSourceQueryInput.safeParse(rawQuery ?? {});
+  if (!parsed.success) throw new AuthFailure("INVALID_INPUT", 400);
+  const query = parsed.data;
+
+  return database.transaction(async (transaction) => {
+    const liveAccount = await lockCurrentUser(account, transaction);
+    const whereClause =
+      liveAccount.role === "ADMIN"
+        ? eq(sopDocuments.id, documentId)
+        : and(eq(sopDocuments.id, documentId), eq(sopDocuments.status, "ACTIVE"));
+
+    const [doc] = await transaction
+      .select({
+        id: sopDocuments.id,
+        title: sopDocuments.title,
+        fileName: sopDocuments.fileName,
+        mimeType: sopDocuments.mimeType,
+        sha256: sopDocuments.sha256,
+        status: sopDocuments.status,
+      })
+      .from(sopDocuments)
+      .where(whereClause);
+
+    if (!doc) throw new AuthFailure("NOT_FOUND", 404);
+
+    const { token, claims } = signDocumentSourceToken(
+      {
+        documentId: doc.id,
+        accountId: liveAccount.id,
+        role: liveAccount.role,
+        statusAtIssue: doc.status,
+        sha256: doc.sha256,
+        disposition: query.disposition,
+        page: query.page ?? null,
+        section: query.section ?? null,
+      },
+      options,
+    );
+
+    await transaction.insert(auditEvents).values({
+      actorId: liveAccount.id,
+      action: "document.source_authorized",
+      targetId: doc.id,
+      outcome: "authorized",
+      metadata: {
+        disposition: claims.disposition,
+        status: doc.status,
+        page: claims.page,
+        section: claims.section,
+      },
+    });
+
+    return {
+      source: {
+        documentId: doc.id,
+        title: doc.title,
+        fileName: doc.fileName,
+        mimeType: doc.mimeType as typeof documentMimeTypes[number],
+        disposition: claims.disposition,
+        url: `/api/documents/${doc.id}/source/content?token=${encodeURIComponent(token)}`,
+        expiresAt: new Date(claims.exp * 1000).toISOString(),
+        ttlSeconds: sourceLinkTtlSeconds,
+        context: {
+          page: claims.page,
+          section: claims.section,
+        },
+      },
+    };
+  });
+}
+
+export async function readDocumentSourceContent(
+  account: CurrentAccount,
+  documentId: string,
+  rawQuery: unknown,
+  database: AuthDatabase = getDatabase(),
+  storage: DocumentStorage = getDocumentStorage(),
+  options?: { nowSeconds?: number; signingKey?: Buffer; signal?: AbortSignal },
+): Promise<{
+  bytes: Buffer;
+  fileName: string;
+  mimeType: string;
+  disposition: "inline" | "attachment";
+}> {
+  if (!documentIdInput.safeParse(documentId).success) {
+    throw new AuthFailure("NOT_FOUND", 404);
+  }
+  const parsed = documentSourceContentQueryInput.safeParse(rawQuery ?? {});
+  if (!parsed.success) {
+    throw new AuthFailure("SOURCE_LINK_INVALID", 403);
+  }
+  const claims = verifyDocumentSourceToken(parsed.data.token, documentId, options);
+
+  const target = await database.transaction(async (transaction) => {
+    const liveAccount = await lockCurrentUser(account, transaction);
+    if (liveAccount.id !== claims.accountId) {
+      throw new AuthFailure("FORBIDDEN", 403);
+    }
+    const whereClause =
+      liveAccount.role === "ADMIN"
+        ? eq(sopDocuments.id, documentId)
+        : and(eq(sopDocuments.id, documentId), eq(sopDocuments.status, "ACTIVE"));
+
+    const [doc] = await transaction
+      .select({
+        id: sopDocuments.id,
+        fileName: sopDocuments.fileName,
+        mimeType: sopDocuments.mimeType,
+        sizeBytes: sopDocuments.sizeBytes,
+        sha256: sopDocuments.sha256,
+        originalKey: sopDocuments.originalKey,
+      })
+      .from(sopDocuments)
+      .where(whereClause);
+
+    if (!doc || doc.sha256 !== claims.sha256) {
+      throw new AuthFailure("NOT_FOUND", 404);
+    }
+    return doc;
+  });
+
+  const callerSignal = options?.signal ?? new AbortController().signal;
+  const boundedSignal = AbortSignal.any([
+    callerSignal,
+    AbortSignal.timeout(documentBounds.storageTimeoutMilliseconds),
+  ]);
+  let object: StoredObject | null;
+  try {
+    object = await storage.read(target.originalKey, target.sizeBytes, boundedSignal);
+  } catch (error) {
+    if (error instanceof AuthFailure) throw error;
+    throw new AuthFailure("UPLOAD_STORAGE_UNAVAILABLE", 503);
+  }
+  if (!object) {
+    throw new AuthFailure("SOURCE_OBJECT_MISSING", 404);
+  }
+  if (
+    object.bytes.byteLength !== target.sizeBytes ||
+    createHash("sha256").update(object.bytes).digest("hex") !== target.sha256
+  ) {
+    throw new AuthFailure("SOURCE_OBJECT_MISSING", 404);
+  }
+  return {
+    bytes: object.bytes,
+    fileName: target.fileName,
+    mimeType: target.mimeType,
+    disposition: claims.disposition,
+  };
 }

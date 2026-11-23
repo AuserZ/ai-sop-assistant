@@ -349,6 +349,6 @@ export const auditEvents = appSchema.table("audit_events", {
   action: text().notNull(),
   targetId: text("target_id"),
   outcome: text().notNull(),
-  metadata: jsonb().$type<Record<string, string | number | boolean>>(),
+  metadata: jsonb().$type<Record<string, string | number | boolean | null>>(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
