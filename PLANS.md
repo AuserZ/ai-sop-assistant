@@ -1,16 +1,14 @@
 # Development plan by feature sprint
 
-Source: [approved technical PRD](<AI SOP Assistant — Technical Product Req.md>), sections 0, 14–16, and [original product PRD](<PRD AI SOP Assistant.pdf>). This plan does not change either source. Status updated on 22 November 2026.
+Source: [approved technical PRD](<AI SOP Assistant — Technical Product Req.md>), sections 0, 14–16, and [original product PRD](<PRD AI SOP Assistant.pdf>). This plan does not change either source. Status updated on 23 November 2026.
 
 ## Current state
 
+S05 SOP extraction, OCR, previews and indexing is **VERIFIED** on 23 November 2026 for published source `caf0fc7d8e8bb879f1162d1d32c174248022ee31` (tree `ac923727099f080f3923954e573cdcd9f19ca041`) on `codex/s05-document-processing`. [Hosted run 45102843612](https://github.com/AuserZ/ai-sop-assistant/actions/runs/45102843612) passed all 29 step entries (`paddleocr` job `137457390869` 9/9 + `foundation` job `137457391121` 20/20): 58/58 unit tests, 9-input PaddleOCR CLI/stdin/HTTP-server/12-bounds verifier, Docker LibreOffice/Poppler conversion verifier, fresh `0004` PostgreSQL/pgvector migrations + `verify-db`, full Compose stack + 3-document Playwright D3 E2E (native PDF, scanned PDF via real PaddleOCR, rich DOCX via LibreOffice preview + Staff 403), workflow recovery, redirect controls and cleanup. Independent Security ([S05-security.md](docs/verification/S05-security.md)) and QA ([S05-qa.md](docs/verification/S05-qa.md)) issued final PASS for both S05a and full S05 closure; raw GitHub log download was unauthenticated 403 so step-level API metadata is verified, and CI's loopback synthetic embedding fixture remains distinct from S05a's standalone live OpenAI `text-embedding-3-small` (1,536-dim) compatibility receipt. Next permitted sprint is S06 (`codex/s06-assisted-verification`). All PRD section 16 external gates remain open. [S05 evidence and limits](docs/verification/S05.md)
+
 S04 private Admin uploads are **VERIFIED** on22 November2026 for published source `1ef852166cda0e07c231ddd4834cf053442bb1dd`. [Hosted run45018939728](https://github.com/AuserZ/ai-sop-assistant/actions/runs/45018939728), job137197322521, passed all19 step entries: lint/types/build,40 units,48 PostgreSQL checks,15 browser journeys, native storage controls, six actual recovery cases/native POST controls and cleanup. Independent QA decoded the exact-checkout logs; security independently bound the47-source manifest/publication and final evidence. Live synthetic R2 PDF/DOCX/exact20MB, exact original bytes and the lead's final UI gate also pass. Next permitted sprint is S05. Company privacy/residency, object recovery and production file-policy gates remain open. [S04 evidence and limits](docs/verification/S04.md)
 
-S05 is **IN_PROGRESS** on `codex/s05-document-processing`, based on S04 closuref81a8d3. The user approved temporary local PaddleOCR instead of Google on22 November. The offline CPU Docker increment passes local/hosted/QA checks; full processing/embedding/n8n remains unverified. User-approved text-embedding-3-small/1,536 passed one17-token synthetic compatibility request. Security review and remaining pipeline integration are open. [Approved follow-up and setup](docs/paddleocr-setup.md)
-
-S05a local checkpoint22 November: CPU builds exit0; self-test and PNG/JPEG inputs match4 literal lines each. Eleven bounds checks and8 actual cases pass; containers/temp inputs removed, R2/app/volumes unchanged. The hosted checkpoint below completes exact CI/QA. User approved text-embedding-3-small/1,536 after catalogGET200; one synthetic request returned200/1,536 finite values/17 tokens. Account balance, runtime wiring, security and full S05 remain open. [Evidence](docs/verification/S05.md)
-
-S05a hosted checkpoint: source4f1bf000b004e8a488a73268aed6635e8cb88423 passed [run45026670726](https://github.com/AuserZ/ai-sop-assistant/actions/runs/45026670726), all19 foundation and9 OCR step entries, including40 units/48 DB/15 browser/six recovery cases/native POST controls plus8 offline OCR cases/11 bounds checks and cleanup. QA independently decoded both complete jobs and issued PASS for the Docker increment. Security review is blocked by its usage limit. Full S05 stays IN_PROGRESS; S06 remains gated.
+S05a historical checkpoints (22 November): local PaddleOCR CPU build/8 cases/11 bounds + hosted `45026670726` on `4f1bf000b004e8a488a73268aed6635e8cb88423` + standalone live OpenAI `text-embedding-3-small`/1,536 synthetic request (`17` tokens, `1,536` finite values). Now superseded by full S05 VERIFIED closure above. [Approved follow-up and setup](docs/paddleocr-setup.md)
 
 S03 is **VERIFIED** on 21 November 2026 for published source `0396cf606b8e34a805a038b273a103687a691ce1`. [Hosted run44852222243](https://github.com/AuserZ/ai-sop-assistant/actions/runs/44852222243), job136685999286, passed all18 steps: lint/types/build, 28 unit tests, isolated secret generation, 30 PostgreSQL tests, 10 browser tests, six actual recovery/timeout cases, native POST301/307 controls and cleanup. QA independently checked the exact source and decoded logs; security confirmed the frozen41-file manifest, publication boundaries and original PRD/license/history integrity. Local native recovery/pruning removed the earlier JWT-bearing payloads under unchanged normal settings; transient payload retention remains explicit. Phase0 is complete for the recorded candidates. Next permitted sprint: S04 Admin private uploads using the user's selected Cloudflare R2; bucket/configuration and recovery-policy gates remain open. [S03 evidence](docs/verification/S03.md)
 
@@ -75,8 +73,8 @@ The default execution order is S01 through S16. Each sprint depends on the VERIF
 | S02 | Invitation-only sign-in and role authorization | 0 | U2/U4; U3 access enforcement | VERIFIED |
 | S03 | Durable private workflow jobs and safe progress proof | 0 | ADR 08/19; D3 foundation | VERIFIED |
 | S04 | Admin private SOP upload | 1 | D2; D1 upload status; ADR 03 | VERIFIED |
-| S05 | SOP extraction, OCR, previews and indexing | 1 | D3; ADR 04/05/11/21/22 | IN_PROGRESS |
-| S06 | Assisted verification and revision-bound activation | 1 | D3; ADR 17 | PLANNED |
+| S05 | SOP extraction, OCR, previews and indexing | 1 | D3; ADR 04/05/11/21/22 | VERIFIED |
+| S06 | Assisted verification and revision-bound activation | 1 | D3; ADR 17 | IN_PROGRESS |
 | S07 | SOP library search and authorized original access | 1 | D1/D5 | PLANNED |
 | S08 | SOP deletion and reliable unindexing | 1 | D4 | PLANNED |
 | S09 | Verified ACTIVE hybrid retrieval and reranking | 2 | C2; ADR 10/23 | PLANNED |
@@ -215,12 +213,16 @@ Development scope:
 
 Verify after development:
 
-- [ ] Synthetic native PDF, scanned PDF, mixed pages and DOCX complete with faithful digits/units/tables/section provenance.
-- [ ] OCR/conversion/embedding failure and malformed/oversized inputs retry only as allowed, then fail safely with restricted diagnostics.
-- [ ] Duplicate jobs and worker retries do not duplicate chunks; expired file references renew only through authorized backend access.
-- [ ] No processing result activates a source or exposes it to Staff retrieval. Exported workflow-contract tests and provider compatibility evidence are recorded separately.
+- [x] Synthetic native PDF, scanned PDF, mixed pages and DOCX complete with faithful digits/units/tables/section provenance.
+- [x] OCR/conversion/embedding failure and malformed/oversized inputs retry only as allowed, then fail safely with restricted diagnostics.
+- [x] Duplicate jobs and worker retries do not duplicate chunks; expired file references renew only through authorized backend access.
+- [x] No processing result activates a source or exposes it to Staff retrieval. Exported workflow-contract tests and provider compatibility evidence are recorded separately.
+
+Closure 23 November 2026: **S05 VERIFIED** for `caf0fc7d8e8bb879f1162d1d32c174248022ee31` after hosted run `45102843612` (`29/29` steps PASS) and independent QA/Security PASS. S06 may now proceed. [S05 evidence](docs/verification/S05.md)
 
 ### S06 — assisted verification and atomic activation
+
+Kickoff 23 November 2026 on `codex/s06-assisted-verification` after S05 VERIFIED closure. Scope: Admin-only assisted verification review UI (original PDF / DOCX derivative preview on left + extracted pages/sections/chunks/issues on right with navigation/search/zoom/flags), explicit approve/reject with notes and controlled reprocessing, server-owned atomic revision-bound activation (`ACTIVE`/`REJECTED`) with audit trail, and n8n/Staff inability to mutate activation. Timebox unset.
 
 **Outcome:** Admin can compare original/preview with extraction and approve the exact matching snapshot for retrieval. **Depends on:** S05. **Mapping:** ADR 17; D3 activation invariant.
 
