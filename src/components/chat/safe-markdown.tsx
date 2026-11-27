@@ -107,7 +107,7 @@ function renderInline(text: string): ReactNode[] {
       return (
         <code
           key={index}
-          className="rounded bg-[#f1f5f9] px-1.5 py-0.5 font-mono text-[0.9em] text-[#0f172a]"
+          className="tabular-nums rounded-[var(--radius-sm)] border border-[#e2e8f0] bg-[#f1f5f9] px-1.5 py-0.5 font-mono text-[0.875em] text-[#0f172a]"
         >
           {token.text}
         </code>
@@ -120,14 +120,14 @@ function renderInline(text: string): ReactNode[] {
 export function SafeMarkdown({ content }: { content: string }) {
   const blocks = parseSafeMarkdownBlocks(content);
   return (
-    <div className="space-y-3 text-sm leading-relaxed text-[#0f172a] sm:text-base [font-variant-numeric:tabular-nums]">
+    <div className="tabular-nums max-w-[68ch] space-y-3 text-sm leading-relaxed text-[#0f172a] sm:text-base">
       {blocks.map((block, blockIndex) => {
         if (block.kind === "ordered-list") {
           return (
             <ol
               key={blockIndex}
               start={block.items[0]?.stepNumber ?? 1}
-              className="list-decimal space-y-2 pl-5"
+              className="list-decimal space-y-2 pl-5 marker:font-mono marker:font-medium marker:text-[#475569]"
             >
               {block.items.map((item, itemIndex) => (
                 <li key={itemIndex} value={item.stepNumber} className="break-words pl-1">
@@ -139,7 +139,7 @@ export function SafeMarkdown({ content }: { content: string }) {
         }
         if (block.kind === "unordered-list") {
           return (
-            <ul key={blockIndex} className="list-disc space-y-1.5 pl-5">
+            <ul key={blockIndex} className="list-disc space-y-1.5 pl-5 marker:text-[#64748b]">
               {block.items.map((item, itemIndex) => (
                 <li key={itemIndex} className="break-words pl-1">
                   {renderInline(item)}

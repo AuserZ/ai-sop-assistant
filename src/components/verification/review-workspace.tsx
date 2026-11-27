@@ -2,8 +2,11 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import { AlertCircle, AlertTriangle, ArrowLeft, CheckCircle2, Loader2, RefreshCw } from "lucide-react";
 import { z } from "zod";
-import { accountSchema, buttonClassName, inputClassName, linkClassName } from "@/components/auth/client";
+import { accountSchema, buttonClassName, inputClassName, type Account } from "@/components/auth/client";
+import { AppShell } from "@/components/layout/app-shell";
+import { BrandMark, buttonClass, StatusBadge, textLinkClassName } from "@/components/ui/primitives";
 import {
   splitReviewHighlights,
   type DocumentReviewDto,
@@ -16,13 +19,12 @@ import {
 } from "./client";
 import { PdfPreview } from "./pdf-preview";
 
-type AccessState = "loading" | "anonymous" | "error" | "ADMIN" | "STAFF";
+type AccessState =
+  | { kind: "loading" }
+  | { kind: "anonymous" }
+  | { kind: "error" }
+  | { kind: "signed-in"; user: Account };
 type ReviewTab = "pages" | "chunks" | "history";
-
-const secondaryButtonClassName =
-  "inline-flex min-h-11 items-center justify-center rounded border border-[#1f2937] bg-white px-4 py-2 font-medium text-[#111827] hover:bg-[#f3f4f6] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#111827] disabled:cursor-not-allowed disabled:opacity-60";
-const dangerButtonClassName =
-  "inline-flex min-h-11 items-center justify-center rounded border border-[#991b1b] bg-[#991b1b] px-4 py-2 font-medium text-white hover:bg-[#7f1d1d] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#991b1b] disabled:cursor-not-allowed disabled:opacity-60";
 
 function HighlightedText({ text, query }: { text: string; query: string }) {
   const segments = useMemo(() => splitReviewHighlights(text, query), [text, query]);
@@ -31,7 +33,7 @@ function HighlightedText({ text, query }: { text: string; query: string }) {
       {segments.map((segment, index) => {
         if (segment.kind === "search") {
           return (
-            <mark key={index} className="rounded bg-[#fde047] px-0.5 text-[#111827]">
+            <mark key={index} className="rounded bg-[#fde047] px-0.5 text-[#0f172a]">
               {segment.text}
             </mark>
           );
@@ -41,7 +43,7 @@ function HighlightedText({ text, query }: { text: string; query: string }) {
             <mark
               key={index}
               title="Verify numeric value or unit against the original preview"
-              className="rounded bg-[#ffedd5] px-0.5 font-semibold text-[#9a3412]"
+              className="tabular-nums rounded bg-[#ffedd5] px-0.5 font-semibold text-[#9a3412]"
             >
               {segment.text}
             </mark>
@@ -53,21 +55,14 @@ function HighlightedText({ text, query }: { text: string; query: string }) {
   );
 }
 
-function severityBadgeClass(severity: "info" | "warning" | "error") {
-  if (severity === "error") return "bg-[#fee2e2] text-[#991b1b]";
-  if (severity === "warning") return "bg-[#fef3c7] text-[#92400e]";
-  return "bg-[#dbeafe] text-[#1e40af]";
-}
-
-function statusBadgeClass(status: DocumentReviewDto["document"]["status"]) {
-  if (status === "ACTIVE") return "bg-[#dcfce7] text-[#166534]";
-  if (status === "REJECTED" || status === "FAILED" || status === "DELETED") return "bg-[#fee2e2] text-[#991b1b]";
-  if (status === "PENDING_VERIFICATION") return "bg-[#fef3c7] text-[#92400e]";
-  return "bg-[#e5e7eb] text-[#1f2937]";
+function severityLabel(severity: "info" | "warning" | "error"): string {
+  if (severity === "error") return "Error";
+  if (severity === "warning") return "Warning";
+  return "Info";
 }
 
 export function ReviewWorkspace({ documentId }: { documentId: string }) {
-  const [access, setAccess] = useState<AccessState>("loading");
+  const [access, setAccess] = useState<AccessState>({ kind: "loading" });
   const [review, setReview] = useState<DocumentReviewDto | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -109,13 +104,13 @@ export function ReviewWorkspace({ documentId }: { documentId: string }) {
           signal: controller.signal,
         });
         if (response.status === 401) {
-          if (!controller.signal.aborted) setAccess("anonymous");
+          if (!controller.signal.aborted) setAccess({ kind: "anonymous" });
           return;
         }
         const parsed = z.object({ user: accountSchema }).safeParse(await response.json());
         if (!response.ok || !parsed.success) throw new Error("Account unavailable");
         if (controller.signal.aborted) return;
-        setAccess(parsed.data.user.role);
+        setAccess({ kind: "signed-in", user: parsed.data.user });
         if (parsed.data.user.role === "ADMIN") {
           await loadReview(controller.signal);
         }
@@ -124,7 +119,7 @@ export function ReviewWorkspace({ documentId }: { documentId: string }) {
         if (failure instanceof VerificationRequestError) {
           setLoadError(failure.message);
         } else {
-          setAccess("error");
+          setAccess({ kind: "error" });
         }
       }
     })();
@@ -136,7 +131,7 @@ export function ReviewWorkspace({ documentId }: { documentId: string }) {
 
   const currentStatus = review?.document.status;
   useEffect(() => {
-    if (access !== "ADMIN") return;
+    if (access.kind !== "signed-in" || access.user.role !== "ADMIN") return;
     if (currentStatus !== "UPLOADED" && currentStatus !== "PROCESSING") return;
     const controller = new AbortController();
     const timer = setInterval(() => {
@@ -200,8 +195,14 @@ export function ReviewWorkspace({ documentId }: { documentId: string }) {
       if (controller.signal.aborted) return;
       if (failure instanceof VerificationRequestError) {
         setActionError(failure.message);
-        if (failure.code === "UNAUTHENTICATED") setAccess("anonymous");
-        if (failure.code === "FORBIDDEN") setAccess("STAFF");
+        if (failure.code === "UNAUTHENTICATED") setAccess({ kind: "anonymous" });
+        if (failure.code === "FORBIDDEN") {
+          setAccess((current) =>
+            current.kind === "signed-in"
+              ? { kind: "signed-in", user: { ...current.user, role: "STAFF" } }
+              : current,
+          );
+        }
       } else {
         setActionError("Verification request failed. Refresh and try again.");
       }
@@ -279,64 +280,115 @@ export function ReviewWorkspace({ documentId }: { documentId: string }) {
     });
   }
 
-  if (access === "loading") {
+  if (access.kind !== "signed-in") {
     return (
-      <section className="mt-6 min-h-64">
-        <p role="status">Checking sign-in...</p>
-      </section>
+      <main className="mx-auto flex min-h-screen w-full max-w-md flex-col justify-center px-4 py-10 sm:px-6">
+        <div className="rounded-[var(--radius-lg)] border border-[#e2e8f0] bg-white p-6">
+          <BrandMark />
+          <h1 className="mt-5 text-2xl font-semibold text-[#0f172a]">Verify SOP</h1>
+          {access.kind === "loading" && (
+            <p role="status" className="mt-4 flex items-center gap-2 text-sm text-[#475569]">
+              <Loader2 className="h-4 w-4 shrink-0 animate-spin" strokeWidth={1.5} aria-hidden="true" />
+              <span>Checking sign-in...</span>
+            </p>
+          )}
+          {access.kind === "anonymous" && (
+            <div className="mt-4 space-y-4">
+              <p className="text-sm text-[#475569]">
+                Sign in with your Admin account to verify SOPs.
+              </p>
+              <Link href="/sign-in" className={buttonClass("primary", "default", "w-full")}>
+                Sign in
+              </Link>
+            </div>
+          )}
+          {access.kind === "error" && (
+            <div className="mt-4 space-y-4">
+              <p role="alert" className="rounded-[var(--radius-md)] border border-[#fecaca] bg-[#fef2f2] p-3 text-sm text-[#991b1b]">
+                Sign-in status is temporarily unavailable.
+              </p>
+              <button
+                type="button"
+                className={buttonClassName}
+                onClick={() => {
+                  setAccess({ kind: "loading" });
+                  setRefreshTick((tick) => tick + 1);
+                }}
+              >
+                Retry
+              </button>
+            </div>
+          )}
+        </div>
+      </main>
     );
   }
-  if (access === "anonymous") {
+
+  if (access.user.role !== "ADMIN") {
     return (
-      <section className="mt-6 space-y-4">
-        <p>Sign in with your Admin account to verify SOPs.</p>
-        <Link href="/sign-in" className={linkClassName}>
-          Sign in
-        </Link>
-      </section>
+      <AppShell
+        user={access.user}
+        activeMenu="documents"
+        onSignedOut={() => setAccess({ kind: "anonymous" })}
+      >
+        <div className="space-y-4">
+          <Link href="/documents" className={textLinkClassName}>
+            <ArrowLeft className="h-4 w-4 shrink-0" strokeWidth={1.5} aria-hidden="true" />
+            <span>Back to List Document SOP</span>
+          </Link>
+          <div className="rounded-[var(--radius-lg)] border border-[#fecaca] bg-[#fef2f2] p-4 text-sm text-[#991b1b]">
+            <p>Only Admins can verify SOPs.</p>
+          </div>
+        </div>
+      </AppShell>
     );
   }
-  if (access === "STAFF") {
-    return <p className="mt-6">Only Admins can verify SOPs.</p>;
-  }
-  if (access === "error") {
-    return (
-      <section className="mt-6 space-y-4">
-        <p role="alert">Sign-in status is temporarily unavailable.</p>
-        <button
-          type="button"
-          className={buttonClassName}
-          onClick={() => {
-            setAccess("loading");
-            setRefreshTick((tick) => tick + 1);
-          }}
-        >
-          Retry
-        </button>
-      </section>
-    );
-  }
+
   if (loadError) {
     return (
-      <section className="mt-6 space-y-4">
-        <p role="alert" className="text-[#991b1b]">
-          {loadError}
-        </p>
-        <button
-          type="button"
-          className={buttonClassName}
-          onClick={() => setRefreshTick((tick) => tick + 1)}
-        >
-          Retry
-        </button>
-      </section>
+      <AppShell
+        user={access.user}
+        activeMenu="documents"
+        onSignedOut={() => setAccess({ kind: "anonymous" })}
+      >
+        <div className="space-y-4">
+          <Link href="/documents" className={textLinkClassName}>
+            <ArrowLeft className="h-4 w-4 shrink-0" strokeWidth={1.5} aria-hidden="true" />
+            <span>Back to List Document SOP</span>
+          </Link>
+          <p role="alert" className="rounded-[var(--radius-md)] border border-[#fecaca] bg-[#fef2f2] p-4 text-sm text-[#991b1b]">
+            {loadError}
+          </p>
+          <button
+            type="button"
+            className={buttonClass("primary")}
+            onClick={() => setRefreshTick((tick) => tick + 1)}
+          >
+            Retry
+          </button>
+        </div>
+      </AppShell>
     );
   }
+
   if (!review) {
     return (
-      <section className="mt-6 min-h-64">
-        <p role="status">Loading SOP verification workspace...</p>
-      </section>
+      <AppShell
+        user={access.user}
+        activeMenu="documents"
+        onSignedOut={() => setAccess({ kind: "anonymous" })}
+      >
+        <div className="space-y-4">
+          <Link href="/documents" className={textLinkClassName}>
+            <ArrowLeft className="h-4 w-4 shrink-0" strokeWidth={1.5} aria-hidden="true" />
+            <span>Back to List Document SOP</span>
+          </Link>
+          <p role="status" className="flex items-center gap-2 text-sm text-[#475569]">
+            <Loader2 className="h-4 w-4 shrink-0 animate-spin" strokeWidth={1.5} aria-hidden="true" />
+            <span>Loading SOP verification workspace...</span>
+          </p>
+        </div>
+      </AppShell>
     );
   }
 
@@ -345,407 +397,458 @@ export function ReviewWorkspace({ documentId }: { documentId: string }) {
     filteredPages.find((page) => page.pageIndex === selectedPage) ?? filteredPages[0] ?? null;
 
   return (
-    <div className="mt-4 min-w-0 space-y-6" aria-busy={busy}>
-      <header className="min-w-0 space-y-2 rounded border border-[#d1d5db] bg-white p-4">
+    <AppShell
+      user={access.user}
+      activeMenu="documents"
+      onSignedOut={() => setAccess({ kind: "anonymous" })}
+      mainClassName="mx-auto w-full min-w-0 max-w-7xl flex-1 px-4 py-6 outline-none sm:px-6 sm:py-8"
+    >
+      <div className="min-w-0 space-y-6" aria-busy={busy}>
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <h1 className="min-w-0 break-words text-xl font-semibold sm:text-2xl">{doc.title}</h1>
-          <span
-            data-testid="document-status-badge"
-            className={`inline-flex rounded px-2.5 py-1 text-xs font-semibold ${statusBadgeClass(doc.status)}`}
-          >
-            {doc.status}
-          </span>
+          <Link href="/documents" className={textLinkClassName}>
+            <ArrowLeft className="h-4 w-4 shrink-0" strokeWidth={1.5} aria-hidden="true" />
+            <span>Back to List Document SOP</span>
+          </Link>
         </div>
-        <p className="break-all text-sm text-[#4b5563]">{doc.fileName}</p>
-        <dl className="flex flex-wrap gap-x-6 gap-y-1 text-xs text-[#4b5563]">
-          <div>
-            <dt className="inline font-medium">SHA-256: </dt>
-            <dd className="inline font-mono">{doc.sha256.slice(0, 16)}…</dd>
+
+        <header className="min-w-0 space-y-2 rounded-[var(--radius-lg)] border border-[#e2e8f0] bg-white p-4 sm:p-5">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h1 className="min-w-0 break-words text-xl font-semibold text-[#0f172a] sm:text-2xl">
+              {doc.title}
+            </h1>
+            <StatusBadge label={doc.status} testId="document-status-badge" />
           </div>
-          {doc.processedPipelineVersion && (
+          <p className="break-all font-mono text-xs text-[#475569]">{doc.fileName}</p>
+          <dl className="tabular-nums flex flex-wrap gap-x-6 gap-y-1 text-xs text-[#475569]">
             <div>
-              <dt className="inline font-medium">Pipeline: </dt>
-              <dd className="inline">{doc.processedPipelineVersion}</dd>
+              <dt className="inline font-medium text-[#0f172a]">SHA-256: </dt>
+              <dd className="inline font-mono">{doc.sha256.slice(0, 16)}…</dd>
             </div>
-          )}
-          {doc.verifiedAt && (
-            <div>
-              <dt className="inline font-medium">Reviewed: </dt>
-              <dd className="inline">
-                {doc.verifiedByName ?? "Admin"} ({new Date(doc.verifiedAt).toLocaleString()})
-              </dd>
-            </div>
-          )}
-        </dl>
-      </header>
+            {doc.processedPipelineVersion && (
+              <div>
+                <dt className="inline font-medium text-[#0f172a]">Pipeline: </dt>
+                <dd className="inline font-mono">{doc.processedPipelineVersion}</dd>
+              </div>
+            )}
+            {doc.verifiedAt && (
+              <div>
+                <dt className="inline font-medium text-[#0f172a]">Reviewed: </dt>
+                <dd className="inline">
+                  {doc.verifiedByName ?? "Admin"} ({new Date(doc.verifiedAt).toLocaleString()})
+                </dd>
+              </div>
+            )}
+          </dl>
+        </header>
 
-      {actionNotice && (
-        <p role="status" className="rounded border border-[#bbf7d0] bg-[#f0fdf4] p-3 text-sm text-[#166534]">
-          {actionNotice}
-        </p>
-      )}
-      {actionError && (
-        <p role="alert" className="rounded border border-[#fecaca] bg-[#fef2f2] p-3 text-sm text-[#991b1b]">
-          {actionError}
-        </p>
-      )}
-
-      <div className="grid min-w-0 grid-cols-1 gap-6 lg:grid-cols-2">
-        <PdfPreview
-          previewUrl={doc.previewUrl}
-          pageNumber={selectedPage}
-          onPageChange={setSelectedPage}
-          isDocxDerivative={doc.mimeType !== "application/pdf"}
-          fileName={doc.fileName}
-        />
-
-        <section aria-label="Extracted content and verification" className="min-w-0 space-y-4 rounded border border-[#d1d5db] bg-white p-4">
-          <div className="space-y-2">
-            <label htmlFor="review-search" className="block text-sm font-medium">
-              Search extracted text
-            </label>
-            <div className="flex flex-wrap items-center gap-2">
-              <input
-                id="review-search"
-                type="search"
-                value={searchQuery}
-                onChange={(event) => setSearchQuery(event.target.value)}
-                placeholder="Search steps, numbers, units, sections..."
-                className={`${inputClassName} min-w-0 flex-1`}
-              />
-              {searchQuery.trim() && (
-                <span className="text-xs font-medium text-[#4b5563]" aria-live="polite">
-                  {searchMatchCount} {searchMatchCount === 1 ? "match" : "matches"}
-                </span>
-              )}
-            </div>
+        {actionNotice && (
+          <div
+            role="status"
+            className="flex items-start gap-2 rounded-[var(--radius-md)] border border-[#a7f3d0] bg-[#ecfdf5] p-3 text-sm text-[#065f46]"
+          >
+            <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" strokeWidth={1.5} aria-hidden="true" />
+            <span>{actionNotice}</span>
           </div>
-
-          {hasOcrPages && (
-            <p className="rounded border border-[#fde68a] bg-[#fffbeb] p-3 text-sm text-[#92400e]">
-              OCR confidence is not proof of accuracy. Verify all digits, units, conditions, and tables against the preview.
-            </p>
-          )}
-
-          {issues.length > 0 && (
-            <div className="space-y-2 rounded border border-[#e5e7eb] bg-[#f9fafb] p-3" aria-label="Verification issues">
-              <h2 className="text-sm font-semibold">
-                Flagged review items ({issues.length})
-              </h2>
-              <ul className="space-y-2">
-                {issues.map((issue) => {
-                  const checked = Boolean(issue.resolvedAt) || selectedIssueIds.includes(issue.id);
-                  return (
-                    <li key={issue.id} className="flex items-start gap-2 text-sm">
-                      <input
-                        id={`issue-${issue.id}`}
-                        type="checkbox"
-                        className="mt-1 h-5 w-5 shrink-0"
-                        checked={checked}
-                        disabled={Boolean(issue.resolvedAt) || doc.status !== "PENDING_VERIFICATION" || busy}
-                        onChange={() => toggleIssue(issue.id)}
-                      />
-                      <div className="min-w-0 flex-1 space-y-1">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span className={`rounded px-1.5 py-0.5 text-xs font-semibold uppercase ${severityBadgeClass(issue.severity)}`}>
-                            {issue.severity}
-                          </span>
-                          <span className="font-mono text-xs">{issue.issueCode}</span>
-                          {issue.pageIndex !== null && (
-                            <button
-                              type="button"
-                              className="inline-flex min-h-11 items-center px-2 text-xs font-medium underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#111827]"
-                              onClick={() => {
-                                setSearchQuery("");
-                                setSelectedPage(issue.pageIndex!);
-                                setActiveTab("pages");
-                              }}
-                            >
-                              Page {issue.pageIndex}
-                            </button>
-                          )}
-                          {issue.resolvedAt && (
-                            <span className="text-xs text-[#166534]">Reviewed</span>
-                          )}
-                        </div>
-                        <label htmlFor={`issue-${issue.id}`} className="block break-words text-xs text-[#374151]">
-                          {issue.summary}
-                        </label>
-                      </div>
-                    </li>
-                  );
-                })}
-              </ul>
-            </div>
-          )}
-
-          <div role="tablist" aria-label="Extraction views" className="flex flex-wrap gap-2 border-b border-[#e5e7eb] pb-2">
-            {(
-              [
-                ["pages", `Extracted pages (${pages.length})`],
-                ["chunks", `Chunks (${chunks.length})`],
-                ["history", `Audit history (${verificationHistory.length})`],
-              ] as const
-            ).map(([tabKey, label]) => (
-              <button
-                key={tabKey}
-                id={`review-tab-${tabKey}`}
-                type="button"
-                role="tab"
-                aria-selected={activeTab === tabKey}
-                aria-controls={`review-tabpanel-${tabKey}`}
-                className={activeTab === tabKey ? buttonClassName : secondaryButtonClassName}
-                onClick={() => setActiveTab(tabKey)}
-              >
-                {label}
-              </button>
-            ))}
+        )}
+        {actionError && (
+          <div
+            role="alert"
+            className="flex items-start gap-2 rounded-[var(--radius-md)] border border-[#fecaca] bg-[#fef2f2] p-3 text-sm text-[#991b1b]"
+          >
+            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" strokeWidth={1.5} aria-hidden="true" />
+            <span>{actionError}</span>
           </div>
+        )}
 
-          {activeTab === "pages" && (
-            <div
-              id="review-tabpanel-pages"
-              className="space-y-3"
-              role="tabpanel"
-              aria-labelledby="review-tab-pages"
-            >
-              {filteredPages.length === 0 ? (
-                <p className="text-sm text-[#4b5563]">
-                  {pages.length === 0 ? "No extracted pages yet." : "No pages match your search query."}
+        <div className="grid min-w-0 grid-cols-1 gap-6 lg:grid-cols-2">
+          <PdfPreview
+            previewUrl={doc.previewUrl}
+            pageNumber={selectedPage}
+            onPageChange={setSelectedPage}
+            isDocxDerivative={doc.mimeType !== "application/pdf"}
+            fileName={doc.fileName}
+          />
+
+          <section
+            aria-label="Extracted content and verification"
+            className="min-w-0 space-y-5 rounded-[var(--radius-lg)] border border-[#e2e8f0] bg-white p-4"
+          >
+            <div className="space-y-1.5">
+              <label htmlFor="review-search" className="block text-sm font-medium text-[#0f172a]">
+                Search extracted text
+              </label>
+              <div className="flex flex-wrap items-center gap-2">
+                <input
+                  id="review-search"
+                  type="search"
+                  value={searchQuery}
+                  onChange={(event) => setSearchQuery(event.target.value)}
+                  placeholder="Search steps, numbers, units, sections..."
+                  className={`${inputClassName} min-w-0 flex-1`}
+                />
+                {searchQuery.trim() && (
+                  <span className="tabular-nums font-mono text-xs font-medium text-[#475569]" aria-live="polite">
+                    {searchMatchCount} {searchMatchCount === 1 ? "match" : "matches"}
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {hasOcrPages && (
+              <div className="flex items-start gap-2 rounded-[var(--radius-md)] border border-[#fde68a] bg-[#fffbeb] p-3 text-sm text-[#92400e]">
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" strokeWidth={1.5} aria-hidden="true" />
+                <p>
+                  OCR confidence is not proof of accuracy. Verify all digits, units, conditions, and tables against the preview.
                 </p>
-              ) : (
-                <>
-                  <div className="flex flex-wrap gap-2">
-                    {filteredPages.map((page) => (
-                      <button
-                        key={page.id}
-                        type="button"
-                        className={
-                          activePageRecord?.pageIndex === page.pageIndex
-                            ? buttonClassName
-                            : secondaryButtonClassName
-                        }
-                        onClick={() => setSelectedPage(page.pageIndex)}
-                      >
-                        Page {page.pageIndex} ({page.pageKind})
-                      </button>
-                    ))}
-                  </div>
-                  {activePageRecord && (
-                    <div className="space-y-2 rounded border border-[#e5e7eb] p-3">
-                      <div className="flex flex-wrap items-center gap-3 text-xs text-[#4b5563]">
-                        <span>Kind: {activePageRecord.pageKind}</span>
-                        <span>Location: {activePageRecord.sourceLocationKind}</span>
-                        <span>Status: {activePageRecord.verificationStatus}</span>
-                        {activePageRecord.ocrConfidence !== null && (
-                          <span>OCR avg confidence: {(activePageRecord.ocrConfidence * 100).toFixed(1)}%</span>
-                        )}
-                        {activePageRecord.ocrModel && <span>Model: {activePageRecord.ocrModel}</span>}
-                      </div>
-                      <pre className="max-h-96 overflow-auto whitespace-pre-wrap break-words rounded bg-[#f9fafb] p-3 font-mono text-xs leading-relaxed text-[#111827]">
-                        {activePageRecord.normalizedText ? (
-                          <HighlightedText text={activePageRecord.normalizedText} query={searchQuery} />
-                        ) : (
-                          "(Blank page — no text extracted)"
-                        )}
-                      </pre>
+              </div>
+            )}
+
+            {issues.length > 0 && (
+              <div
+                className="space-y-3 rounded-[var(--radius-md)] border border-[#e2e8f0] bg-[#f8fafc] p-4"
+                aria-label="Verification issues"
+              >
+                <h2 className="tabular-nums text-sm font-semibold text-[#0f172a]">
+                  Flagged review items ({issues.length})
+                </h2>
+                <ul className="space-y-2.5">
+                  {issues.map((issue) => {
+                    const checked = Boolean(issue.resolvedAt) || selectedIssueIds.includes(issue.id);
+                    return (
+                      <li key={issue.id} className="flex items-start gap-2.5 text-sm">
+                        <input
+                          id={`issue-${issue.id}`}
+                          type="checkbox"
+                          className="mt-1 h-5 w-5 shrink-0 accent-[#1d4ed8]"
+                          checked={checked}
+                          disabled={Boolean(issue.resolvedAt) || doc.status !== "PENDING_VERIFICATION" || busy}
+                          onChange={() => toggleIssue(issue.id)}
+                        />
+                        <div className="min-w-0 flex-1 space-y-1">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <StatusBadge
+                              label={severityLabel(issue.severity)}
+                              tone={
+                                issue.severity === "error"
+                                  ? "danger"
+                                  : issue.severity === "warning"
+                                    ? "pending"
+                                    : "processing"
+                              }
+                            />
+                            <span className="font-mono text-xs text-[#475569]">{issue.issueCode}</span>
+                            {issue.pageIndex !== null && (
+                              <button
+                                type="button"
+                                className="cp-instant inline-flex min-h-11 cursor-pointer items-center px-2 font-mono text-xs font-medium text-[#1d4ed8] underline underline-offset-4 hover:text-[#1e40af] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#1d4ed8]"
+                                onClick={() => {
+                                  setSearchQuery("");
+                                  setSelectedPage(issue.pageIndex!);
+                                  setActiveTab("pages");
+                                }}
+                              >
+                                Page {issue.pageIndex}
+                              </button>
+                            )}
+                            {issue.resolvedAt && (
+                              <StatusBadge label="Reviewed" tone="active" />
+                            )}
+                          </div>
+                          <label htmlFor={`issue-${issue.id}`} className="block break-words text-xs text-[#475569]">
+                            {issue.summary}
+                          </label>
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            )}
+
+            <div
+              role="tablist"
+              aria-label="Extraction views"
+              className="flex flex-wrap gap-2 border-b border-[#e2e8f0] pb-3"
+            >
+              {(
+                [
+                  ["pages", `Extracted pages (${pages.length})`],
+                  ["chunks", `Chunks (${chunks.length})`],
+                  ["history", `Audit history (${verificationHistory.length})`],
+                ] as const
+              ).map(([tabKey, label]) => (
+                <button
+                  key={tabKey}
+                  id={`review-tab-${tabKey}`}
+                  type="button"
+                  role="tab"
+                  aria-selected={activeTab === tabKey}
+                  aria-controls={`review-tabpanel-${tabKey}`}
+                  className={`cp-instant tabular-nums ${buttonClass(
+                    activeTab === tabKey ? "primary" : "secondary",
+                    "sm",
+                  )}`}
+                  onClick={() => setActiveTab(tabKey)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            {activeTab === "pages" && (
+              <div
+                id="review-tabpanel-pages"
+                className="space-y-3"
+                role="tabpanel"
+                aria-labelledby="review-tab-pages"
+              >
+                {filteredPages.length === 0 ? (
+                  <p className="text-sm text-[#475569]">
+                    {pages.length === 0 ? "No extracted pages yet." : "No pages match your search query."}
+                  </p>
+                ) : (
+                  <>
+                    <div className="flex flex-wrap gap-2">
+                      {filteredPages.map((page) => (
+                        <button
+                          key={page.id}
+                          type="button"
+                          className={`cp-instant tabular-nums ${buttonClass(
+                            activePageRecord?.pageIndex === page.pageIndex ? "primary" : "secondary",
+                            "sm",
+                          )}`}
+                          onClick={() => setSelectedPage(page.pageIndex)}
+                        >
+                          Page {page.pageIndex} ({page.pageKind})
+                        </button>
+                      ))}
                     </div>
-                  )}
+                    {activePageRecord && (
+                      <div className="space-y-2 rounded-[var(--radius-md)] border border-[#e2e8f0] p-3">
+                        <div className="tabular-nums flex flex-wrap items-center gap-3 text-xs text-[#475569]">
+                          <span>Kind: {activePageRecord.pageKind}</span>
+                          <span>Location: {activePageRecord.sourceLocationKind}</span>
+                          <span>Status: {activePageRecord.verificationStatus}</span>
+                          {activePageRecord.ocrConfidence !== null && (
+                            <span className="font-mono">
+                              OCR avg confidence: {(activePageRecord.ocrConfidence * 100).toFixed(1)}%
+                            </span>
+                          )}
+                          {activePageRecord.ocrModel && <span>Model: {activePageRecord.ocrModel}</span>}
+                        </div>
+                        <pre className="tabular-nums max-h-96 overflow-auto whitespace-pre-wrap break-words rounded-[var(--radius-sm)] bg-[#f8fafc] p-3 font-mono text-xs leading-relaxed text-[#0f172a]">
+                          {activePageRecord.normalizedText ? (
+                            <HighlightedText text={activePageRecord.normalizedText} query={searchQuery} />
+                          ) : (
+                            "(Blank page — no text extracted)"
+                          )}
+                        </pre>
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
+
+            {activeTab === "chunks" && (
+              <div
+                id="review-tabpanel-chunks"
+                className="max-h-96 space-y-3 overflow-auto"
+                role="tabpanel"
+                aria-labelledby="review-tab-chunks"
+              >
+                {filteredChunks.length === 0 ? (
+                  <p className="text-sm text-[#475569]">
+                    {chunks.length === 0 ? "No chunks indexed yet." : "No chunks match your search query."}
+                  </p>
+                ) : (
+                  filteredChunks.map((chunk) => (
+                    <article
+                      key={chunk.id}
+                      className="space-y-1.5 rounded-[var(--radius-md)] border border-[#e2e8f0] p-3"
+                    >
+                      <div className="tabular-nums flex flex-wrap items-center justify-between gap-2 text-xs text-[#475569]">
+                        <span className="font-semibold text-[#0f172a]">
+                          #{chunk.sequence + 1} · {chunk.sectionPath}
+                        </span>
+                        <span className="font-mono">
+                          {chunk.pageStart !== null
+                            ? chunk.pageEnd !== null && chunk.pageEnd !== chunk.pageStart
+                              ? `Pages ${chunk.pageStart}–${chunk.pageEnd}`
+                              : `Page ${chunk.pageStart}`
+                            : "Section-only (DOCX)"}
+                        </span>
+                      </div>
+                      <div className="tabular-nums flex flex-wrap gap-3 text-xs text-[#475569]">
+                        <span>Type: {chunk.contentType}</span>
+                        <span>Tokens: ~{chunk.tokenEstimate}</span>
+                        <span>Embedding: {chunk.hasEmbedding ? chunk.embeddingModel ?? "ready" : "missing"}</span>
+                      </div>
+                      <pre className="tabular-nums whitespace-pre-wrap break-words rounded-[var(--radius-sm)] bg-[#f8fafc] p-2.5 font-mono text-xs text-[#0f172a]">
+                        <HighlightedText text={chunk.text} query={searchQuery} />
+                      </pre>
+                    </article>
+                  ))
+                )}
+              </div>
+            )}
+
+            {activeTab === "history" && (
+              <div
+                id="review-tabpanel-history"
+                className="space-y-3"
+                role="tabpanel"
+                aria-labelledby="review-tab-history"
+              >
+                {verificationHistory.length === 0 ? (
+                  <p className="text-sm text-[#475569]">No verification decisions recorded yet.</p>
+                ) : (
+                  verificationHistory.map((entry) => (
+                    <article
+                      key={entry.id}
+                      className="space-y-1.5 rounded-[var(--radius-md)] border border-[#e2e8f0] p-3 text-sm"
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <span className="font-semibold text-[#0f172a]">
+                          {entry.decision} ({entry.beforeStatus} → {entry.afterStatus})
+                        </span>
+                        <span className="tabular-nums font-mono text-xs text-[#64748b]">
+                          {new Date(entry.createdAt).toLocaleString()}
+                        </span>
+                      </div>
+                      <p className="tabular-nums text-xs text-[#475569]">
+                        Reviewer: {entry.reviewerName} · Pipeline: {entry.pipelineVersion} · Issues:{" "}
+                        {entry.issueSummary.total} total ({entry.issueSummary.resolved} resolved)
+                      </p>
+                      {entry.notes && <p className="break-words text-sm text-[#0f172a]">{entry.notes}</p>}
+                    </article>
+                  ))
+                )}
+              </div>
+            )}
+
+            <div className="space-y-4 border-t border-[#e2e8f0] pt-4" aria-label="Verification decision">
+              {doc.status === "PENDING_VERIFICATION" && (
+                <>
+                  <div className="flex items-start gap-2.5">
+                    <input
+                      id="explicit-confirmation"
+                      type="checkbox"
+                      className="mt-1 h-5 w-5 shrink-0 accent-[#1d4ed8]"
+                      checked={explicitConfirmation}
+                      disabled={busy}
+                      onChange={(event) => setExplicitConfirmation(event.target.checked)}
+                    />
+                    <label htmlFor="explicit-confirmation" className="text-sm font-medium text-[#0f172a]">
+                      I compared the original preview with the extracted text, numbers, units, and tables for this snapshot.
+                    </label>
+                  </div>
+                  <div className="space-y-1.5">
+                    <label htmlFor="verification-notes" className="block text-sm font-medium text-[#0f172a]">
+                      Verification notes (required to reject)
+                    </label>
+                    <textarea
+                      id="verification-notes"
+                      rows={3}
+                      maxLength={2000}
+                      disabled={busy}
+                      value={notes}
+                      onChange={(event) => setNotes(event.target.value)}
+                      className={`${inputClassName} min-h-20`}
+                      placeholder="Record verification remarks or explain why this extraction must be rejected..."
+                    />
+                  </div>
+                  <div className="flex flex-wrap gap-3">
+                    <button
+                      type="button"
+                      className={buttonClass("primary")}
+                      disabled={busy || !explicitConfirmation}
+                      onClick={() => handleDecision("APPROVE")}
+                    >
+                      Approve and activate SOP
+                    </button>
+                    <button
+                      type="button"
+                      className={buttonClass("destructive")}
+                      disabled={busy || !explicitConfirmation}
+                      onClick={() => handleDecision("REJECT")}
+                    >
+                      Reject extraction
+                    </button>
+                    <button
+                      type="button"
+                      className={buttonClass("secondary")}
+                      disabled={busy}
+                      onClick={handleReprocess}
+                    >
+                      Reprocess document
+                    </button>
+                  </div>
                 </>
               )}
-            </div>
-          )}
 
-          {activeTab === "chunks" && (
-            <div
-              id="review-tabpanel-chunks"
-              className="max-h-96 space-y-3 overflow-auto"
-              role="tabpanel"
-              aria-labelledby="review-tab-chunks"
-            >
-              {filteredChunks.length === 0 ? (
-                <p className="text-sm text-[#4b5563]">
-                  {chunks.length === 0 ? "No chunks indexed yet." : "No chunks match your search query."}
-                </p>
-              ) : (
-                filteredChunks.map((chunk) => (
-                  <article key={chunk.id} className="space-y-1.5 rounded border border-[#e5e7eb] p-3">
-                    <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-[#4b5563]">
-                      <span className="font-semibold text-[#111827]">
-                        #{chunk.sequence + 1} · {chunk.sectionPath}
-                      </span>
-                      <span>
-                        {chunk.pageStart !== null
-                          ? chunk.pageEnd !== null && chunk.pageEnd !== chunk.pageStart
-                            ? `Pages ${chunk.pageStart}–${chunk.pageEnd}`
-                            : `Page ${chunk.pageStart}`
-                          : "Section-only (DOCX)"}
-                      </span>
-                    </div>
-                    <div className="flex flex-wrap gap-3 text-xs text-[#4b5563]">
-                      <span>Type: {chunk.contentType}</span>
-                      <span>Tokens: ~{chunk.tokenEstimate}</span>
-                      <span>Embedding: {chunk.hasEmbedding ? chunk.embeddingModel ?? "ready" : "missing"}</span>
-                    </div>
-                    <pre className="whitespace-pre-wrap break-words rounded bg-[#f9fafb] p-2 font-mono text-xs text-[#111827]">
-                      <HighlightedText text={chunk.text} query={searchQuery} />
-                    </pre>
-                  </article>
-                ))
-              )}
-            </div>
-          )}
-
-          {activeTab === "history" && (
-            <div
-              id="review-tabpanel-history"
-              className="space-y-3"
-              role="tabpanel"
-              aria-labelledby="review-tab-history"
-            >
-              {verificationHistory.length === 0 ? (
-                <p className="text-sm text-[#4b5563]">No verification decisions recorded yet.</p>
-              ) : (
-                verificationHistory.map((entry) => (
-                  <article key={entry.id} className="space-y-1 rounded border border-[#e5e7eb] p-3 text-sm">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <span className="font-semibold">
-                        {entry.decision} ({entry.beforeStatus} → {entry.afterStatus})
-                      </span>
-                      <span className="text-xs text-[#4b5563]">
-                        {new Date(entry.createdAt).toLocaleString()}
-                      </span>
-                    </div>
-                    <p className="text-xs text-[#4b5563]">
-                      Reviewer: {entry.reviewerName} · Pipeline: {entry.pipelineVersion} · Issues: {entry.issueSummary.total} total ({entry.issueSummary.resolved} resolved)
-                    </p>
-                    {entry.notes && <p className="break-words text-sm text-[#111827]">{entry.notes}</p>}
-                  </article>
-                ))
-              )}
-            </div>
-          )}
-
-          <div className="space-y-4 border-t border-[#e5e7eb] pt-4" aria-label="Verification decision">
-            {doc.status === "PENDING_VERIFICATION" && (
-              <>
-                <div className="flex items-start gap-2">
-                  <input
-                    id="explicit-confirmation"
-                    type="checkbox"
-                    className="mt-1 h-5 w-5 shrink-0"
-                    checked={explicitConfirmation}
-                    disabled={busy}
-                    onChange={(event) => setExplicitConfirmation(event.target.checked)}
-                  />
-                  <label htmlFor="explicit-confirmation" className="text-sm font-medium text-[#111827]">
-                    I compared the original preview with the extracted text, numbers, units, and tables for this snapshot.
-                  </label>
-                </div>
-                <div className="space-y-1">
-                  <label htmlFor="verification-notes" className="block text-sm font-medium">
-                    Verification notes (required to reject)
-                  </label>
-                  <textarea
-                    id="verification-notes"
-                    rows={3}
-                    maxLength={2000}
-                    disabled={busy}
-                    value={notes}
-                    onChange={(event) => setNotes(event.target.value)}
-                    className={`${inputClassName} min-h-20`}
-                    placeholder="Record verification remarks or explain why this extraction must be rejected..."
-                  />
-                </div>
-                <div className="flex flex-wrap gap-3">
+              {doc.status === "REJECTED" && (
+                <div className="space-y-3">
+                  <p className="rounded-[var(--radius-md)] border border-[#fecaca] bg-[#fef2f2] p-3 text-sm text-[#991b1b]">
+                    Rejected: {doc.rejectionReason}
+                  </p>
                   <button
                     type="button"
-                    className={buttonClassName}
-                    disabled={busy || !explicitConfirmation}
-                    onClick={() => handleDecision("APPROVE")}
-                  >
-                    Approve and activate SOP
-                  </button>
-                  <button
-                    type="button"
-                    className={dangerButtonClassName}
-                    disabled={busy || !explicitConfirmation}
-                    onClick={() => handleDecision("REJECT")}
-                  >
-                    Reject extraction
-                  </button>
-                  <button
-                    type="button"
-                    className={secondaryButtonClassName}
+                    className={buttonClass("primary")}
                     disabled={busy}
                     onClick={handleReprocess}
                   >
                     Reprocess document
                   </button>
                 </div>
-              </>
-            )}
+              )}
 
-            {doc.status === "REJECTED" && (
-              <div className="space-y-3">
-                <p className="rounded border border-[#fecaca] bg-[#fef2f2] p-3 text-sm text-[#991b1b]">
-                  Rejected: {doc.rejectionReason}
+              {doc.status === "ACTIVE" && (
+                <p className="rounded-[var(--radius-md)] border border-[#a7f3d0] bg-[#ecfdf5] p-3 text-sm text-[#065f46]">
+                  This SOP is verified and ACTIVE for retrieval. ACTIVE originals cannot be mutated in place.
                 </p>
-                <button
-                  type="button"
-                  className={buttonClassName}
-                  disabled={busy}
-                  onClick={handleReprocess}
-                >
-                  Reprocess document
-                </button>
-              </div>
-            )}
+              )}
 
-            {doc.status === "ACTIVE" && (
-              <p className="rounded border border-[#bbf7d0] bg-[#f0fdf4] p-3 text-sm text-[#166534]">
-                This SOP is verified and ACTIVE for retrieval. ACTIVE originals cannot be mutated in place.
-              </p>
-            )}
-
-            {doc.status === "DELETED" && (
-              <p className="rounded border border-[#fecaca] bg-[#fef2f2] p-3 text-sm text-[#991b1b]">
-                This SOP document has been deleted and is excluded from retrieval, verification, and source access.
-              </p>
-            )}
-
-            {(doc.status === "UPLOADED" || doc.status === "PROCESSING" || doc.status === "FAILED") && (
-              <div className="space-y-3">
-                <p className="text-sm text-[#4b5563]">
-                  {doc.status === "FAILED"
-                    ? `Processing failed (${doc.processingErrorCode ?? "INGESTION_FAILED"}). Reprocess to generate a fresh snapshot.`
-                    : "Processing is underway. This review page will update once extraction finishes."}
+              {doc.status === "DELETED" && (
+                <p className="rounded-[var(--radius-md)] border border-[#fecaca] bg-[#fef2f2] p-3 text-sm text-[#991b1b]">
+                  This SOP document has been deleted and is excluded from retrieval, verification, and source access.
                 </p>
-                <div className="flex flex-wrap gap-3">
-                  <button
-                    type="button"
-                    className={secondaryButtonClassName}
-                    disabled={busy}
-                    onClick={() => void runAction(loadReview)}
-                  >
-                    Refresh review
-                  </button>
-                  {doc.status === "FAILED" && (
+              )}
+
+              {(doc.status === "UPLOADED" || doc.status === "PROCESSING" || doc.status === "FAILED") && (
+                <div className="space-y-3">
+                  <p className="text-sm text-[#475569]">
+                    {doc.status === "FAILED"
+                      ? `Processing failed (${doc.processingErrorCode ?? "INGESTION_FAILED"}). Reprocess to generate a fresh snapshot.`
+                      : "Processing is underway. This review page will update once extraction finishes."}
+                  </p>
+                  <div className="flex flex-wrap gap-3">
                     <button
                       type="button"
-                      className={buttonClassName}
+                      className={buttonClass("secondary")}
                       disabled={busy}
-                      onClick={handleReprocess}
+                      onClick={() => void runAction(loadReview)}
                     >
-                      Reprocess document
+                      <RefreshCw className="h-4 w-4 shrink-0" strokeWidth={1.5} aria-hidden="true" />
+                      <span>Refresh review</span>
                     </button>
-                  )}
+                    {doc.status === "FAILED" && (
+                      <button
+                        type="button"
+                        className={buttonClass("primary")}
+                        disabled={busy}
+                        onClick={handleReprocess}
+                      >
+                        Reprocess document
+                      </button>
+                    )}
+                  </div>
                 </div>
-              </div>
-            )}
-          </div>
-        </section>
+              )}
+            </div>
+          </section>
+        </div>
       </div>
-    </div>
+    </AppShell>
   );
 }

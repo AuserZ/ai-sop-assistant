@@ -2,7 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { PDFDocumentLoadingTask, PDFDocumentProxy, RenderTask } from "pdfjs-dist/types/src/display/api";
-import { linkClassName } from "@/components/auth/client";
+import { ChevronLeft, ChevronRight, ExternalLink, Loader2, RotateCcw, ZoomIn, ZoomOut } from "lucide-react";
+import { buttonClass, textLinkClassName } from "@/components/ui/primitives";
 
 type PdfPreviewProps = {
   previewUrl: string | null;
@@ -15,8 +16,6 @@ type PdfPreviewProps = {
 const minimumZoomPercent = 75;
 const maximumZoomPercent = 200;
 const zoomStepPercent = 25;
-const controlButtonClassName =
-  "inline-flex min-h-11 items-center justify-center rounded border border-[#1f2937] px-3 py-2 text-sm font-medium text-[#111827] hover:bg-[#f3f4f6] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#111827] disabled:cursor-not-allowed disabled:opacity-50";
 
 export function PdfPreview({
   previewUrl,
@@ -150,18 +149,22 @@ export function PdfPreview({
   }, [status, clampedPage, zoomPercent, pageCount]);
 
   return (
-    <section aria-label="Document preview" className="min-w-0 space-y-3 rounded border border-[#d1d5db] bg-white p-4">
+    <section
+      aria-label="Document preview"
+      className="min-w-0 space-y-4 rounded-[var(--radius-lg)] border border-[#e2e8f0] bg-white p-4"
+    >
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 className="text-lg font-semibold">Original preview</h2>
+        <h2 className="text-lg font-semibold text-[#0f172a]">Original preview</h2>
         {previewUrl && (
-          <a href={previewUrl} target="_blank" rel="noopener noreferrer" className={linkClassName}>
-            Open PDF preview
+          <a href={previewUrl} target="_blank" rel="noopener noreferrer" className={textLinkClassName}>
+            <ExternalLink className="h-4 w-4 shrink-0" strokeWidth={1.5} aria-hidden="true" />
+            <span>Open PDF preview</span>
           </a>
         )}
       </div>
 
       {isDocxDerivative && (
-        <p className="rounded border border-[#bfdbfe] bg-[#eff6ff] p-3 text-sm text-[#1e3a8a]">
+        <p className="rounded-[var(--radius-md)] border border-[#bfdbfe] bg-[#eff6ff] p-3 text-sm text-[#1e40af]">
           DOCX derivative PDF preview: page breaks are approximate. Extracted chunks are anchored by section path.
         </p>
       )}
@@ -169,69 +172,77 @@ export function PdfPreview({
       <div className="flex flex-wrap items-center gap-2" role="toolbar" aria-label="Preview controls">
         <button
           type="button"
-          className={controlButtonClassName}
+          className={buttonClass("secondary", "sm")}
           disabled={status !== "ready" || clampedPage <= 1}
           onClick={() => onPageChange(Math.max(1, clampedPage - 1))}
         >
-          Previous page
+          <ChevronLeft className="h-4 w-4 shrink-0" strokeWidth={1.5} aria-hidden="true" />
+          <span>Previous page</span>
         </button>
-        <span className="px-2 text-sm font-medium" aria-live="polite">
+        <span className="tabular-nums px-2 font-mono text-xs font-medium text-[#0f172a]" aria-live="polite">
           Page {pageCount > 0 ? clampedPage : 0} of {pageCount}
         </span>
         <button
           type="button"
-          className={controlButtonClassName}
+          className={buttonClass("secondary", "sm")}
           disabled={status !== "ready" || clampedPage >= pageCount}
           onClick={() => onPageChange(Math.min(pageCount, clampedPage + 1))}
         >
-          Next page
+          <span>Next page</span>
+          <ChevronRight className="h-4 w-4 shrink-0" strokeWidth={1.5} aria-hidden="true" />
         </button>
         <button
           type="button"
-          className={controlButtonClassName}
+          className={buttonClass("secondary", "sm")}
           disabled={status !== "ready" || zoomPercent <= minimumZoomPercent}
           onClick={() => setZoomPercent((current) => Math.max(minimumZoomPercent, current - zoomStepPercent))}
         >
-          Zoom out
+          <ZoomOut className="h-4 w-4 shrink-0" strokeWidth={1.5} aria-hidden="true" />
+          <span>Zoom out</span>
         </button>
-        <span className="px-2 text-sm font-medium">{zoomPercent}%</span>
+        <span className="tabular-nums px-2 font-mono text-xs font-medium text-[#0f172a]">
+          {zoomPercent}%
+        </span>
         <button
           type="button"
-          className={controlButtonClassName}
+          className={buttonClass("secondary", "sm")}
           disabled={status !== "ready" || zoomPercent >= maximumZoomPercent}
           onClick={() => setZoomPercent((current) => Math.min(maximumZoomPercent, current + zoomStepPercent))}
         >
-          Zoom in
+          <ZoomIn className="h-4 w-4 shrink-0" strokeWidth={1.5} aria-hidden="true" />
+          <span>Zoom in</span>
         </button>
         <button
           type="button"
-          className={controlButtonClassName}
+          className={buttonClass("secondary", "sm")}
           disabled={status !== "ready" || zoomPercent === 100}
           onClick={() => setZoomPercent(100)}
         >
-          Reset zoom
+          <RotateCcw className="h-3.5 w-3.5 shrink-0" strokeWidth={1.5} aria-hidden="true" />
+          <span>Reset zoom</span>
         </button>
       </div>
 
       {!previewUrl && (
-        <p className="rounded border border-[#e5e7eb] p-4 text-sm text-[#4b5563]">
+        <p className="rounded-[var(--radius-md)] border border-[#e2e8f0] bg-[#f8fafc] p-4 text-sm text-[#475569]">
           No PDF preview is available yet for {fileName}.
         </p>
       )}
 
       {status === "loading" && (
-        <p role="status" className="rounded border border-[#e5e7eb] p-4 text-sm text-[#4b5563]">
-          Loading PDF preview...
+        <p role="status" className="flex items-center gap-2 rounded-[var(--radius-md)] border border-[#e2e8f0] bg-[#f8fafc] p-4 text-sm text-[#475569]">
+          <Loader2 className="h-4 w-4 shrink-0 animate-spin" strokeWidth={1.5} aria-hidden="true" />
+          <span>Loading PDF preview...</span>
         </p>
       )}
 
       {errorMessage && (
-        <p role="alert" className="rounded border border-[#fecaca] bg-[#fef2f2] p-3 text-sm text-[#991b1b]">
+        <p role="alert" className="rounded-[var(--radius-md)] border border-[#fecaca] bg-[#fef2f2] p-3 text-sm text-[#991b1b]">
           {errorMessage}
         </p>
       )}
 
-      <div className="max-h-[70vh] min-w-0 overflow-auto rounded border border-[#e5e7eb] bg-[#f9fafb] p-2">
+      <div className="max-h-[70vh] min-w-0 overflow-auto rounded-[var(--radius-md)] border border-[#e2e8f0] bg-[#f8fafc] p-2">
         <canvas
           ref={canvasRef}
           aria-label={`PDF preview canvas page ${clampedPage}`}

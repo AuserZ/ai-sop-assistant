@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { buttonClass, inputFieldClassName, textLinkClassName } from "@/components/ui/primitives";
 
 export const accountSchema = z.object({
   id: z.string(),
@@ -33,6 +34,6 @@ export async function postAuth(path: string, body: unknown): Promise<unknown> {
   return payload;
 }
 
-export const inputClassName = "min-h-11 w-full rounded-md border border-[#6b7280] bg-white px-3 py-2 text-black outline-offset-4 focus-visible:outline-2 focus-visible:outline-black disabled:cursor-not-allowed disabled:bg-gray-100";
-export const buttonClassName = "min-h-11 cursor-pointer rounded-md bg-black px-5 py-2 font-medium text-white hover:bg-[#333333] active:bg-[#111111] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-black disabled:cursor-not-allowed disabled:bg-[#4b5563]";
-export const linkClassName = "inline-flex min-h-11 cursor-pointer items-center underline underline-offset-4 hover:text-[#4b5563] active:text-black focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-black";
+export const inputClassName = inputFieldClassName;
+export const buttonClassName = buttonClass("primary");
+export const linkClassName = textLinkClassName;
