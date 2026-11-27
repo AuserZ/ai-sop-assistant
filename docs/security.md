@@ -4,7 +4,7 @@ Authority: [technical PRD](<../AI SOP Assistant — Technical Product Req.md>), 
 
 ## Identity and authorization
 
-S02 implements invitation-only identity, exact-origin JSON mutations, bounded bodies, a shared PostgreSQL limiter, sanitized auth responses and fresh account/session guards. Access-change triggers revoke sessions and serialize concurrent session creation. See [authentication](authentication.md) for exact contracts and external sender/bootstrap limits. No later document/chat guard is implemented until that feature exists.
+S02–S14 implement invitation-only identity, exact-origin JSON mutations, bounded bodies, a shared PostgreSQL rate limiter (covering sign-in, invitations, user management, uploads, document library/source/content/preview, chat, and `ops:health`), sanitized auth responses, fresh account/session guards, and defense-in-depth HTTP security headers in `next.config.ts` (`X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`, `Permissions-Policy`, and `Content-Security-Policy`). Access-change triggers revoke sessions and serialize concurrent session creation. See [authentication](authentication.md) for exact contracts and external sender/bootstrap limits.
 
 Only invited active users authenticate through Better Auth. Invitations are expiring, single-use, tied to the intended email/role and sent through Resend; do not email passwords. Enforce server-side RBAC and current active-account state for every protected operation. Deactivation must block ongoing access. Conversations/messages belong to their owner; an Admin role does not imply unrestricted access to another user's chats.
 
@@ -35,6 +35,8 @@ Only matching human-approved ACTIVE snapshots may appear in either query branch.
 Keep credentials server-side in restricted configuration and Docker Compose secrets; never place them in code, client bundles, fixture documents, workflow exports, logs or CI artifacts. Compose secret mounts do not encrypt host source files; restrict source permissions, backup access and key handling. Keep the n8n encryption key stable and securely recoverable.
 
 Do not log full prompts, document passages, signed links, tokens or sensitive provider exceptions. Extracted text and embeddings remain potentially confidential. Use correlation IDs and safe stage/error metrics. Minimize and prune n8n execution payload retention.
+
+S14 implements redacted structured JSON logging via Pino (`src/server/observability/logger.ts`) with explicit redaction paths, recursive key/value scrubbing (secrets, tokens, cookies, signed URLs, PEM keys, emails, SOP passages/prompts/candidates, and CRLF log-injection neutralization), bounded `X-Request-Id`/`X-Trace-Id` correlation, bounded in-memory stage/OCR/provider telemetry (`src/server/observability/metrics.ts`), and an Admin-only `GET /api/health/ops` endpoint (`src/server/observability/ops.ts`) returning aggregate operational diagnostics with zero SOP content, titles, user PII, or secrets.
 
 The original PRD requires uploaded SOPs not be used to train models. Verify applicable provider/project data controls and contractual settings; do not assume subscription level proves them. Development and CI use synthetic documents. Real SOP processing requires company approval and privacy/residency/retention review before any external submission.
 

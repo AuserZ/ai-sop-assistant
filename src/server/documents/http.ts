@@ -1,7 +1,7 @@
 import { requireCurrentAccount, requireRole } from "../auth/authorization";
 import { AuthFailure, authErrorResponse } from "../auth/errors";
 import { readAuthBody, requireMutationOrigin } from "../auth/http";
-import { consumeRateLimit } from "../auth/rate-limit";
+import { authLimits, consumeRateLimit } from "../auth/rate-limit";
 import {
   documentIdInput,
   documentSourceContentQueryInput,
@@ -93,8 +93,8 @@ export async function handleDocumentLibraryRequest(request: Request) {
 export async function handleDocumentSourceRequest(request: Request, id: string) {
   try {
     const account = await requireCurrentAccount(request.headers);
-    await consumeRateLimit("document-global", "all", { maximum: 120, windowSeconds: 60 });
-    await consumeRateLimit("document-source", account.id, { maximum: 60, windowSeconds: 60 });
+    await consumeRateLimit("document-global", "all", authLimits.global);
+    await consumeRateLimit("document-source", account.id, authLimits.documentSource);
     if (!documentIdInput.safeParse(id).success) throw new AuthFailure("NOT_FOUND", 404);
     const query = readSearchParamsObject(request);
     return Response.json(await authorizeDocumentSource(account, id, query), {
@@ -118,8 +118,8 @@ export async function handleDocumentSourceContentRequest(
     const claims = verifyDocumentSourceToken(parsedQuery.data.token, id, options);
     const account = await requireCurrentAccount(request.headers);
     if (account.id !== claims.accountId) throw new AuthFailure("FORBIDDEN", 403);
-    await consumeRateLimit("document-global", "all", { maximum: 120, windowSeconds: 60 });
-    await consumeRateLimit("document-source", account.id, { maximum: 60, windowSeconds: 60 });
+    await consumeRateLimit("document-global", "all", authLimits.global);
+    await consumeRateLimit("document-content", account.id, authLimits.documentContent);
     const content = await readDocumentSourceContent(
       account,
       id,

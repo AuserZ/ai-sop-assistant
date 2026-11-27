@@ -1,4 +1,4 @@
-FROM node:24-bookworm-slim AS dependencies
+FROM docker.io/library/node:24-bookworm-slim@sha256:dc26ae92c9fb15cf6b1d63e20f0944b2efe0f115b20e00be48fb23fceb061c54 AS dependencies
 WORKDIR /app
 RUN chown node:node /app
 USER node
@@ -13,7 +13,7 @@ RUN npm run build
 FROM dependencies AS tooling
 COPY --chown=node:node . .
 
-FROM node:24-bookworm-slim AS runtime
+FROM docker.io/library/node:24-bookworm-slim@sha256:dc26ae92c9fb15cf6b1d63e20f0944b2efe0f115b20e00be48fb23fceb061c54 AS runtime
 WORKDIR /app
 ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1 HOSTNAME=0.0.0.0 PORT=3000
 COPY --from=build --chown=node:node /app/.next/standalone ./

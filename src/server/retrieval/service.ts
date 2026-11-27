@@ -30,6 +30,12 @@ import {
   searchKeywordActiveChunks,
   searchSemanticActiveChunks,
 } from "./search";
+import {
+  logEvent,
+  recordProviderOutcome,
+  recordStageTiming,
+  type ProviderOutcome,
+} from "../observability";
 
 type Environment = Readonly<Record<string, string | undefined>>;
 
@@ -120,12 +126,32 @@ function matchesSnapshot(candidate: ActiveChunkCandidate, expected: SnapshotIden
   );
 }
 
+function classifyRetrievalProviderOutcome(error: unknown): ProviderOutcome {
+  if (error instanceof RetrievalError) {
+    if (error.transient) return "transient_error";
+    if (error.code.includes("INVALID")) return "invalid_output";
+    return "rejected";
+  }
+  return "transient_error";
+}
+
 function buildNoEvidenceResult(params: {
   reason: NoEvidenceReason;
   originalQuestion: string;
   standaloneQuery: string;
   metadata: RetrievalMetadata;
 }): RetrievalResult {
+  recordStageTiming("retrieval", "total", params.metadata.timings.totalMs);
+  logEvent("info", "retrieval.completed", {
+    mode: params.metadata.mode,
+    outcome: "no_evidence",
+    reason: params.reason,
+    semanticCount: params.metadata.semanticCandidateCount,
+    keywordCount: params.metadata.keywordCandidateCount,
+    fusedCount: params.metadata.fusedCandidateCount,
+    returnedCount: 0,
+    durationMs: params.metadata.timings.totalMs,
+  });
   return {
     kind: "no_evidence",
     reason: params.reason,
@@ -164,17 +190,35 @@ export async function retrieveActiveSopEvidence(
   };
 
   const rewriteStart = performance.now();
-  const rewritten = await rewriteRetrievalQuery(
-    parsed.data.question,
-    parsed.data.history,
-    configuration,
-    {
-      historyMaxTurns: parameters.historyMaxTurns,
-      fetchImpl: options.fetchImpl,
-      signal: options.signal,
-    },
-  );
+  let rewritten;
+  try {
+    rewritten = await rewriteRetrievalQuery(
+      parsed.data.question,
+      parsed.data.history,
+      configuration,
+      {
+        historyMaxTurns: parameters.historyMaxTurns,
+        fetchImpl: options.fetchImpl,
+        signal: options.signal,
+      },
+    );
+  } catch (error) {
+    timings.rewriteMs = elapsedMs(rewriteStart);
+    recordStageTiming("retrieval", "rewrite", timings.rewriteMs);
+    recordProviderOutcome("openai_retrieval", classifyRetrievalProviderOutcome(error));
+    logEvent("warn", "retrieval.stage_failed", {
+      stage: "rewrite",
+      errorCode: error instanceof RetrievalError ? error.code : "RETRIEVAL_REWRITE_FAILED",
+      transient: error instanceof RetrievalError ? error.transient : true,
+      durationMs: timings.rewriteMs,
+    });
+    throw error;
+  }
   timings.rewriteMs = elapsedMs(rewriteStart);
+  recordStageTiming("retrieval", "rewrite", timings.rewriteMs);
+  if (rewritten.rewrittenFromHistory) {
+    recordProviderOutcome("openai_retrieval", "ok");
+  }
 
   const embedImpl = options.embedTextsImpl ?? embedTexts;
   const embedStart = performance.now();
@@ -186,9 +230,20 @@ export async function retrieveActiveSopEvidence(
       signal: options.signal,
     });
   } catch (error) {
-    throw mapEmbeddingError(error);
+    timings.embedMs = elapsedMs(embedStart);
+    const mapped = mapEmbeddingError(error);
+    recordStageTiming("retrieval", "embed", timings.embedMs);
+    recordProviderOutcome("openai_embedding", classifyRetrievalProviderOutcome(mapped));
+    logEvent("warn", "retrieval.stage_failed", {
+      stage: "embed",
+      errorCode: mapped.code,
+      transient: mapped.transient,
+      durationMs: timings.embedMs,
+    });
+    throw mapped;
   }
   timings.embedMs = elapsedMs(embedStart);
+  recordStageTiming("retrieval", "embed", timings.embedMs);
 
   const queryVector = embedded.vectors[0];
   if (
@@ -197,8 +252,10 @@ export async function retrieveActiveSopEvidence(
     !queryVector ||
     !validateEmbeddingVector(queryVector, approvedEmbeddingDimensions)
   ) {
+    recordProviderOutcome("openai_embedding", "invalid_output");
     throw new RetrievalError("RETRIEVAL_VECTOR_INVALID", false, 500);
   }
+  recordProviderOutcome("openai_embedding", "ok");
 
   const searchSemantic = options.searchSemanticImpl ?? searchSemanticActiveChunks;
   const searchKeyword = options.searchKeywordImpl ?? searchKeywordActiveChunks;
@@ -211,6 +268,7 @@ export async function retrieveActiveSopEvidence(
         limit: parameters.semanticTopK,
       });
       timings.semanticMs = elapsedMs(start);
+      recordStageTiming("retrieval", "semantic", timings.semanticMs);
       return rows;
     })(),
     (async (): Promise<KeywordCandidate[]> => {
@@ -220,6 +278,7 @@ export async function retrieveActiveSopEvidence(
         limit: parameters.keywordTopK,
       });
       timings.keywordMs = elapsedMs(start);
+      recordStageTiming("retrieval", "keyword", timings.keywordMs);
       return rows;
     })(),
   ]);
@@ -230,6 +289,7 @@ export async function retrieveActiveSopEvidence(
     maxCandidates: parameters.maxRerankCandidates,
   });
   timings.rrfMs = elapsedMs(rrfStart);
+  recordStageTiming("retrieval", "rrf", timings.rrfMs);
 
   const buildMetadata = (
     rerankedCandidateCount: number,
@@ -264,19 +324,35 @@ export async function retrieveActiveSopEvidence(
   }
 
   const rerankStart = performance.now();
-  const reranked = await rerankCandidates(
-    rewritten.standaloneQuery,
-    fusedCandidates,
-    configuration,
-    {
-      finalTopK: parameters.finalTopK,
-      minRerankScore: parameters.minRerankScore,
-      rrfK: parameters.rrfK,
-      fetchImpl: options.fetchImpl,
-      signal: options.signal,
-    },
-  );
+  let reranked;
+  try {
+    reranked = await rerankCandidates(
+      rewritten.standaloneQuery,
+      fusedCandidates,
+      configuration,
+      {
+        finalTopK: parameters.finalTopK,
+        minRerankScore: parameters.minRerankScore,
+        rrfK: parameters.rrfK,
+        fetchImpl: options.fetchImpl,
+        signal: options.signal,
+      },
+    );
+  } catch (error) {
+    timings.rerankMs = elapsedMs(rerankStart);
+    recordStageTiming("retrieval", "rerank", timings.rerankMs);
+    recordProviderOutcome("openai_retrieval", classifyRetrievalProviderOutcome(error));
+    logEvent("warn", "retrieval.stage_failed", {
+      stage: "rerank",
+      errorCode: error instanceof RetrievalError ? error.code : "RETRIEVAL_RERANK_FAILED",
+      transient: error instanceof RetrievalError ? error.transient : true,
+      durationMs: timings.rerankMs,
+    });
+    throw error;
+  }
   timings.rerankMs = elapsedMs(rerankStart);
+  recordStageTiming("retrieval", "rerank", timings.rerankMs);
+  recordProviderOutcome("openai_retrieval", "ok");
 
   if (reranked.length === 0) {
     return buildNoEvidenceResult({
@@ -292,6 +368,7 @@ export async function retrieveActiveSopEvidence(
   const expectedSnapshots: SnapshotIdentity[] = reranked.map((entry) => {
     const candidate = fusedById.get(entry.chunkId);
     if (!candidate) {
+      recordProviderOutcome("openai_retrieval", "invalid_output");
       throw new RetrievalError("RETRIEVAL_RERANKER_INVALID_OUTPUT", false, 502);
     }
     return {
@@ -308,6 +385,7 @@ export async function retrieveActiveSopEvidence(
   const fetchStart = performance.now();
   const reloadedOriginal = await loadOriginal(expectedSnapshots, { database: options.database });
   timings.fetchOriginalMs = elapsedMs(fetchStart);
+  recordStageTiming("retrieval", "fetch_original", timings.fetchOriginalMs);
 
   const expectedById = new Map(expectedSnapshots.map((snapshot) => [snapshot.chunkId, snapshot]));
   const passages: RerankedPassage[] = [];
@@ -336,12 +414,24 @@ export async function retrieveActiveSopEvidence(
     });
   }
 
+  const metadata = buildMetadata(reranked.length, passages.length);
+  recordStageTiming("retrieval", "total", metadata.timings.totalMs);
+  logEvent("info", "retrieval.completed", {
+    mode: metadata.mode,
+    outcome: "evidence",
+    semanticCount: metadata.semanticCandidateCount,
+    keywordCount: metadata.keywordCandidateCount,
+    fusedCount: metadata.fusedCandidateCount,
+    returnedCount: metadata.returnedPassageCount,
+    durationMs: metadata.timings.totalMs,
+  });
+
   return {
     kind: "evidence",
     originalQuestion: parsed.data.question,
     standaloneQuery: rewritten.standaloneQuery,
     passages,
-    metadata: buildMetadata(reranked.length, passages.length),
+    metadata,
   };
 }
 

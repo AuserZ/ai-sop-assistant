@@ -62,6 +62,21 @@ import {
   type ChatStageCallbackResponse,
   type ChatTurnCreationResult,
 } from "./contracts";
+import {
+  logEvent,
+  recordProviderOutcome,
+  recordStageTiming,
+  type ProviderOutcome,
+} from "../observability";
+
+function classifyChatProviderOutcome(
+  code: AnswerFailureCode,
+  retryable: boolean,
+): ProviderOutcome {
+  if (retryable) return "transient_error";
+  if (code.includes("INVALID_OUTPUT")) return "invalid_output";
+  return "rejected";
+}
 
 type Environment = Readonly<Record<string, string | undefined>>;
 
@@ -186,6 +201,12 @@ async function commitChatJobFailure(
     })
     .where(eq(workflowJobs.id, job.id));
   await appendChatEventOnce(transaction, job, "failed", 6);
+  logEvent("warn", "chat.turn_failed", {
+    jobId: job.id,
+    conversationId: job.conversationId,
+    errorCode,
+    retryable,
+  });
   return { ok: true, terminal: true };
 }
 
@@ -220,6 +241,13 @@ async function commitNoEvidenceTurn(
     .set({ updatedAt: sql`clock_timestamp()` })
     .where(eq(chatConversations.id, job.conversationId!));
   await appendChatEventOnce(transaction, job, "no_evidence", 6);
+  recordStageTiming("chat", "total", timings.totalMs);
+  logEvent("info", "chat.turn_completed", {
+    jobId: job.id,
+    conversationId: job.conversationId,
+    outcome: "no_evidence",
+    durationMs: timings.totalMs,
+  });
   return { ok: true, terminal: true };
 }
 
@@ -459,7 +487,7 @@ export async function createChatTurn(
 
     await appendEvent(transaction, createdJob, "accepted", 0);
 
-    return {
+    const createdResult = {
       conversationId,
       jobId: createdJob.id,
       requestId: createdJob.requestKey,
@@ -467,6 +495,13 @@ export async function createChatTurn(
       streamUrl: `/api/chat/jobs/${createdJob.id}/events`,
       created: true,
     };
+    logEvent("info", "chat.turn_created", {
+      jobId: createdResult.jobId,
+      conversationId: createdResult.conversationId,
+      requestId: createdResult.requestId,
+      created: true,
+    });
+    return createdResult;
   });
 }
 
@@ -627,8 +662,9 @@ export async function claimChatStage(
   claims: ChatCallbackClaims,
   options: ChatStageOptions = {},
 ): Promise<ChatStageCallbackResponse> {
+  const start = performance.now();
   const database = options.database ?? getDatabase();
-  return database.transaction(async (transaction) => {
+  const result: ChatStageCallbackResponse = await database.transaction(async (transaction): Promise<ChatStageCallbackResponse> => {
     const { job, ownerRevoked } = await verifyAndConsumeChatCallback(transaction, claims);
     if (ownerRevoked) {
       return commitChatJobFailure(transaction, job, "CHAT_ACCOUNT_REVOKED", false);
@@ -660,6 +696,17 @@ export async function claimChatStage(
     await appendChatEventOnce(transaction, job, "retrieving", 1);
     return { ok: true, terminal: false };
   });
+
+  const durationMs = elapsedMs(start);
+  recordStageTiming("chat", "claim", durationMs);
+  logEvent("info", "chat.stage_completed", {
+    jobId: claims.jobId,
+    conversationId: claims.conversationId,
+    stage: "claim",
+    outcome: result.terminal ? "terminal" : "ok",
+    durationMs,
+  });
+  return result;
 }
 
 export async function retrieveChatStage(
@@ -756,6 +803,7 @@ export async function retrieveChatStage(
       },
     );
   } catch (error) {
+    recordStageTiming("chat", "retrieve", elapsedMs(retrievalStart));
     const retryable = error instanceof RetrievalError ? error.transient : true;
     return database.transaction(async (transaction) => {
       const [job] = await transaction
@@ -770,6 +818,7 @@ export async function retrieveChatStage(
     });
   }
   const retrievalMs = elapsedMs(retrievalStart);
+  recordStageTiming("chat", "retrieve", retrievalMs);
 
   return database.transaction(async (transaction) => {
     const [job] = await transaction
@@ -938,9 +987,11 @@ export async function generateChatStage(
       },
     );
   } catch (error) {
+    recordStageTiming("chat", "generate", elapsedMs(generateStart));
     const code: AnswerFailureCode =
       error instanceof AnswerStageError ? error.code : "ANSWER_PROVIDER_TRANSIENT";
     const retryable = error instanceof AnswerStageError ? error.retryable : true;
+    recordProviderOutcome("openai_answer", classifyChatProviderOutcome(code, retryable));
     return database.transaction(async (transaction) => {
       const [job] = await transaction
         .select()
@@ -954,6 +1005,8 @@ export async function generateChatStage(
     });
   }
   const generateMs = elapsedMs(generateStart);
+  recordStageTiming("chat", "generate", generateMs);
+  recordProviderOutcome("openai_answer", "ok");
 
   return database.transaction(async (transaction) => {
     const [job] = await transaction
@@ -1130,9 +1183,11 @@ export async function validateChatStage(
       },
     );
   } catch (error) {
+    recordStageTiming("chat", "validate", elapsedMs(judgeStart));
     const code: AnswerFailureCode =
       error instanceof AnswerStageError ? error.code : "JUDGE_PROVIDER_TRANSIENT";
     const retryable = error instanceof AnswerStageError ? error.retryable : true;
+    recordProviderOutcome("openai_judge", classifyChatProviderOutcome(code, retryable));
     return database.transaction(async (transaction) => {
       const [job] = await transaction
         .select()
@@ -1146,6 +1201,8 @@ export async function validateChatStage(
     });
   }
   const judgeMs = elapsedMs(judgeStart);
+  recordStageTiming("chat", "validate", Number((deterministicCheckMs + judgeMs).toFixed(2)));
+  recordProviderOutcome("openai_judge", "ok");
 
   if (!judgeDecision.passed) {
     return database.transaction(async (transaction) => {
@@ -1298,6 +1355,16 @@ export async function validateChatStage(
         sourceCount: citationResolution.sources.length,
         isProcedural: prep.candidatePayload.isProcedural,
       },
+    });
+
+    recordStageTiming("chat", "total", timings.totalMs);
+    logEvent("info", "chat.turn_completed", {
+      jobId: job.id,
+      conversationId: job.conversationId,
+      outcome: "supported",
+      sourceCount: citationResolution.sources.length,
+      isProcedural: prep.candidatePayload.isProcedural,
+      durationMs: timings.totalMs,
     });
 
     return { ok: true, terminal: true };

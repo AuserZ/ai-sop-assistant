@@ -91,8 +91,14 @@ jobs:
           node --check infra/paddleocr/verify.mjs
           node --check infra/conversion/verify.mjs
           node --check infra/n8n/bootstrap.mjs
+          node --check scripts/security-scan-artifacts.mjs scripts/verify-hardening.mjs scripts/ops-monitor.mjs scripts/load-benchmark.mjs
           node infra/conversion/verify.mjs
+          node scripts/verify-hardening.mjs
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --audit-level=high
       - run: npm run build
+      - name: Scan built artifacts and workflow exports for leaks
+        run: node scripts/security-scan-artifacts.mjs
       - name: Check Compose and run application smoke and database tests
         run: |
           npm run dev:secrets

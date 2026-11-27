@@ -4,6 +4,12 @@ x-app-db: &app-db
   DB_HOST: postgres
   APP_DB_PASSWORD_FILE: /run/secrets/app-runtime
 
+x-bounded-logging: &bounded-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 x-n8n-environment: &n8n-environment
   DB_TYPE: postgresdb
   DB_POSTGRESDB_HOST: postgres
@@ -49,6 +55,7 @@ x-n8n-runtime: &n8n-runtime
     - /tmp:uid=1000,gid=1000,mode=0700,size=64m
   secrets: [n8n-db, n8n-encryption-key, redis-password, n8n-runners-token]
   networks: [database, workflow]
+  logging: *bounded-logging
   mem_limit: 768m
   cpus: 1.0
   pids_limit: 128
@@ -68,6 +75,10 @@ services:
       - ./infra/postgres/bootstrap.sql:/opt/sop/bootstrap.sql:ro
     secrets: [postgres-admin, app-runtime, app-migrator, n8n-db]
     networks: [database]
+    logging: *bounded-logging
+    mem_limit: 1g
+    cpus: 1.5
+    pids_limit: 128
     healthcheck:
       test: ["CMD", "pg_isready", "-h", "127.0.0.1", "-U", "sop_bootstrap", "-d", "sop_app"]
       interval: 3s
@@ -92,6 +103,11 @@ services:
     build:
       context: .
       target: runtime
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    tmpfs:
+      - /tmp:uid=1000,gid=1000,mode=0700,size=128m
     environment:
       <<: *app-db
       AUTH_BASE_URL: http://127.0.0.1:3000
@@ -112,6 +128,10 @@ services:
       WORKFLOW_CALLBACK_PUBLIC_KEY_FILE: /run/secrets/workflow-callback-public
     secrets: [app-runtime, auth-secret, workflow-dispatch-private, workflow-callback-public]
     networks: [database, edge, workflow, ocr, conversion]
+    logging: *bounded-logging
+    mem_limit: 1g
+    cpus: 1.5
+    pids_limit: 128
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -147,6 +167,7 @@ services:
       interval: 3s
       timeout: 4s
       retries: 20
+    logging: *bounded-logging
     mem_limit: 64m
     cpus: 0.5
     pids_limit: 64
@@ -169,6 +190,7 @@ services:
       interval: 3s
       timeout: 3s
       retries: 20
+    logging: *bounded-logging
     mem_limit: 256m
     cpus: 0.5
     pids_limit: 64

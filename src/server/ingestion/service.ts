@@ -21,6 +21,16 @@ import { chunkExtractedPages } from "./chunker";
 import { IngestionStageError, type ExtractedBlock, type ExtractedPageDraft } from "./contracts";
 import { embedTexts } from "./embeddings";
 import { extractDocumentContent } from "./extract";
+import {
+  logEvent,
+  recordOcrMetrics,
+  recordProviderOutcome,
+  recordStageTiming,
+} from "../observability";
+
+function elapsedMs(start: number): number {
+  return Number(Math.max(0, performance.now() - start).toFixed(2));
+}
 
 type Environment = Readonly<Record<string, string | undefined>>;
 
@@ -208,6 +218,7 @@ export async function claimIngestionStage(
   claims: IngestionCallbackClaims,
   options: Pick<IngestionStageOptions, "database" | "privateKey"> = {},
 ) {
+  const start = performance.now();
   const database = options.database ?? getDatabase();
   const privateKey = options.privateKey ?? dispatchPrivateKey();
 
@@ -282,6 +293,16 @@ export async function claimIngestionStage(
     privateKey,
   );
 
+  const durationMs = elapsedMs(start);
+  recordStageTiming("ingestion", "claim", durationMs);
+  logEvent("info", "ingestion.stage_completed", {
+    jobId: claimed.job.id,
+    documentId: claimed.job.documentId,
+    stage: "claim",
+    duplicate: claimed.duplicate,
+    durationMs,
+  });
+
   return { accepted: true, duplicate: claimed.duplicate, fileRefToken };
 }
 
@@ -325,6 +346,7 @@ export async function extractIngestionStage(
   fileRefToken: string,
   options: IngestionStageOptions = {},
 ) {
+  const start = performance.now();
   const database = options.database ?? getDatabase();
   const storage = options.storage ?? getDocumentStorage();
   const privateKey = options.privateKey ?? dispatchPrivateKey();
@@ -381,11 +403,27 @@ export async function extractIngestionStage(
     const stageError = error instanceof IngestionStageError
       ? error
       : new IngestionStageError("EXTRACTION_UNAVAILABLE", true, 503);
+    const durationMs = elapsedMs(start);
+    recordStageTiming("ingestion", "extract", durationMs);
+    if (stageError.code.includes("OCR")) {
+      recordOcrMetrics({ pagesTotal: 0, ocrPages: 0, failed: true });
+      recordProviderOutcome("paddleocr", stageError.transient ? "transient_error" : "rejected");
+    } else if (stageError.code.includes("CONVERSION")) {
+      recordProviderOutcome("conversion", stageError.transient ? "transient_error" : "rejected");
+    }
+    logEvent("warn", "ingestion.stage_failed", {
+      jobId: claims.jobId,
+      documentId: claims.documentId,
+      stage: "extract",
+      errorCode: stageError.code,
+      transient: stageError.transient,
+      durationMs,
+    });
     await recordStageFailure(database, claims, stageError.code, stageError.transient);
     throw new AuthFailure(stageError.code, stageError.status);
   }
 
-  return database.transaction(async (transaction) => {
+  const persisted = await database.transaction(async (transaction) => {
     const [doc] = await transaction
       .select({ status: sopDocuments.status })
       .from(sopDocuments)
@@ -480,12 +518,37 @@ export async function extractIngestionStage(
       hasPreview: Boolean(extracted.previewKey),
     };
   });
+
+  const ocrPages = extracted.pages.filter(
+    (page) => page.pageKind === "scanned_ocr" || page.pageKind === "mixed_ocr",
+  ).length;
+  const durationMs = elapsedMs(start);
+  recordOcrMetrics({ pagesTotal: extracted.pages.length, ocrPages });
+  if (ocrPages > 0) {
+    recordProviderOutcome("paddleocr", "ok");
+  }
+  if (prepared.document.mimeType !== "application/pdf") {
+    recordProviderOutcome("conversion", "ok");
+  }
+  recordStageTiming("ingestion", "extract", durationMs);
+  logEvent("info", "ingestion.stage_completed", {
+    jobId: claims.jobId,
+    documentId: claims.documentId,
+    stage: "extract",
+    pageCount: persisted.pageCount,
+    ocrPages,
+    issueCount: persisted.issueCount,
+    durationMs,
+  });
+
+  return persisted;
 }
 
 export async function chunkIngestionStage(
   claims: IngestionCallbackClaims,
   options: Pick<IngestionStageOptions, "database"> = {},
 ) {
+  const start = performance.now();
   const database = options.database ?? getDatabase();
 
   const outcome = await database.transaction(async (transaction) => {
@@ -555,9 +618,27 @@ export async function chunkIngestionStage(
     return { accepted: true as const, duplicate: false as const, chunkCount: chunks.length };
   });
 
+  const durationMs = elapsedMs(start);
+  recordStageTiming("ingestion", "chunk", durationMs);
   if ("failedCode" in outcome && outcome.failedCode) {
+    logEvent("warn", "ingestion.stage_failed", {
+      jobId: claims.jobId,
+      documentId: claims.documentId,
+      stage: "chunk",
+      errorCode: outcome.failedCode,
+      transient: false,
+      durationMs,
+    });
     throw new AuthFailure(outcome.failedCode, 422);
   }
+  logEvent("info", "ingestion.stage_completed", {
+    jobId: claims.jobId,
+    documentId: claims.documentId,
+    stage: "chunk",
+    duplicate: outcome.duplicate,
+    chunkCount: "chunkCount" in outcome ? outcome.chunkCount : undefined,
+    durationMs,
+  });
   return outcome;
 }
 
@@ -565,6 +646,7 @@ export async function embedIngestionStage(
   claims: IngestionCallbackClaims,
   options: Pick<IngestionStageOptions, "database" | "fetchImpl" | "env" | "signal"> = {},
 ) {
+  const start = performance.now();
   const database = options.database ?? getDatabase();
 
   const prepared = await database.transaction(async (transaction) => {
@@ -604,11 +686,25 @@ export async function embedIngestionStage(
     const stageError = error instanceof IngestionStageError
       ? error
       : new IngestionStageError("EMBEDDING_PROVIDER_TRANSIENT", true, 503);
+    const durationMs = elapsedMs(start);
+    recordStageTiming("ingestion", "embed", durationMs);
+    recordProviderOutcome(
+      "openai_embedding",
+      stageError.transient ? "transient_error" : "rejected",
+    );
+    logEvent("warn", "ingestion.stage_failed", {
+      jobId: claims.jobId,
+      documentId: claims.documentId,
+      stage: "embed",
+      errorCode: stageError.code,
+      transient: stageError.transient,
+      durationMs,
+    });
     await recordStageFailure(database, claims, stageError.code, stageError.transient);
     throw new AuthFailure(stageError.code, stageError.status);
   }
 
-  return database.transaction(async (transaction) => {
+  const persisted = await database.transaction(async (transaction) => {
     const [doc] = await transaction
       .select({ status: sopDocuments.status })
       .from(sopDocuments)
@@ -666,15 +762,29 @@ export async function embedIngestionStage(
       embeddingDimensions: embedded.dimensions,
     };
   });
+
+  const durationMs = elapsedMs(start);
+  recordStageTiming("ingestion", "embed", durationMs);
+  recordProviderOutcome("openai_embedding", "ok");
+  logEvent("info", "ingestion.stage_completed", {
+    jobId: claims.jobId,
+    documentId: claims.documentId,
+    stage: "embed",
+    chunkCount: persisted.embeddedCount,
+    durationMs,
+  });
+
+  return persisted;
 }
 
 export async function completeIngestionStage(
   claims: IngestionCallbackClaims,
   options: Pick<IngestionStageOptions, "database"> = {},
 ) {
+  const start = performance.now();
   const database = options.database ?? getDatabase();
 
-  return database.transaction(async (transaction) => {
+  const result = await database.transaction(async (transaction) => {
     const job = await verifyAndConsumeCallback(transaction, claims);
     if (job.executionId !== claims.executionId) throw new AuthFailure("INVALID_WORKFLOW_EXECUTION", 409);
     if (job.state === "COMPLETED" && job.step === 5) {
@@ -765,6 +875,21 @@ export async function completeIngestionStage(
       issueCount: issueSummary.total,
     };
   });
+
+  const durationMs = elapsedMs(start);
+  recordStageTiming("ingestion", "complete", durationMs);
+  logEvent("info", "ingestion.completed", {
+    jobId: claims.jobId,
+    documentId: claims.documentId,
+    stage: "complete",
+    duplicate: result.duplicate,
+    pageCount: "pageCount" in result ? result.pageCount : undefined,
+    chunkCount: "chunkCount" in result ? result.chunkCount : undefined,
+    issueCount: "issueCount" in result ? result.issueCount : undefined,
+    durationMs,
+  });
+
+  return result;
 }
 
 export async function failIngestionStage(
@@ -774,7 +899,7 @@ export async function failIngestionStage(
 ) {
   const database = options.database ?? getDatabase();
 
-  return database.transaction(async (transaction) => {
+  const result = await database.transaction(async (transaction) => {
     const job = await verifyAndConsumeCallback(transaction, claims);
     if (job.state === "FAILED") return { accepted: true, duplicate: true, retrying: false };
     if (job.state === "COMPLETED") throw new AuthFailure("INVALID_WORKFLOW_STATE", 409);
@@ -785,4 +910,15 @@ export async function failIngestionStage(
     const retrying = await applyFailureTransition(transaction, job, input.errorCode, input.transient);
     return { accepted: true, duplicate: false, retrying };
   });
+
+  logEvent("warn", "ingestion.failed", {
+    jobId: claims.jobId,
+    documentId: claims.documentId,
+    errorCode: input.errorCode,
+    transient: input.transient,
+    retrying: result.retrying,
+    duplicate: result.duplicate,
+  });
+
+  return result;
 }

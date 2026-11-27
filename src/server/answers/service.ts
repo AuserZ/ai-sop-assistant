@@ -35,6 +35,12 @@ import {
 import { validateCandidateDeterministically } from "./deterministic";
 import { generateAnswerCandidate } from "./generator";
 import { judgeAnswerCandidate } from "./judge";
+import {
+  logEvent,
+  recordProviderOutcome,
+  recordStageTiming,
+  type ProviderOutcome,
+} from "../observability";
 
 type Environment = Readonly<Record<string, string | undefined>>;
 
@@ -117,11 +123,28 @@ function toValidatedClaims(isProcedural: boolean, claims: GeneratorClaim[]): Val
   }));
 }
 
+function classifyAnswerProviderOutcome(
+  code: AnswerFailureCode,
+  retryable: boolean,
+): ProviderOutcome {
+  if (retryable) return "transient_error";
+  if (code.includes("INVALID_OUTPUT")) return "invalid_output";
+  return "rejected";
+}
+
 function buildServiceFailure(params: {
   code: AnswerFailureCode;
   retryable: boolean;
   metadata: AnswerMetadata;
 }): ChatServiceFailure {
+  recordStageTiming("answer", "total", params.metadata.timings.totalMs);
+  logEvent("warn", "answer.failed", {
+    errorCode: params.code,
+    retryable: params.retryable,
+    deterministicCheckPassed: params.metadata.deterministicCheckPassed,
+    judgeVerdict: params.metadata.judgeVerdict,
+    durationMs: params.metadata.timings.totalMs,
+  });
   return validatedSopAnswerSchema.parse({
     kind: "service_error",
     code: params.code,
@@ -135,6 +158,12 @@ function buildNoEvidence(params: {
   reason: AnswerNoEvidenceReason;
   metadata: AnswerMetadata;
 }): NoEvidenceAnswer {
+  recordStageTiming("answer", "total", params.metadata.timings.totalMs);
+  logEvent("info", "answer.completed", {
+    outcome: "no_evidence",
+    reason: params.reason,
+    durationMs: params.metadata.timings.totalMs,
+  });
   return validatedSopAnswerSchema.parse({
     kind: "no_evidence",
     answer: noEvidenceFallbackMessage,
@@ -225,6 +254,7 @@ export async function generateValidatedSopAnswer(
     });
   } catch (error) {
     timings.retrievalMs = elapsedMs(retrievalStart);
+    recordStageTiming("answer", "retrieval", timings.retrievalMs);
     const retryable = error instanceof RetrievalError ? error.transient : true;
     return buildServiceFailure({
       code: "RETRIEVAL_FAILED",
@@ -233,6 +263,7 @@ export async function generateValidatedSopAnswer(
     });
   }
   timings.retrievalMs = elapsedMs(retrievalStart);
+  recordStageTiming("answer", "retrieval", timings.retrievalMs);
   retrievalMetadata = retrievalResult.metadata;
 
   if (retrievalResult.kind === "no_evidence") {
@@ -264,9 +295,11 @@ export async function generateValidatedSopAnswer(
     );
   } catch (error) {
     timings.generateMs = elapsedMs(generateStart);
+    recordStageTiming("answer", "generate", timings.generateMs);
     const code: AnswerFailureCode =
       error instanceof AnswerStageError ? error.code : "ANSWER_PROVIDER_TRANSIENT";
     const retryable = error instanceof AnswerStageError ? error.retryable : true;
+    recordProviderOutcome("openai_answer", classifyAnswerProviderOutcome(code, retryable));
     return buildServiceFailure({
       code,
       retryable,
@@ -274,6 +307,8 @@ export async function generateValidatedSopAnswer(
     });
   }
   timings.generateMs = elapsedMs(generateStart);
+  recordStageTiming("answer", "generate", timings.generateMs);
+  recordProviderOutcome("openai_answer", "ok");
 
   if (privateCandidate.status === "no_evidence") {
     return buildNoEvidence({
@@ -288,6 +323,7 @@ export async function generateValidatedSopAnswer(
     retrievalResult.passages,
   );
   timings.deterministicCheckMs = elapsedMs(deterministicStart);
+  recordStageTiming("answer", "deterministic_check", timings.deterministicCheckMs);
   deterministicCheckPassed = deterministicResult.ok;
 
   if (!deterministicResult.ok) {
@@ -321,9 +357,11 @@ export async function generateValidatedSopAnswer(
     );
   } catch (error) {
     timings.judgeMs = elapsedMs(judgeStart);
+    recordStageTiming("answer", "judge", timings.judgeMs);
     const code: AnswerFailureCode =
       error instanceof AnswerStageError ? error.code : "JUDGE_PROVIDER_TRANSIENT";
     const retryable = error instanceof AnswerStageError ? error.retryable : true;
+    recordProviderOutcome("openai_judge", classifyAnswerProviderOutcome(code, retryable));
     return buildServiceFailure({
       code,
       retryable,
@@ -331,6 +369,8 @@ export async function generateValidatedSopAnswer(
     });
   }
   timings.judgeMs = elapsedMs(judgeStart);
+  recordStageTiming("answer", "judge", timings.judgeMs);
+  recordProviderOutcome("openai_judge", "ok");
   judgeVerdict = judgeDecision.overallVerdict;
 
   if (!judgeDecision.passed) {
@@ -360,6 +400,7 @@ export async function generateValidatedSopAnswer(
     );
   } catch {
     timings.citationResolveMs = elapsedMs(citationStart);
+    recordStageTiming("answer", "citation_resolve", timings.citationResolveMs);
     return buildServiceFailure({
       code: "RETRIEVAL_FAILED",
       retryable: true,
@@ -367,6 +408,7 @@ export async function generateValidatedSopAnswer(
     });
   }
   timings.citationResolveMs = elapsedMs(citationStart);
+  recordStageTiming("answer", "citation_resolve", timings.citationResolveMs);
 
   if (!citationResolution.ok) {
     return buildNoEvidence({
@@ -385,13 +427,23 @@ export async function generateValidatedSopAnswer(
     });
   }
 
+  const metadata = currentMetadata();
+  recordStageTiming("answer", "total", metadata.timings.totalMs);
+  logEvent("info", "answer.completed", {
+    outcome: "supported",
+    isProcedural: privateCandidate.isProcedural,
+    sourceCount: citationResolution.sources.length,
+    judgeVerdict,
+    durationMs: metadata.timings.totalMs,
+  });
+
   return validatedSopAnswerSchema.parse({
     kind: "supported",
     answer: formattedAnswer,
     isProcedural: privateCandidate.isProcedural,
     claims: validatedClaims,
     sources: citationResolution.sources,
-    metadata: currentMetadata(),
+    metadata,
   });
 }
 

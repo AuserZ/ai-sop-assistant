@@ -2,7 +2,7 @@ import type { ZodType } from "zod";
 import { requireCurrentAccount, requireRole } from "../auth/authorization";
 import { AuthFailure, authErrorResponse } from "../auth/errors";
 import { requireMutationOrigin } from "../auth/http";
-import { consumeRateLimit } from "../auth/rate-limit";
+import { authLimits, consumeRateLimit } from "../auth/rate-limit";
 import { documentIdInput } from "../documents/contracts";
 import { reprocessDocumentInput, verifyDocumentInput } from "./contracts";
 import { getDocumentReview, readDocumentPreview, reprocessDocument, verifyDocument } from "./service";
@@ -53,10 +53,11 @@ export async function handleVerificationRequest(
     const account = await requireCurrentAccount(request.headers);
     requireRole(account, "ADMIN");
     await consumeRateLimit("verification-global", "all", { maximum: 180, windowSeconds: 60 });
-    await consumeRateLimit(`verification-${operation}`, account.id, {
-      maximum: operation === "review" || operation === "preview" ? 120 : 30,
-      windowSeconds: 60,
-    });
+    const operationLimit =
+      operation === "preview"
+        ? authLimits.documentPreview
+        : { maximum: operation === "review" ? 120 : 30, windowSeconds: 60 };
+    await consumeRateLimit(`verification-${operation}`, account.id, operationLimit);
     if (!documentIdInput.safeParse(id).success) throw new AuthFailure("NOT_FOUND", 404);
 
     if (operation === "preview") {

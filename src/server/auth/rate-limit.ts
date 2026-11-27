@@ -14,6 +14,10 @@ export const authLimits = {
   userList: { maximum: 120, windowSeconds: 60 },
   userUpdate: { maximum: 60, windowSeconds: 60 },
   session: { maximum: 120, windowSeconds: 60 },
+  documentSource: { maximum: 60, windowSeconds: 60 },
+  documentContent: { maximum: 60, windowSeconds: 60 },
+  documentPreview: { maximum: 60, windowSeconds: 60 },
+  opsHealth: { maximum: 60, windowSeconds: 60 },
   global: { maximum: 120, windowSeconds: 60 },
 } as const;
 
