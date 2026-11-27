@@ -303,6 +303,96 @@ export function auditN8nWorkflow(fileName, workflow) {
   return { ok: violations.length === 0, violations };
 }
 
+export function auditBackupDockerfile(content) {
+  const violations = [];
+  const stageAliases = new Set();
+  const lines = content.split(/\r?\n/);
+  let currentStage = null;
+  let runtimeStageUser = null;
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index].trim();
+    if (!line || line.startsWith("#")) continue;
+
+    const fromMatch = /^FROM\s+(?:--platform=\S+\s+)?(\S+)(?:\s+AS\s+(\S+))?/i.exec(line);
+    if (fromMatch) {
+      const imageRef = fromMatch[1];
+      const alias = fromMatch[2] ?? null;
+      currentStage = alias ?? imageRef;
+      if (!stageAliases.has(imageRef) && !SHA256_DIGEST_PATTERN.test(imageRef)) {
+        violations.push(
+          `infra/backup/Dockerfile:${index + 1}: base image "${imageRef}" must be pinned to an immutable @sha256 digest`,
+        );
+      }
+      if (alias) stageAliases.add(alias);
+      continue;
+    }
+
+    const userMatch = /^USER\s+(\S+)/i.exec(line);
+    if (userMatch && currentStage === "runtime") {
+      runtimeStageUser = userMatch[1];
+    }
+  }
+
+  if (!runtimeStageUser || runtimeStageUser === "root" || runtimeStageUser === "0" || runtimeStageUser.startsWith("0:")) {
+    violations.push("infra/backup/Dockerfile: runtime stage must set a non-root USER");
+  }
+
+  return { ok: violations.length === 0, violations };
+}
+
+export function auditBackupCompose(content) {
+  const violations = [];
+  const sections = splitTopLevelSections(content);
+  const services = splitNamedBlocks(sections.get("services") ?? []);
+  const block = services.get("backup-scheduler");
+
+  if (!block) {
+    violations.push('infra/backup/compose.backup.yml: missing required service "backup-scheduler"');
+    return { ok: false, violations };
+  }
+
+  if (!/profiles:\s*\[backup\]/.test(block)) {
+    violations.push('infra/backup/compose.backup.yml: backup-scheduler must declare profiles: [backup]');
+  }
+  const userMatch = /^\s+user:\s*"?([^"\s]+)"?/m.exec(block);
+  if (!userMatch || userMatch[1] === "root" || userMatch[1] === "0" || userMatch[1].startsWith("0:")) {
+    violations.push("infra/backup/compose.backup.yml: backup-scheduler must run as a non-root user");
+  }
+  if (!/read_only:\s*true/.test(block)) {
+    violations.push("infra/backup/compose.backup.yml: backup-scheduler must set read_only: true");
+  }
+  if (!/cap_drop:\s*\[ALL\]/.test(block)) {
+    violations.push("infra/backup/compose.backup.yml: backup-scheduler must drop ALL capabilities");
+  }
+  if (!/no-new-privileges:true/.test(block)) {
+    violations.push("infra/backup/compose.backup.yml: backup-scheduler must set no-new-privileges:true");
+  }
+  if (/^\s+ports:/m.test(block)) {
+    violations.push("infra/backup/compose.backup.yml: backup-scheduler must not publish host ports");
+  }
+  if (
+    !/driver:\s*json-file/.test(block) ||
+    !/max-size:/.test(block) ||
+    !/max-file:/.test(block)
+  ) {
+    violations.push("infra/backup/compose.backup.yml: backup-scheduler must configure bounded json-file logging");
+  }
+  for (const limitKey of ["mem_limit", "cpus", "pids_limit"]) {
+    if (!new RegExp(`^\\s+${limitKey}:`, "m").test(block)) {
+      violations.push(`infra/backup/compose.backup.yml: backup-scheduler must set ${limitKey}`);
+    }
+  }
+  if (/(?:^|\W)n8n-encryption-key(?!-fingerprint)(?:\W|$)/m.test(content)) {
+    violations.push("infra/backup/compose.backup.yml: backup-scheduler must not mount raw n8n-encryption-key");
+  }
+  if (/backup-escrow-passphrase/.test(content)) {
+    violations.push("infra/backup/compose.backup.yml: backup-scheduler must not mount backup-escrow-passphrase");
+  }
+
+  return { ok: violations.length === 0, violations };
+}
+
 export function verifyHardening(rootDir = process.cwd()) {
   const violations = [];
   const checkedFiles = [];
@@ -314,6 +404,14 @@ export function verifyHardening(rootDir = process.cwd()) {
   const composePath = join(rootDir, "docker-compose.yml");
   checkedFiles.push("docker-compose.yml");
   violations.push(...auditCompose(readFileSync(composePath, "utf8")).violations);
+
+  const backupDockerfilePath = join(rootDir, "infra", "backup", "Dockerfile");
+  checkedFiles.push("infra/backup/Dockerfile");
+  violations.push(...auditBackupDockerfile(readFileSync(backupDockerfilePath, "utf8")).violations);
+
+  const backupComposePath = join(rootDir, "infra", "backup", "compose.backup.yml");
+  checkedFiles.push("infra/backup/compose.backup.yml");
+  violations.push(...auditBackupCompose(readFileSync(backupComposePath, "utf8")).violations);
 
   const nginxPath = join(rootDir, "infra", "proxy", "nginx.conf");
   checkedFiles.push("infra/proxy/nginx.conf");

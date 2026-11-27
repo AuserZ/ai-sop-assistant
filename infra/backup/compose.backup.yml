@@ -1,0 +1,58 @@
+services:
+  backup-scheduler:
+    profiles: [backup]
+    build:
+      context: .
+      dockerfile: infra/backup/Dockerfile
+    command: ["node", "infra/backup/schedule.mjs"]
+    user: "1000:1000"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    tmpfs:
+      - /tmp:uid=1000,gid=1000,mode=0700,size=128m
+    environment:
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_ADMIN_USER: sop_bootstrap
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres-admin
+      BACKUP_ENCRYPTION_KEY_FILE: /run/secrets/backup-encryption-key
+      N8N_ENCRYPTION_KEY_FINGERPRINT_FILE: /run/secrets/n8n-encryption-key-fingerprint
+      BACKUP_S3_ACCESS_KEY_ID_FILE: /run/secrets/backup-s3-access-key-id
+      BACKUP_S3_SECRET_ACCESS_KEY_FILE: /run/secrets/backup-s3-secret-access-key
+      BACKUP_INTERVAL_SECONDS: "21600"
+      BACKUP_S3_BUCKET: ${BACKUP_S3_BUCKET:-}
+      BACKUP_S3_ENDPOINT: ${BACKUP_S3_ENDPOINT:-}
+      BACKUP_S3_REGION: ${BACKUP_S3_REGION:-auto}
+      BACKUP_S3_PREFIX: ${BACKUP_S3_PREFIX:-backups/postgres}
+      BACKUP_ALERT_WEBHOOK_URL: ${BACKUP_ALERT_WEBHOOK_URL:-}
+    secrets:
+      - backup-encryption-key
+      - postgres-admin
+      - n8n-encryption-key-fingerprint
+      - backup-s3-access-key-id
+      - backup-s3-secret-access-key
+    networks: [database, edge]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    stop_grace_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    mem_limit: 512m
+    cpus: 1.0
+    pids_limit: 64
+
+secrets:
+  backup-encryption-key:
+    file: ./.local-secrets/backup-encryption-key
+  n8n-encryption-key-fingerprint:
+    file: ./.local-secrets/n8n-encryption-key-fingerprint
+  backup-s3-access-key-id:
+    file: ./.local-secrets/backup-s3-access-key-id
+  backup-s3-secret-access-key:
+    file: ./.local-secrets/backup-s3-secret-access-key

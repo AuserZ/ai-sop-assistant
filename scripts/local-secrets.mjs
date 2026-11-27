@@ -1,4 +1,4 @@
-import { createPrivateKey, createPublicKey, generateKeyPairSync, randomBytes } from "node:crypto";
+import { createHash, createPrivateKey, createPublicKey, generateKeyPairSync, randomBytes } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 
 const directory = new URL("../.local-secrets/", import.meta.url);
@@ -24,8 +24,40 @@ async function createSecret(name, value) {
   }
 }
 
-for (const name of ["postgres-admin", "app-runtime", "app-migrator", "n8n-db", "auth-secret", "n8n-encryption-key", "redis-password", "n8n-runners-token"]) {
+const coreHexSecrets = [
+  "postgres-admin",
+  "app-runtime",
+  "app-migrator",
+  "n8n-db",
+  "auth-secret",
+  "n8n-encryption-key",
+  "redis-password",
+  "n8n-runners-token",
+];
+
+for (const name of coreHexSecrets) {
   await createSecret(name, randomBytes(32).toString("hex"));
+}
+
+const includeBackupSecrets =
+  process.argv.includes("--with-backup") || process.env.SOP_INCLUDE_BACKUP_SECRETS === "1";
+
+if (includeBackupSecrets) {
+  await createSecret("backup-encryption-key", randomBytes(32).toString("hex"));
+  await createSecret("backup-escrow-passphrase", randomBytes(32).toString("hex"));
+  await createSecret("backup-s3-access-key-id", `s15-local-backup-access-${randomBytes(16).toString("hex")}`);
+  await createSecret("backup-s3-secret-access-key", `s15-local-backup-secret-${randomBytes(32).toString("hex")}`);
+
+  const n8nKey = (await existingFile("n8n-encryption-key"))?.trim() ?? "";
+  if (!n8nKey) {
+    throw new Error("Missing n8n-encryption-key; cannot derive n8n-encryption-key-fingerprint.");
+  }
+  const derivedFingerprint = createHash("sha256").update(n8nKey, "utf8").digest("hex");
+  await createSecret("n8n-encryption-key-fingerprint", derivedFingerprint);
+  const storedFingerprint = (await existingFile("n8n-encryption-key-fingerprint"))?.trim() ?? "";
+  if (storedFingerprint !== derivedFingerprint) {
+    throw new Error("Existing n8n-encryption-key-fingerprint does not match n8n-encryption-key; restore consistent key files.");
+  }
 }
 
 for (const direction of ["dispatch", "callback"]) {

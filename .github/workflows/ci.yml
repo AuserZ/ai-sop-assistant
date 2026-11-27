@@ -91,6 +91,7 @@ jobs:
           node --check infra/paddleocr/verify.mjs
           node --check infra/conversion/verify.mjs
           node --check infra/n8n/bootstrap.mjs
+          node --check infra/backup/crypto.mjs infra/backup/storage.mjs infra/backup/run-backup.mjs infra/backup/run-restore.mjs infra/backup/escrow-keys.mjs infra/backup/schedule.mjs infra/backup/drill.mjs
           node --check scripts/security-scan-artifacts.mjs scripts/verify-hardening.mjs scripts/ops-monitor.mjs scripts/load-benchmark.mjs
           node infra/conversion/verify.mjs
           node scripts/verify-hardening.mjs
@@ -102,8 +103,10 @@ jobs:
       - name: Check Compose and run application smoke and database tests
         run: |
           npm run dev:secrets
+          node scripts/local-secrets.mjs --with-backup
           node infra/storage-fixture/create-secrets.mjs
           docker compose --profile verify --profile conversion config --quiet
+          docker compose -f docker-compose.yml -f infra/backup/compose.backup.yml --profile backup config --quiet
           docker compose --profile verify build app migrate verify-db
           docker compose build storage-fixture paddleocr convert-worker
           SOP_STORAGE_FIXTURE_VERIFY=1 SOP_STORAGE_FIXTURE_IMAGE=ai-sop-assistant-storage-fixture node infra/storage-fixture/verify-native.mjs

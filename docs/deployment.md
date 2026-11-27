@@ -85,7 +85,7 @@ Confirmed baseline: encrypted PostgreSQL logical dumps every six hours for app a
 
 Thirty-day retention is proposed policy, not approved. Up to six hours potential database loss assumes successful backups; recovery in four to eight hours is provisional. Active originals must remain available, with provider-specific version/deletion protection still to be selected. Live deletions may survive in retained backups according to the final documented policy.
 
-Perform monthly restore tests into an isolated environment: restore app+n8n databases and pgvector, restore the correct encryption key/secret bindings, verify object access, reconcile durable jobs after transient Redis loss, and run synthetic auth/ingestion/retrieval/SSE smoke checks. Never restore over production as a readiness test. Record timing, artifact identities, integrity and recovery gaps.
+Perform monthly restore tests into an isolated environment: restore app+n8n databases and pgvector, restore the correct encryption key/secret bindings, verify object access, reconcile durable jobs after transient Redis loss, and run synthetic auth/ingestion/retrieval/SSE smoke checks. Never restore over production as a readiness test. Record timing, artifact identities, integrity and recovery gaps. See the Sprint S15 [disaster recovery runbook](disaster-recovery.md) for backup encryption, key escrow, isolated restore commands, and monthly drill evidence recording.
 
 ## Monitoring and incident behavior
 
