@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { ProviderResponseTooLargeError, readBoundedResponseText } from "../ai/bounded-response";
 import type { RerankedPassage } from "../retrieval/contracts";
 import { extractKeywordTokens } from "../retrieval/search";
 import type { AnswerConfiguration } from "./config";
@@ -292,8 +293,11 @@ export async function judgeAnswerCandidate(
 
   let rawBody: string;
   try {
-    rawBody = await response.text();
-  } catch {
+    rawBody = await readBoundedResponseText(response);
+  } catch (error) {
+    if (error instanceof ProviderResponseTooLargeError) {
+      throw new AnswerStageError("JUDGE_INVALID_OUTPUT", false, 502);
+    }
     throw new AnswerStageError("JUDGE_PROVIDER_TRANSIENT", true, 503);
   }
 

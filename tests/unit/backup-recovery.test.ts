@@ -61,6 +61,7 @@ import {
 } from "../../infra/backup/schedule.mjs";
 import {
   assertValidDrillProjectName,
+  buildDrillComposeOverrideYaml,
   buildInNetworkRestoreComposeArgs,
   DEFAULT_DRILL_PROXY_PORT,
   defaultSmokeChecks,
@@ -416,9 +417,10 @@ describe("S15 private offsite backup storage client", () => {
 
 describe("S15 encrypted 6-hour backup runner and safe alerting", () => {
   it("preserves role ownership and least-privilege grants in pg_dump and pg_restore args", () => {
-    const dumpArgs = buildPgDumpArgs({ host: "postgres", port: 5432, user: "sop_bootstrap", database: "sop_app" });
+    const dumpArgs = buildPgDumpArgs({ host: "postgres", port: 5432, user: "sop_backup", database: "sop_app" });
     expect(dumpArgs).toContain("--format=custom");
     expect(dumpArgs).toContain("--lock-wait-timeout=30000");
+    expect(dumpArgs).toContain("sop_backup");
     expect(dumpArgs).not.toContain("--no-owner");
     expect(dumpArgs).not.toContain("--no-privileges");
 
@@ -428,6 +430,48 @@ describe("S15 encrypted 6-hour backup runner and safe alerting", () => {
     expect(restoreArgs).toContain("--exit-on-error");
     expect(restoreArgs).not.toContain("--no-owner");
     expect(restoreArgs).not.toContain("--no-privileges");
+  });
+
+  it("defaults scheduled backup dumps to least-privilege sop_backup and BACKUP_PG_PASSWORD_FILE (SEC-S15-01)", async () => {
+    const mock = createInMemoryS3Mock();
+    const storage = createBackupStorageClient(
+      {
+        bucket: "sop-backups-private",
+        endpoint: "https://example.r2.cloudflarestorage.com",
+        region: "auto",
+        prefix: "backups/postgres",
+        timeoutMs: 5000,
+      },
+      { s3Client: mock.s3Client },
+    );
+
+    const seenUsers: string[] = [];
+    const readPaths: string[] = [];
+    const receipt = await runBackupJob({
+      backupId: "backup-20261127T060000Z-leastpriv",
+      backupKey: SYNTHETIC_BACKUP_KEY,
+      n8nKeyFingerprint: keyFingerprint(SYNTHETIC_N8N_KEY),
+      env: {
+        DB_HOST: "postgres",
+        DB_PORT: "5432",
+        DB_ADMIN_USER: "sop_bootstrap",
+        POSTGRES_PASSWORD_FILE: "/run/secrets/postgres-admin",
+      },
+      readSecretFile: (path: string) => {
+        readPaths.push(path);
+        if (path === "/run/secrets/backup-db") return "synthetic-readonly-backup-pass";
+        throw new Error(`Unexpected secret file read: ${path}`);
+      },
+      storageClient: storage,
+      dumpDatabase: async ({ database, user }: { database: string; user: string }) => {
+        seenUsers.push(user);
+        return Buffer.from(`PGDMP-${database}`, "utf8");
+      },
+    });
+
+    expect(receipt.ok).toBe(true);
+    expect(seenUsers).toEqual(["sop_backup", "sop_backup"]);
+    expect(readPaths).toEqual(["/run/secrets/backup-db"]);
   });
 
   it("dumps, encrypts, uploads, and verifies both sop_app and sop_n8n using only n8nKeyFingerprint (least privilege)", async () => {
@@ -922,10 +966,25 @@ describe("S15 6-hour scheduler, monthly drill orchestrator, Compose hardening, a
     const inNetArgs = buildInNetworkRestoreComposeArgs({
       drillProject: "ai-sop-dr-drill-20261127",
       backupId: "backup-1",
+      n8nEncryptionKeyFile: ".local-secrets/recovered-n8n-key",
+      postgresAdminPasswordFile: ".local-secrets/postgres-admin",
     });
     expect(inNetArgs).toContain("infra/backup/compose.backup.yml");
     expect(inNetArgs).toContain("postgres");
     expect(inNetArgs).toContain("--isolated-target");
+    expect(inNetArgs).toContain("DB_ADMIN_USER=sop_bootstrap");
+    expect(inNetArgs).toContain("POSTGRES_PASSWORD_FILE=/run/secrets/postgres-admin-restore");
+    expect(inNetArgs).toContain("N8N_ENCRYPTION_KEY_FILE=/run/secrets/n8n-encryption-key-restore");
+    expect(inNetArgs.some((arg: string) => arg.endsWith(":/run/secrets/n8n-encryption-key-restore:ro"))).toBe(true);
+    expect(inNetArgs.some((arg: string) => arg.endsWith(":/run/secrets/postgres-admin-restore:ro"))).toBe(true);
+
+    const drillOverride = buildDrillComposeOverrideYaml({
+      drillProxyPort: 3199,
+      n8nEncryptionKeyFile: ".local-secrets/recovered-n8n-key",
+    });
+    expect(drillOverride).toContain("127.0.0.1:3199:8080");
+    expect(drillOverride).toContain("n8n-encryption-key:");
+    expect(drillOverride).toContain("recovered-n8n-key");
 
     // Default smoke checks probe real unauthenticated fail-closed endpoints and NEVER fabricate functional passes.
     const defaultChecks = (await defaultSmokeChecks({
@@ -1007,18 +1066,32 @@ describe("S15 6-hour scheduler, monthly drill orchestrator, Compose hardening, a
 
     const composeText = readFileSync(resolve(process.cwd(), "infra/backup/compose.backup.yml"), "utf8");
     expect(auditBackupCompose(composeText).ok).toBe(true);
+    expect(composeText).toContain("BACKUP_PG_USER: sop_backup");
+    expect(composeText).toContain("BACKUP_PG_PASSWORD_FILE: /run/secrets/backup-db");
     expect(composeText).toContain("n8n-encryption-key-fingerprint");
     expect(composeText).toContain("backup-s3-access-key-id");
     expect(composeText).toContain("backup-s3-secret-access-key");
+    expect(composeText).not.toMatch(/(?:^|\W)postgres-admin(?:\W|$)/m);
+    expect(composeText).not.toMatch(/(?:^|\W)sop_bootstrap(?:\W|$)/m);
     expect(composeText).not.toMatch(/(?:^|\W)n8n-encryption-key(?!-fingerprint)(?:\W|$)/m);
     expect(composeText).not.toContain("backup-escrow-passphrase");
 
     const backupDockerfile = readFileSync(resolve(process.cwd(), "infra/backup/Dockerfile"), "utf8");
     expect(auditBackupDockerfile(backupDockerfile).ok).toBe(true);
 
-    // Negative check: mounting raw n8n-encryption-key fails hardening audit.
+    // Negative checks: mounting raw n8n-encryption-key, postgres-admin, or sop_bootstrap fails hardening audit.
     const insecureBackupCompose = `${composeText}\n      - n8n-encryption-key\n`;
     expect(auditBackupCompose(insecureBackupCompose).ok).toBe(false);
+
+    const superuserSecretCompose = composeText.replace("- backup-db", "- postgres-admin");
+    const superuserSecretAudit = auditBackupCompose(superuserSecretCompose);
+    expect(superuserSecretAudit.ok).toBe(false);
+    expect(superuserSecretAudit.violations.some((v: string) => v.includes("postgres-admin"))).toBe(true);
+
+    const superuserRoleCompose = composeText.replace("BACKUP_PG_USER: sop_backup", "BACKUP_PG_USER: sop_bootstrap");
+    const superuserRoleAudit = auditBackupCompose(superuserRoleCompose);
+    expect(superuserRoleAudit.ok).toBe(false);
+    expect(superuserRoleAudit.violations.some((v: string) => v.includes("sop_bootstrap"))).toBe(true);
   });
 
   it("generates backup secrets and derived n8n fingerprint idempotently via scripts/local-secrets.mjs --with-backup", () => {
@@ -1039,12 +1112,13 @@ describe("S15 6-hour scheduler, monthly drill orchestrator, Compose hardening, a
       expect(first.status).toBe(0);
 
       const files = readdirSync(secretsDirectory);
+      expect(files).toContain("backup-db");
       expect(files).toContain("backup-encryption-key");
       expect(files).toContain("backup-escrow-passphrase");
       expect(files).toContain("backup-s3-access-key-id");
       expect(files).toContain("backup-s3-secret-access-key");
       expect(files).toContain("n8n-encryption-key-fingerprint");
-      expect(files.length).toBe(17);
+      expect(files.length).toBe(18);
       expect(readFileSync(join(secretsDirectory, "auth-secret"), "utf8")).toBe(originalAuthSecret);
 
       const backupKey = readFileSync(join(secretsDirectory, "backup-encryption-key"), "utf8");

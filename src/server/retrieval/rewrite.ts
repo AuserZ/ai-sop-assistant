@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { ProviderResponseTooLargeError, readBoundedResponseText } from "../ai/bounded-response";
 import type { RetrievalConfiguration } from "./config";
 import {
   retrievalDefaults,
@@ -207,8 +208,11 @@ export async function rewriteRetrievalQuery(
 
   let rawBody: string;
   try {
-    rawBody = await response.text();
-  } catch {
+    rawBody = await readBoundedResponseText(response);
+  } catch (error) {
+    if (error instanceof ProviderResponseTooLargeError) {
+      throw new RetrievalError("RETRIEVAL_REWRITE_INVALID_OUTPUT", false, 502);
+    }
     throw new RetrievalError("RETRIEVAL_PROVIDER_TRANSIENT", true, 503);
   }
 

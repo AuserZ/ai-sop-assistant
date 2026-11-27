@@ -6,7 +6,8 @@ COPY --chown=node:node package.json package-lock.json ./
 RUN npm ci --no-audit --no-fund
 
 FROM dependencies AS build
-ENV NEXT_TELEMETRY_DISABLED=1
+ARG R2_ENDPOINT=""
+ENV NEXT_TELEMETRY_DISABLED=1 R2_ENDPOINT=${R2_ENDPOINT}
 COPY --chown=node:node . .
 RUN npm run build
 

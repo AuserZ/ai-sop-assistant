@@ -213,45 +213,64 @@ jobs:
           done
           install -d -m 700 "$HOME/.ssh"
           umask 077
-          trap 'rm -f "$HOME/.ssh/deploy_key" /tmp/smoke-session.cookie' EXIT
+          trap 'rm -f "$HOME/.ssh/deploy_key"' EXIT
           printf '%s\n' "$VPS_SSH_KEY" > "$HOME/.ssh/deploy_key"
           printf '%s\n' "$VPS_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
-          printf '%s' "$SMOKE_SESSION_COOKIE" > /tmp/smoke-session.cookie
-          ssh -i "$HOME/.ssh/deploy_key" -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -o StrictHostKeyChecking=yes \
-            "${VPS_USER}@${VPS_HOST}" bash -euo pipefail -s -- "$DEPLOY_PATH" <<'PREP_EOF'
-          DEPLOY_PATH="$1"
-          install -d -m 700 "${DEPLOY_PATH}/.deploy-state"
-          PREP_EOF
-          scp -i "$HOME/.ssh/deploy_key" -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -o StrictHostKeyChecking=yes \
-            /tmp/smoke-session.cookie "${VPS_USER}@${VPS_HOST}:${DEPLOY_PATH}/.deploy-state/smoke-session.cookie"
-          rm -f /tmp/smoke-session.cookie
           scp -i "$HOME/.ssh/deploy_key" -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -o StrictHostKeyChecking=yes \
             release-bundle.tar.gz "${VPS_USER}@${VPS_HOST}:${DEPLOY_PATH}/release-bundle.tar.gz"
-          ssh -i "$HOME/.ssh/deploy_key" -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -o StrictHostKeyChecking=yes \
-            "${VPS_USER}@${VPS_HOST}" bash -euo pipefail -s -- "$DEPLOY_PATH" "$APP_BASE_URL" "$REHEARSE_ROLLBACK" <<'REMOTE_EOF'
+          {
+            cat <<'REMOTE_HEAD_EOF'
           DEPLOY_PATH="$1"
           APP_BASE_URL="$2"
           REHEARSE_ROLLBACK="$3"
+          umask 077
+          install -d -m 700 "${DEPLOY_PATH}/.deploy-state"
+          COOKIE_FILE="$(mktemp "${DEPLOY_PATH}/.deploy-state/smoke-session.XXXXXX")"
+          cleanup() {
+            if [ -s "$COOKIE_FILE" ]; then
+              COOKIE_FILE="$COOKIE_FILE" APP_BASE_URL="$APP_BASE_URL" node -e '
+                const fs = require("node:fs");
+                const cookie = fs.readFileSync(process.env.COOKIE_FILE, "utf8").trim();
+                const origin = new URL(process.env.APP_BASE_URL).origin;
+                fetch(`${process.env.APP_BASE_URL.replace(/\/+$/, "")}/api/auth/sign-out`, {
+                  method: "POST",
+                  headers: { Origin: origin, Cookie: cookie, "Content-Type": "application/json" },
+                  body: "{}",
+                  redirect: "error",
+                  signal: AbortSignal.timeout(10000),
+                }).catch(() => {});
+              ' >/dev/null 2>&1 || true
+            fi
+            rm -f "$COOKIE_FILE" "${DEPLOY_PATH}/release-bundle.tar.gz"
+          }
+          trap cleanup EXIT
+          base64 -d > "$COOKIE_FILE" <<'COOKIE_EOF'
+          REMOTE_HEAD_EOF
+            printf '%s' "$SMOKE_SESSION_COOKIE" | base64 | tr -d '\r\n'
+            printf '\nCOOKIE_EOF\n'
+            cat <<'REMOTE_BODY_EOF'
           cd "$DEPLOY_PATH"
-          trap 'rm -f .deploy-state/smoke-session.cookie release-bundle.tar.gz' EXIT
           tar -xzf release-bundle.tar.gz -C "$DEPLOY_PATH"
           node infra/deploy/deploy.mjs \
             --environment staging \
             --manifest release-manifest.json \
             --base-url "$APP_BASE_URL" \
-            --session-cookie-file .deploy-state/smoke-session.cookie
+            --session-cookie-file "$COOKIE_FILE"
           if [ "$REHEARSE_ROLLBACK" = "true" ] && [ -f .deploy-state/previous-known-good.json ]; then
             node infra/deploy/rollback.mjs \
               --base-url "$APP_BASE_URL" \
-              --session-cookie-file .deploy-state/smoke-session.cookie
+              --session-cookie-file "$COOKIE_FILE"
             tar -xzf release-bundle.tar.gz -C "$DEPLOY_PATH"
             node infra/deploy/deploy.mjs \
               --environment staging \
               --manifest release-manifest.json \
               --base-url "$APP_BASE_URL" \
-              --session-cookie-file .deploy-state/smoke-session.cookie
+              --session-cookie-file "$COOKIE_FILE"
           fi
-          REMOTE_EOF
+          REMOTE_BODY_EOF
+          } | ssh -i "$HOME/.ssh/deploy_key" -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -o StrictHostKeyChecking=yes \
+            "${VPS_USER}@${VPS_HOST}" \
+            "bash -euo pipefail -s -- $(printf '%q' "$DEPLOY_PATH") $(printf '%q' "$APP_BASE_URL") $(printf '%q' "$REHEARSE_ROLLBACK")"
 
   deploy-production:
     needs:
@@ -310,27 +329,43 @@ jobs:
           done
           install -d -m 700 "$HOME/.ssh"
           umask 077
-          trap 'rm -f "$HOME/.ssh/deploy_key" /tmp/smoke-session.cookie' EXIT
+          trap 'rm -f "$HOME/.ssh/deploy_key"' EXIT
           printf '%s\n' "$VPS_SSH_KEY" > "$HOME/.ssh/deploy_key"
           printf '%s\n' "$VPS_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
-          printf '%s' "$SMOKE_SESSION_COOKIE" > /tmp/smoke-session.cookie
-          ssh -i "$HOME/.ssh/deploy_key" -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -o StrictHostKeyChecking=yes \
-            "${VPS_USER}@${VPS_HOST}" bash -euo pipefail -s -- "$DEPLOY_PATH" <<'PREP_EOF'
-          DEPLOY_PATH="$1"
-          install -d -m 700 "${DEPLOY_PATH}/.deploy-state"
-          PREP_EOF
-          scp -i "$HOME/.ssh/deploy_key" -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -o StrictHostKeyChecking=yes \
-            /tmp/smoke-session.cookie "${VPS_USER}@${VPS_HOST}:${DEPLOY_PATH}/.deploy-state/smoke-session.cookie"
-          rm -f /tmp/smoke-session.cookie
           scp -i "$HOME/.ssh/deploy_key" -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -o StrictHostKeyChecking=yes \
             release-bundle.tar.gz "${VPS_USER}@${VPS_HOST}:${DEPLOY_PATH}/release-bundle.tar.gz"
-          ssh -i "$HOME/.ssh/deploy_key" -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -o StrictHostKeyChecking=yes \
-            "${VPS_USER}@${VPS_HOST}" bash -euo pipefail -s -- "$DEPLOY_PATH" "$APP_BASE_URL" "$V01_CANDIDATE_SHA" <<'REMOTE_EOF'
+          {
+            cat <<'REMOTE_HEAD_EOF'
           DEPLOY_PATH="$1"
           APP_BASE_URL="$2"
           V01_CANDIDATE_SHA="$3"
+          umask 077
+          install -d -m 700 "${DEPLOY_PATH}/.deploy-state"
+          COOKIE_FILE="$(mktemp "${DEPLOY_PATH}/.deploy-state/smoke-session.XXXXXX")"
+          cleanup() {
+            if [ -s "$COOKIE_FILE" ]; then
+              COOKIE_FILE="$COOKIE_FILE" APP_BASE_URL="$APP_BASE_URL" node -e '
+                const fs = require("node:fs");
+                const cookie = fs.readFileSync(process.env.COOKIE_FILE, "utf8").trim();
+                const origin = new URL(process.env.APP_BASE_URL).origin;
+                fetch(`${process.env.APP_BASE_URL.replace(/\/+$/, "")}/api/auth/sign-out`, {
+                  method: "POST",
+                  headers: { Origin: origin, Cookie: cookie, "Content-Type": "application/json" },
+                  body: "{}",
+                  redirect: "error",
+                  signal: AbortSignal.timeout(10000),
+                }).catch(() => {});
+              ' >/dev/null 2>&1 || true
+            fi
+            rm -f "$COOKIE_FILE" "${DEPLOY_PATH}/release-bundle.tar.gz"
+          }
+          trap cleanup EXIT
+          base64 -d > "$COOKIE_FILE" <<'COOKIE_EOF'
+          REMOTE_HEAD_EOF
+            printf '%s' "$SMOKE_SESSION_COOKIE" | base64 | tr -d '\r\n'
+            printf '\nCOOKIE_EOF\n'
+            cat <<'REMOTE_BODY_EOF'
           cd "$DEPLOY_PATH"
-          trap 'rm -f .deploy-state/smoke-session.cookie release-bundle.tar.gz' EXIT
           tar -xzf release-bundle.tar.gz -C "$DEPLOY_PATH"
           rm -f release-bundle.tar.gz
           GITHUB_ENVIRONMENT=production node infra/deploy/deploy.mjs \
@@ -338,5 +373,8 @@ jobs:
             --v01-candidate-sha "$V01_CANDIDATE_SHA" \
             --manifest release-manifest.json \
             --base-url "$APP_BASE_URL" \
-            --session-cookie-file .deploy-state/smoke-session.cookie
-          REMOTE_EOF
+            --session-cookie-file "$COOKIE_FILE"
+          REMOTE_BODY_EOF
+          } | ssh -i "$HOME/.ssh/deploy_key" -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -o StrictHostKeyChecking=yes \
+            "${VPS_USER}@${VPS_HOST}" \
+            "bash -euo pipefail -s -- $(printf '%q' "$DEPLOY_PATH") $(printf '%q' "$APP_BASE_URL") $(printf '%q' "$V01_CANDIDATE_SHA")"

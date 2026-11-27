@@ -39,7 +39,7 @@ node scripts/local-secrets.mjs --with-backup
 docker compose -f docker-compose.yml -f infra/backup/compose.backup.yml --profile backup config --quiet
 ```
 
-`backup-scheduler` mounts only `backup-encryption-key`, `postgres-admin`, `n8n-encryption-key-fingerprint`, `backup-s3-access-key-id`, and `backup-s3-secret-access-key`. Raw `n8n-encryption-key` and `backup-escrow-passphrase` remain unmounted from the scheduled backup container.
+`backup-scheduler` connects with the least-privilege read-only `sop_backup` PostgreSQL role (`CONNECT` on `sop_app` and `sop_n8n` + `pg_read_all_data`, zero write/DDL/superuser privileges) and mounts only `backup-encryption-key`, `backup-db`, `n8n-encryption-key-fingerprint`, `backup-s3-access-key-id`, and `backup-s3-secret-access-key`. Superuser `postgres-admin` (`sop_bootstrap`), raw `n8n-encryption-key`, and `backup-escrow-passphrase` remain unmounted from the scheduled backup container and are mounted only for isolated restore/drill commands.
 
 ## 3. `N8N_ENCRYPTION_KEY` Escrow, Verification & Recovery
 
@@ -90,7 +90,10 @@ docker compose -p ai-sop-dr-drill-20261127 \
   -f docker-compose.yml -f infra/backup/compose.backup.yml \
   --profile backup run --rm --no-deps -T \
   -e RESTORE_TARGET_PROJECT=ai-sop-dr-drill-20261127 \
+  -e DB_ADMIN_USER=sop_bootstrap \
+  -e POSTGRES_PASSWORD_FILE=/run/secrets/postgres-admin-restore \
   -e N8N_ENCRYPTION_KEY_FILE=/run/secrets/n8n-encryption-key-restore \
+  -v "$PWD/.local-secrets/postgres-admin:/run/secrets/postgres-admin-restore:ro" \
   -v "$PWD/.local-secrets/n8n-encryption-key:/run/secrets/n8n-encryption-key-restore:ro" \
   backup-scheduler \
   node infra/backup/run-restore.mjs \

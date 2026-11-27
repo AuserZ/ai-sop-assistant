@@ -1,10 +1,11 @@
 import { createHash } from "node:crypto";
 import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 export const RELEASE_MANIFEST_SCHEMA_VERSION = 1;
 export const ARTIFACT_DIGEST_MISMATCH_CODE = "ARTIFACT_DIGEST_MISMATCH";
+export const PATH_TRAVERSAL_ERROR_CODE = "RELEASE_MANIFEST_PATH_TRAVERSAL";
 export const GIT_SHA_PATTERN = /^[a-f0-9]{40}$/;
 export const SHA256_HEX_PATTERN = /^[a-f0-9]{64}$/;
 export const DIGEST_IMAGE_REF_PATTERN = /^[a-z0-9._/-]+@sha256:[a-f0-9]{64}$/;
@@ -50,6 +51,51 @@ function isDirectExecution(moduleUrl) {
 
 export function computeSha256(value) {
   return createHash("sha256").update(value).digest("hex");
+}
+
+export function resolveConfinedRepoPath(repoRoot, relPath) {
+  if (typeof relPath !== "string" || relPath.length === 0) {
+    const error = new Error("Manifest artifact path must be a non-empty relative string.");
+    error.code = PATH_TRAVERSAL_ERROR_CODE;
+    throw error;
+  }
+  if (
+    relPath.includes("\0") ||
+    relPath.includes("\\") ||
+    relPath.startsWith("/") ||
+    /^[a-zA-Z]:/.test(relPath)
+  ) {
+    const error = new Error(`Manifest artifact path "${relPath}" must be a confined POSIX relative path.`);
+    error.code = PATH_TRAVERSAL_ERROR_CODE;
+    throw error;
+  }
+
+  const segments = relPath.split("/");
+  if (segments.some((segment) => segment === "" || segment === "." || segment === "..")) {
+    const error = new Error(
+      `Manifest artifact path "${relPath}" contains disallowed traversal or empty path segments.`,
+    );
+    error.code = PATH_TRAVERSAL_ERROR_CODE;
+    throw error;
+  }
+
+  const resolvedRoot = resolve(repoRoot);
+  const resolvedTarget = resolve(resolvedRoot, ...segments);
+  const relFromRoot = relative(resolvedRoot, resolvedTarget);
+  if (
+    relFromRoot === "" ||
+    relFromRoot === ".." ||
+    relFromRoot.startsWith(`..${sep}`) ||
+    relFromRoot.startsWith("../") ||
+    relFromRoot.startsWith("..\\") ||
+    isAbsolute(relFromRoot)
+  ) {
+    const error = new Error(`Manifest artifact path "${relPath}" escapes repository root.`);
+    error.code = PATH_TRAVERSAL_ERROR_CODE;
+    throw error;
+  }
+
+  return resolvedTarget;
 }
 
 function scanForForbiddenFields(node, pathPrefix, errors) {
@@ -98,7 +144,7 @@ export function collectRepoArtifacts(rootDir = process.cwd()) {
   };
 
   const workflows = MANAGED_WORKFLOW_SPECS.map((spec) => {
-    const absolutePath = join(rootDir, ...spec.path.split("/"));
+    const absolutePath = resolveConfinedRepoPath(rootDir, spec.path);
     const rawBytes = readFileSync(absolutePath);
     const parsed = JSON.parse(rawBytes.toString("utf8"));
     if (parsed?.id !== spec.id) {
@@ -113,7 +159,7 @@ export function collectRepoArtifacts(rootDir = process.cwd()) {
 
   const configDigests = {};
   for (const relPath of TRACKED_CONFIG_FILES) {
-    const absolutePath = join(rootDir, ...relPath.split("/"));
+    const absolutePath = resolveConfinedRepoPath(rootDir, relPath);
     configDigests[relPath] = computeSha256(readFileSync(absolutePath));
   }
 
@@ -196,9 +242,17 @@ export function validateReleaseManifest(manifest) {
   if (!Array.isArray(workflows)) {
     errors.push("workflows must be an array of managed workflow artifacts.");
   } else {
-    const byId = new Map();
+    const expectedWorkflowById = new Map(MANAGED_WORKFLOW_SPECS.map((spec) => [spec.id, spec.path]));
+    if (workflows.length !== MANAGED_WORKFLOW_SPECS.length) {
+      errors.push(
+        `workflows must contain exactly ${MANAGED_WORKFLOW_SPECS.length} managed workflow entries.`,
+      );
+    }
+
+    const seenIds = new Set();
+    const seenPaths = new Set();
     for (const item of workflows) {
-      if (!item || typeof item !== "object") {
+      if (!item || typeof item !== "object" || Array.isArray(item)) {
         errors.push("Every workflow entry must be an object.");
         continue;
       }
@@ -206,14 +260,40 @@ export function validateReleaseManifest(manifest) {
         errors.push("Every workflow entry must specify string id and path.");
         continue;
       }
+      try {
+        resolveConfinedRepoPath(process.cwd(), item.path);
+      } catch (error) {
+        errors.push(error instanceof Error ? error.message : `Invalid workflow path "${item.path}".`);
+      }
+
+      const expectedPath = expectedWorkflowById.get(item.id);
+      if (!expectedPath) {
+        errors.push(`Unexpected workflow entry "${item.id}" (${item.path}) is not in MANAGED_WORKFLOW_SPECS.`);
+      } else if (item.path !== expectedPath) {
+        errors.push(
+          `Workflow "${item.id}" path "${item.path}" does not match allowlisted "${expectedPath}".`,
+        );
+      }
+
+      if (seenIds.has(item.id)) {
+        errors.push(`Duplicate workflow id "${item.id}" in workflows.`);
+      } else {
+        seenIds.add(item.id);
+      }
+
+      if (seenPaths.has(item.path)) {
+        errors.push(`Duplicate workflow path "${item.path}" in workflows.`);
+      } else {
+        seenPaths.add(item.path);
+      }
+
       if (typeof item.sha256 !== "string" || !SHA256_HEX_PATTERN.test(item.sha256)) {
         errors.push(`Workflow "${item.id}" must have a 64-hex sha256 digest.`);
       }
-      byId.set(item.id, item);
     }
+
     for (const spec of MANAGED_WORKFLOW_SPECS) {
-      const found = byId.get(spec.id);
-      if (!found || found.path !== spec.path) {
+      if (!seenIds.has(spec.id)) {
         errors.push(`Missing required managed workflow "${spec.id}" (${spec.path}).`);
       }
     }
@@ -223,8 +303,21 @@ export function validateReleaseManifest(manifest) {
   if (!configDigests || typeof configDigests !== "object" || Array.isArray(configDigests)) {
     errors.push("configDigests must be an object mapping tracked config files to SHA-256 digests.");
   } else {
+    const allowedConfigFiles = new Set(TRACKED_CONFIG_FILES);
+    for (const relPath of Object.keys(configDigests)) {
+      try {
+        resolveConfinedRepoPath(process.cwd(), relPath);
+      } catch (error) {
+        errors.push(error instanceof Error ? error.message : `Invalid configDigests key "${relPath}".`);
+      }
+      if (!allowedConfigFiles.has(relPath)) {
+        errors.push(`Unexpected configDigests key "${relPath}" is not in TRACKED_CONFIG_FILES.`);
+      }
+    }
     for (const relPath of TRACKED_CONFIG_FILES) {
-      const digest = configDigests[relPath];
+      const digest = Object.prototype.hasOwnProperty.call(configDigests, relPath)
+        ? configDigests[relPath]
+        : undefined;
       if (typeof digest !== "string" || !SHA256_HEX_PATTERN.test(digest)) {
         errors.push(`configDigests["${relPath}"] must be a 64-hex sha256 digest.`);
       }
@@ -480,7 +573,7 @@ export function verifyRepoArtifactsMatchManifest(manifest, rootDir = process.cwd
   const mismatches = [];
 
   for (const wf of manifest.workflows) {
-    const filePath = join(rootDir, ...wf.path.split("/"));
+    const filePath = resolveConfinedRepoPath(rootDir, wf.path);
     if (!existsSync(filePath)) {
       mismatches.push(`Missing workflow file "${wf.path}" required by manifest.`);
       continue;
@@ -503,7 +596,7 @@ export function verifyRepoArtifactsMatchManifest(manifest, rootDir = process.cwd
   }
 
   for (const [relPath, expectedSha] of Object.entries(manifest.configDigests)) {
-    const filePath = join(rootDir, ...relPath.split("/"));
+    const filePath = resolveConfinedRepoPath(rootDir, relPath);
     if (!existsSync(filePath)) {
       mismatches.push(`Missing config file "${relPath}" required by manifest.`);
       continue;
@@ -540,8 +633,8 @@ export function snapshotReleaseArtifacts(manifest, rootDir, snapshotDir) {
   ];
 
   for (const relPath of relativeFiles) {
-    const sourcePath = join(rootDir, ...relPath.split("/"));
-    const targetPath = join(snapshotDir, ...relPath.split("/"));
+    const sourcePath = resolveConfinedRepoPath(rootDir, relPath);
+    const targetPath = resolveConfinedRepoPath(snapshotDir, relPath);
     mkdirSync(dirname(targetPath), { recursive: true });
     copyFileSync(sourcePath, targetPath);
   }
@@ -564,8 +657,8 @@ export function restoreReleaseArtifacts(manifest, snapshotDir, rootDir) {
   ];
 
   for (const relPath of relativeFiles) {
-    const sourcePath = join(snapshotDir, ...relPath.split("/"));
-    const targetPath = join(rootDir, ...relPath.split("/"));
+    const sourcePath = resolveConfinedRepoPath(snapshotDir, relPath);
+    const targetPath = resolveConfinedRepoPath(rootDir, relPath);
     mkdirSync(dirname(targetPath), { recursive: true });
     copyFileSync(sourcePath, targetPath);
   }

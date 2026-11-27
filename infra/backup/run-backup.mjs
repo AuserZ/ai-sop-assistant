@@ -413,13 +413,13 @@ export async function runBackupJob(options = {}) {
 
     dbHost = (options.dbHost ?? env.DB_HOST ?? "postgres").trim();
     dbPort = Number.parseInt(String(options.dbPort ?? env.DB_PORT ?? "5432"), 10);
-    dbUser = (options.dbUser ?? env.DB_ADMIN_USER ?? "sop_bootstrap").trim();
-    const dbPasswordFile = (env.POSTGRES_PASSWORD_FILE ?? "").trim();
+    dbUser = (options.dbUser ?? env.BACKUP_PG_USER ?? "sop_backup").trim();
+    const dbPasswordFile = (env.BACKUP_PG_PASSWORD_FILE ?? "/run/secrets/backup-db").trim();
     dbPassword = options.dbPassword ?? (dbPasswordFile ? readSecret(dbPasswordFile) : "");
     if (dbPassword) sensitiveValues.push(dbPassword);
 
     if (!dbHost || !Number.isInteger(dbPort) || dbPort < 1 || dbPort > 65535 || !dbUser || !dbPassword) {
-      throw new Error("Database connection settings and POSTGRES_PASSWORD_FILE are required.");
+      throw new Error("Database connection settings and BACKUP_PG_PASSWORD_FILE are required.");
     }
 
     if (webhookUrl) {

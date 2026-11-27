@@ -328,37 +328,41 @@ describe("S11 safe chat SSE, staged n8n callbacks, and persistence (PostgreSQL +
   });
 
   afterAll(async () => {
-    if (seededConversationIds.length > 0) {
-      await database
-        .delete(schema.chatConversations)
-        .where(inArray(schema.chatConversations.id, seededConversationIds));
+    try {
+      if (seededConversationIds.length > 0) {
+        await database
+          .delete(schema.workflowJobs)
+          .where(inArray(schema.workflowJobs.conversationId, seededConversationIds))
+          .catch(() => undefined);
+        await database
+          .delete(schema.chatConversations)
+          .where(inArray(schema.chatConversations.id, seededConversationIds))
+          .catch(() => undefined);
+      }
+      for (const docId of seededDocumentIds) {
+        await deleteDocument(adminAccount, docId, database).catch(() => undefined);
+        await database
+          .delete(schema.sopChunks)
+          .where(eq(schema.sopChunks.documentId, docId))
+          .catch(() => undefined);
+        await database
+          .delete(schema.sopExtractionPages)
+          .where(eq(schema.sopExtractionPages.documentId, docId))
+          .catch(() => undefined);
+        await database
+          .delete(schema.sopVerificationIssues)
+          .where(eq(schema.sopVerificationIssues.documentId, docId))
+          .catch(() => undefined);
+      }
+      if (seededUserIds.length > 0) {
+        await database
+          .delete(schema.authSessions)
+          .where(inArray(schema.authSessions.userId, seededUserIds))
+          .catch(() => undefined);
+      }
+    } finally {
+      await connection.end();
     }
-    for (const docId of seededDocumentIds) {
-      await database.delete(schema.sopChunks).where(eq(schema.sopChunks.documentId, docId));
-      await database
-        .delete(schema.sopExtractionPages)
-        .where(eq(schema.sopExtractionPages.documentId, docId));
-      await database
-        .delete(schema.sopVerificationIssues)
-        .where(eq(schema.sopVerificationIssues.documentId, docId));
-      await database
-        .delete(schema.sopVerificationRecords)
-        .where(eq(schema.sopVerificationRecords.documentId, docId));
-      await database.delete(schema.workflowJobs).where(eq(schema.workflowJobs.documentId, docId));
-      await database.delete(schema.sopDocuments).where(eq(schema.sopDocuments.id, docId));
-      await database
-        .delete(schema.documentUploadIntents)
-        .where(eq(schema.documentUploadIntents.id, docId));
-    }
-    if (seededUserIds.length > 0) {
-      await database
-        .delete(schema.authSessions)
-        .where(inArray(schema.authSessions.userId, seededUserIds));
-      await database
-        .delete(schema.authUsers)
-        .where(inArray(schema.authUsers.id, seededUserIds));
-    }
-    await connection.end();
   });
 
   it("streams allowlisted progress ONLY before deterministic+judge PASS, then emits verified answer and deletes draft artifacts", async () => {

@@ -73,7 +73,7 @@ services:
       - postgres-data:/var/lib/postgresql
       - ./infra/postgres/init-databases.sh:/docker-entrypoint-initdb.d/10-sop.sh:ro
       - ./infra/postgres/bootstrap.sql:/opt/sop/bootstrap.sql:ro
-    secrets: [postgres-admin, app-runtime, app-migrator, n8n-db]
+    secrets: [postgres-admin, app-runtime, app-migrator, n8n-db, backup-db]
     networks: [database]
     logging: *bounded-logging
     mem_limit: 1g
@@ -90,11 +90,22 @@ services:
       context: .
       target: tooling
     command: ["npm", "run", "db:migrate"]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
     environment:
       DB_HOST: postgres
       MIGRATION_DB_PASSWORD_FILE: /run/secrets/app-migrator
+      HOME: /tmp
+      npm_config_cache: /tmp/.npm
     secrets: [app-migrator]
     networks: [database]
+    logging: *bounded-logging
+    mem_limit: 512m
+    cpus: 1.0
+    pids_limit: 128
     depends_on:
       postgres:
         condition: service_healthy
@@ -248,11 +259,12 @@ services:
     environment:
       <<: *app-db
       WORKFLOW_DB_PASSWORD_FILE: /run/secrets/n8n-db
+      BACKUP_DB_PASSWORD_FILE: /run/secrets/backup-db
       AUTH_BASE_URL: http://127.0.0.1:3000
       AUTH_SECRET_FILE: /run/secrets/auth-secret
       WORKFLOW_DISPATCH_PRIVATE_KEY_FILE: /run/secrets/workflow-dispatch-private
       WORKFLOW_CALLBACK_PUBLIC_KEY_FILE: /run/secrets/workflow-callback-public
-    secrets: [app-runtime, n8n-db, auth-secret, workflow-dispatch-private, workflow-callback-public]
+    secrets: [app-runtime, n8n-db, backup-db, auth-secret, workflow-dispatch-private, workflow-callback-public]
     networks: [database]
     depends_on:
       migrate:
@@ -342,6 +354,8 @@ secrets:
     file: ./.local-secrets/app-migrator
   n8n-db:
     file: ./.local-secrets/n8n-db
+  backup-db:
+    file: ./.local-secrets/backup-db
   auth-secret:
     file: ./.local-secrets/auth-secret
   n8n-encryption-key:

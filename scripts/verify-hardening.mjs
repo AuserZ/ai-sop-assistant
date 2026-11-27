@@ -11,10 +11,11 @@ const EXCLUDED_N8N_NODE_TYPES = new Set([
 ]);
 
 const REQUIRED_INTERNAL_NETWORKS = ["database", "workflow", "ocr", "conversion"];
-const SERVICES_REQUIRING_BOUNDED_LOGGING = ["postgres", "app", "proxy", "redis", "n8n-main", "n8n-worker"];
+const SERVICES_REQUIRING_BOUNDED_LOGGING = ["postgres", "migrate", "app", "proxy", "redis", "n8n-main", "n8n-worker"];
 const SERVICES_REQUIRING_NO_LOGGING = ["paddleocr", "convert-worker"];
 const SERVICES_REQUIRING_RESOURCE_LIMITS = [
   "postgres",
+  "migrate",
   "app",
   "proxy",
   "redis",
@@ -23,7 +24,16 @@ const SERVICES_REQUIRING_RESOURCE_LIMITS = [
   "paddleocr",
   "convert-worker",
 ];
-const SERVICES_REQUIRING_READ_ONLY = ["app", "proxy", "redis", "n8n-main", "n8n-worker", "paddleocr", "convert-worker"];
+const SERVICES_REQUIRING_READ_ONLY = [
+  "migrate",
+  "app",
+  "proxy",
+  "redis",
+  "n8n-main",
+  "n8n-worker",
+  "paddleocr",
+  "convert-worker",
+];
 
 function isDirectExecution(moduleUrl) {
   if (!process.argv[1]) return false;
@@ -234,6 +244,16 @@ export function auditCompose(content) {
     }
   }
 
+  const migrateBlock = services.get("migrate") ?? "";
+  if (migrateBlock) {
+    if (!/tmpfs:[\s\S]*?\/tmp/.test(migrateBlock)) {
+      violations.push('docker-compose.yml: service "migrate" must mount a /tmp tmpfs');
+    }
+    if (!/^\s+HOME:\s*"?\/tmp"?\s*$/m.test(migrateBlock)) {
+      violations.push('docker-compose.yml: service "migrate" must set HOME: /tmp');
+    }
+  }
+
   return { ok: violations.length === 0, violations };
 }
 
@@ -388,6 +408,23 @@ export function auditBackupCompose(content) {
   }
   if (/backup-escrow-passphrase/.test(content)) {
     violations.push("infra/backup/compose.backup.yml: backup-scheduler must not mount backup-escrow-passphrase");
+  }
+  if (/(?:^|\W)postgres-admin(?:\W|$)/m.test(content)) {
+    violations.push("infra/backup/compose.backup.yml: backup-scheduler must not mount postgres-admin superuser secret");
+  }
+  if (/(?:^|\W)sop_bootstrap(?:\W|$)/m.test(content)) {
+    violations.push("infra/backup/compose.backup.yml: backup-scheduler must not use superuser sop_bootstrap role");
+  }
+  if (!/^\s+BACKUP_PG_USER:\s*"?sop_backup"?\s*$/m.test(block)) {
+    violations.push("infra/backup/compose.backup.yml: backup-scheduler must set BACKUP_PG_USER: sop_backup");
+  }
+  if (!/^\s+BACKUP_PG_PASSWORD_FILE:\s*"?\/run\/secrets\/backup-db"?\s*$/m.test(block)) {
+    violations.push(
+      "infra/backup/compose.backup.yml: backup-scheduler must set BACKUP_PG_PASSWORD_FILE: /run/secrets/backup-db",
+    );
+  }
+  if (!/^\s+-\s*backup-db\s*$/m.test(block)) {
+    violations.push("infra/backup/compose.backup.yml: backup-scheduler must mount least-privilege backup-db secret");
   }
 
   return { ok: violations.length === 0, violations };

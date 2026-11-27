@@ -154,3 +154,86 @@ jobs:
       - name: Stop disposable services
         if: always()
         run: docker compose --profile verify --profile conversion down --volumes --remove-orphans
+
+  backup-drill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: 24
+      - run: node .codex/scripts/check-prd-integrity.mjs
+      - name: Generate local synthetic and backup secrets
+        run: |
+          node scripts/local-secrets.mjs --with-backup
+      - name: Build backup-scheduler and migrate images and verify PG18/Node24 ABI
+        run: |
+          docker compose -f docker-compose.yml -f infra/backup/compose.backup.yml --profile backup build backup-scheduler
+          docker compose build migrate
+          docker compose -f docker-compose.yml -f infra/backup/compose.backup.yml --profile backup run --rm --no-deps --entrypoint sh backup-scheduler -c 'node --version && pg_dump --version && psql --version'
+      - name: Run live encrypted backup (sop_backup), key escrow recovery, and isolated PG18 restore drill
+        run: |
+          set -euo pipefail
+          DRILL_DIR="$(mktemp -d "${RUNNER_TEMP:-/tmp}/ai-sop-ci-dr-XXXXXX")"
+          echo "DRILL_DIR=$DRILL_DIR" >> "$GITHUB_ENV"
+          chmod 755 "$DRILL_DIR"
+          mkdir -p "$DRILL_DIR/backup-out"
+          sudo chown -R 1000:1000 "$DRILL_DIR/backup-out"
+
+          docker compose -p ai-sop-dr-source up --wait --wait-timeout 180 postgres
+          docker compose -p ai-sop-dr-source run --rm --no-deps migrate
+          docker compose -p ai-sop-dr-source up --wait --wait-timeout 180 n8n-main
+          docker compose -p ai-sop-dr-source run --rm --no-deps n8n-bootstrap
+
+          docker compose -p ai-sop-dr-source -f docker-compose.yml -f infra/backup/compose.backup.yml --profile backup \
+            run --rm --no-deps \
+            -v "$DRILL_DIR/backup-out:/tmp/backup-out" \
+            backup-scheduler \
+            node infra/backup/run-backup.mjs \
+            --backup-id ci-dr-drill-001 \
+            --local-dir /tmp/backup-out
+
+          EXPECTED_FP="$(tr -d '\r\n' < .local-secrets/n8n-encryption-key-fingerprint)"
+          node infra/backup/escrow-keys.mjs --create \
+            --n8n-key-file .local-secrets/n8n-encryption-key \
+            --passphrase-file .local-secrets/backup-escrow-passphrase \
+            --backup-key-file .local-secrets/backup-encryption-key \
+            --output "$DRILL_DIR/escrow.bundle.json"
+          node infra/backup/escrow-keys.mjs --verify \
+            --input "$DRILL_DIR/escrow.bundle.json" \
+            --passphrase-file .local-secrets/backup-escrow-passphrase \
+            --expected-fingerprint "$EXPECTED_FP"
+          node infra/backup/escrow-keys.mjs --recover \
+            --input "$DRILL_DIR/escrow.bundle.json" \
+            --passphrase-file .local-secrets/backup-escrow-passphrase \
+            --expected-fingerprint "$EXPECTED_FP" \
+            --output-key-file "$DRILL_DIR/recovered-n8n-key"
+          cmp -s .local-secrets/n8n-encryption-key "$DRILL_DIR/recovered-n8n-key"
+          sudo chown 1000:1000 "$DRILL_DIR/recovered-n8n-key"
+
+          docker compose -p ai-sop-dr-drill-ci up --wait --wait-timeout 180 postgres
+          docker compose -p ai-sop-dr-drill-ci -f docker-compose.yml -f infra/backup/compose.backup.yml --profile backup \
+            run --rm --no-deps \
+            -e POSTGRES_PASSWORD_FILE=/tmp/drill-postgres-admin \
+            -e N8N_ENCRYPTION_KEY_FILE=/tmp/recovered-n8n-key \
+            -v "$PWD/.local-secrets/postgres-admin:/tmp/drill-postgres-admin:ro" \
+            -v "$DRILL_DIR/recovered-n8n-key:/tmp/recovered-n8n-key:ro" \
+            -v "$DRILL_DIR/backup-out:/tmp/backup-in:ro" \
+            backup-scheduler \
+            node infra/backup/run-restore.mjs \
+            --isolated-target \
+            --target-project ai-sop-dr-drill-ci \
+            --target-host postgres \
+            --backup-id ci-dr-drill-001 \
+            --local-dir /tmp/backup-in/ci-dr-drill-001
+
+          docker compose -p ai-sop-dr-drill-ci up --wait --wait-timeout 180 n8n-main
+      - name: Tear down isolated DR drill stacks
+        if: always()
+        run: |
+          docker compose -p ai-sop-dr-source -f docker-compose.yml -f infra/backup/compose.backup.yml --profile backup down --volumes --remove-orphans || true
+          docker compose -p ai-sop-dr-drill-ci -f docker-compose.yml -f infra/backup/compose.backup.yml --profile backup down --volumes --remove-orphans || true
+          if [ -n "${DRILL_DIR:-}" ] && [ -d "$DRILL_DIR" ]; then sudo rm -rf "$DRILL_DIR"; fi

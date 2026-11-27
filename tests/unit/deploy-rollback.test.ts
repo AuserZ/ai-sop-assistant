@@ -17,7 +17,11 @@ import {
   collectRepoArtifacts,
   createReleaseManifest,
   detectRequiredReverification,
+  PATH_TRAVERSAL_ERROR_CODE,
   RELEASE_MANIFEST_SCHEMA_VERSION,
+  resolveConfinedRepoPath,
+  restoreReleaseArtifacts,
+  snapshotReleaseArtifacts,
   validateReleaseManifest,
   verifyRepoArtifactsMatchManifest,
 } from "../../infra/deploy/release-manifest.mjs";
@@ -125,6 +129,80 @@ describe("S16 immutable release manifest and rollback compatibility (ADR 09/14)"
     const secretValidation = validateReleaseManifest(secretFieldManifest);
     expect(secretValidation.ok).toBe(false);
     expect(secretValidation.errors.some((e: string) => e.includes("Forbidden secret-like field"))).toBe(true);
+  });
+
+  it("enforces exact allowlist equality and repo path confinement on workflows and configDigests (SEC-S16-01)", () => {
+    const base = createSampleManifest();
+    const validSha = "a".repeat(64);
+
+    // Extra traversal key in configDigests must fail validation.
+    const traversalConfigManifest = structuredClone(base);
+    traversalConfigManifest.configDigests["../../outside.conf"] = validSha;
+    const traversalConfigResult = validateReleaseManifest(traversalConfigManifest);
+    expect(traversalConfigResult.ok).toBe(false);
+    expect(traversalConfigResult.errors.some((e: string) => e.includes("TRACKED_CONFIG_FILES"))).toBe(true);
+
+    // Extra non-traversal key in configDigests must also fail exact allowlist check.
+    const extraConfigManifest = structuredClone(base);
+    extraConfigManifest.configDigests["extra.yml"] = validSha;
+    const extraConfigResult = validateReleaseManifest(extraConfigManifest);
+    expect(extraConfigResult.ok).toBe(false);
+    expect(extraConfigResult.errors.some((e: string) => e.includes("Unexpected configDigests key"))).toBe(true);
+
+    // Extra traversal workflow entry must fail validation.
+    const traversalWorkflowManifest = structuredClone(base);
+    traversalWorkflowManifest.workflows.push({
+      id: "evil-workflow",
+      path: "../../evil.json",
+      sha256: validSha,
+    });
+    const traversalWorkflowResult = validateReleaseManifest(traversalWorkflowManifest);
+    expect(traversalWorkflowResult.ok).toBe(false);
+    expect(traversalWorkflowResult.errors.some((e: string) => e.includes("MANAGED_WORKFLOW_SPECS"))).toBe(true);
+
+    // Duplicate workflow entry must fail validation.
+    const dupWorkflowManifest = structuredClone(base);
+    dupWorkflowManifest.workflows.push({ ...dupWorkflowManifest.workflows[0] });
+    expect(validateReleaseManifest(dupWorkflowManifest).ok).toBe(false);
+
+    // resolveConfinedRepoPath rejects traversal, absolute, Windows drive/UNC, backslash, and null-byte paths.
+    const repoRoot = resolve(process.cwd());
+    expect(resolveConfinedRepoPath(repoRoot, "docker-compose.yml")).toBe(join(repoRoot, "docker-compose.yml"));
+    for (const badPath of [
+      "../../outside.conf",
+      "n8n/../../evil.json",
+      "/etc/passwd",
+      "C:/Windows/win.ini",
+      "\\\\server\\share\\file.json",
+      "n8n\\s03-probe.v1.json",
+      "n8n/s03-probe.v1.json\0.txt",
+      "n8n//s03-probe.v1.json",
+      "./docker-compose.yml",
+      "",
+    ]) {
+      expect(() => resolveConfinedRepoPath(repoRoot, badPath)).toThrow(
+        expect.objectContaining({ code: PATH_TRAVERSAL_ERROR_CODE }),
+      );
+    }
+
+    // snapshotReleaseArtifacts and restoreReleaseArtifacts reject traversal manifests before touching disk.
+    const tempBase = mkdtempSync(join(realpathSync(tmpdir()), "ai-sop-s16-traversal-"));
+    const snapshotDir = join(tempBase, "snapshot");
+    const targetDir = join(tempBase, "target");
+    try {
+      expect(() => snapshotReleaseArtifacts(traversalConfigManifest, process.cwd(), snapshotDir)).toThrow(
+        expect.objectContaining({ code: "RELEASE_MANIFEST_INVALID" }),
+      );
+      expect(() => snapshotReleaseArtifacts(traversalWorkflowManifest, process.cwd(), snapshotDir)).toThrow(
+        expect.objectContaining({ code: "RELEASE_MANIFEST_INVALID" }),
+      );
+      expect(() => restoreReleaseArtifacts(traversalConfigManifest, snapshotDir, targetDir)).toThrow(
+        expect.objectContaining({ code: "RELEASE_MANIFEST_INVALID" }),
+      );
+      expect(existsSync(join(tempBase, "outside.conf"))).toBe(false);
+    } finally {
+      rmSync(tempBase, { recursive: true, force: true });
+    }
   });
 
   it("distinguishes safe image rollback from schema/data recovery when migrations change", () => {
@@ -1073,6 +1151,11 @@ services:
       "utf8",
     );
     expect(auditDeployWorkflow(validDeployWorkflow).ok).toBe(true);
+    expect(validDeployWorkflow).toContain("printf '%q'");
+    expect(validDeployWorkflow).toContain("umask 077");
+    expect(validDeployWorkflow).toContain("mktemp");
+    expect(validDeployWorkflow).toContain("/api/auth/sign-out");
+    expect(validDeployWorkflow).not.toContain("/tmp/smoke-session.cookie");
 
     const insecureWorkflow = `
 name: Bad deploy

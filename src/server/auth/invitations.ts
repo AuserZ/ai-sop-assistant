@@ -30,6 +30,10 @@ export async function issueInvitation(actor: CurrentAccount, input: unknown, dep
   const token = randomBytes(32).toString("base64url");
   const invitation = await database.transaction(async (transaction) => {
     await lockCurrentAdmin(actor, transaction);
+    // Serialize concurrent invitations for the same email even when no pending row exists yet.
+    await transaction.execute(
+      sql`select pg_advisory_xact_lock(hashtextextended(${parsed.data.email}, 7480201))`,
+    );
     const [existing] = await transaction.select({ id: authUsers.id }).from(authUsers).where(eq(authUsers.email, parsed.data.email));
     if (existing) throw new AuthFailure("ACCOUNT_EXISTS", 409);
     const [pending] = await transaction

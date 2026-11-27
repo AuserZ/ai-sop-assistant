@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
+import { maxProviderResponseBytes } from "../../src/server/ai/bounded-response";
 import {
   answerConfiguration,
   AnswerStageError,
@@ -293,6 +294,79 @@ describe("S10/C2/C3/C5 OpenAI XML fencing and HTTP transient vs malformed output
         fetchImpl: vi.fn<typeof fetch>(async () => new Response("bad request", { status: 400 })),
       }),
     ).rejects.toMatchObject({ code: "JUDGE_PROVIDER_REJECTED", retryable: false, status: 502 });
+  });
+
+  it("caps oversized generator and judge provider responses (> 256 KiB) before JSON.parse and surfaces service_error", async () => {
+    const config = answerConfiguration(loopbackOpenAiEnv);
+    const passage = makePassage();
+    const claim = { text: "Seal chamber door until lock pin clicks.", stepNumber: 1, chunkIds: [passage.chunkId] };
+
+    let generatorCancelled = false;
+    const oversizedGeneratorStream = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        controller.enqueue(new Uint8Array(64 * 1024).fill(97));
+      },
+      cancel() {
+        generatorCancelled = true;
+      },
+    });
+    const parseSpy = vi.spyOn(JSON, "parse");
+    try {
+      await expect(
+        generateAnswerCandidate({ question: "SOP-101?", passages: [passage] }, config, {
+          fetchImpl: vi.fn<typeof fetch>(async () => new Response(oversizedGeneratorStream, { status: 200 })),
+        }),
+      ).rejects.toMatchObject({ code: "ANSWER_GENERATOR_INVALID_OUTPUT", retryable: false, status: 502 });
+      expect(generatorCancelled).toBe(true);
+      expect(parseSpy).not.toHaveBeenCalled();
+
+      let judgeCancelled = false;
+      const oversizedJudgeStream = new ReadableStream<Uint8Array>({
+        pull(controller) {
+          controller.enqueue(new Uint8Array(64 * 1024).fill(98));
+        },
+        cancel() {
+          judgeCancelled = true;
+        },
+      });
+      await expect(
+        judgeAnswerCandidate({ question: "SOP-101?", claims: [claim], citedPassages: [passage] }, config, {
+          fetchImpl: vi.fn<typeof fetch>(async () => new Response(oversizedJudgeStream, { status: 200 })),
+        }),
+      ).rejects.toMatchObject({ code: "JUDGE_INVALID_OUTPUT", retryable: false, status: 502 });
+      expect(judgeCancelled).toBe(true);
+      expect(parseSpy).not.toHaveBeenCalled();
+    } finally {
+      parseSpy.mockRestore();
+    }
+
+    // Declared Content-Length > 256 KiB also fails closed as safe service_error, never No SOP found.
+    const outcome = await generateValidatedSopAnswer(
+      { question: "What are the SOP-101 cycle steps?" },
+      {
+        env: loopbackOpenAiEnv,
+        retrieveEvidenceImpl: async () => ({
+          kind: "evidence",
+          originalQuestion: "What are the SOP-101 cycle steps?",
+          standaloneQuery: "What are the SOP-101 cycle steps?",
+          passages: [passage],
+          metadata: makeRetrievalMeta(),
+        }),
+        fetchImpl: vi.fn<typeof fetch>(
+          async () =>
+            new Response(new Uint8Array(0), {
+              status: 200,
+              headers: { "content-length": String(maxProviderResponseBytes + 1) },
+            }),
+        ),
+      },
+    );
+    expect(outcome.kind).toBe("service_error");
+    if (outcome.kind === "service_error") {
+      expect(outcome.code).toBe("ANSWER_GENERATOR_INVALID_OUTPUT");
+      expect(outcome.retryable).toBe(false);
+      expect(outcome.message).not.toContain(noEvidenceFallbackMessage);
+    }
   });
 });
 

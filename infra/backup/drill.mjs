@@ -1,6 +1,8 @@
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { resolve } from "node:path";
+import { mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import { performance } from "node:perf_hooks";
 import { fileURLToPath } from "node:url";
 import { PROVISIONAL_POLICY_NOTICE } from "./crypto.mjs";
@@ -148,13 +150,46 @@ export async function defaultSmokeChecks(options = {}) {
   };
 }
 
+export function buildDrillComposeOverrideYaml(options = {}) {
+  const drillProxyPort = resolveDrillProxyPort(options.drillProxyPort);
+  const lines = [
+    "services:",
+    "  proxy:",
+    "    ports: !override",
+    `      - "127.0.0.1:${drillProxyPort}:8080"`,
+  ];
+  if (options.n8nEncryptionKeyFile) {
+    const resolvedKeyPath = resolve(String(options.n8nEncryptionKeyFile));
+    lines.push(
+      "secrets:",
+      "  n8n-encryption-key:",
+      `    file: ${JSON.stringify(resolvedKeyPath)}`,
+    );
+  }
+  return `${lines.join("\n")}\n`;
+}
+
 export function buildInNetworkRestoreComposeArgs(options = {}) {
-  const { drillProject, backupId = "", localDir = "" } = options;
+  const {
+    drillProject,
+    backupId = "",
+    localDir = "",
+    n8nEncryptionKeyFile = ".local-secrets/n8n-encryption-key",
+    postgresAdminPasswordFile = ".local-secrets/postgres-admin",
+    drillOverrideFile = "",
+  } = options;
+  const resolvedN8nKeyFile = resolve(String(n8nEncryptionKeyFile));
+  const resolvedPgAdminFile = resolve(String(postgresAdminPasswordFile));
   const restoreArgs = [
     "-f",
     "docker-compose.yml",
     "-f",
     "infra/backup/compose.backup.yml",
+  ];
+  if (drillOverrideFile) {
+    restoreArgs.push("-f", String(drillOverrideFile));
+  }
+  restoreArgs.push(
     "--profile",
     "backup",
     "run",
@@ -163,6 +198,22 @@ export function buildInNetworkRestoreComposeArgs(options = {}) {
     "-T",
     "-e",
     `RESTORE_TARGET_PROJECT=${drillProject}`,
+    "-e",
+    "DB_ADMIN_USER=sop_bootstrap",
+    "-e",
+    "POSTGRES_PASSWORD_FILE=/run/secrets/postgres-admin-restore",
+    "-e",
+    "N8N_ENCRYPTION_KEY_FILE=/run/secrets/n8n-encryption-key-restore",
+    "-v",
+    `${resolvedPgAdminFile}:/run/secrets/postgres-admin-restore:ro`,
+    "-v",
+    `${resolvedN8nKeyFile}:/run/secrets/n8n-encryption-key-restore:ro`,
+  );
+  if (localDir) {
+    const resolvedLocalDir = resolve(String(localDir));
+    restoreArgs.push("-v", `${resolvedLocalDir}:/tmp/drill-backup:ro`);
+  }
+  restoreArgs.push(
     "backup-scheduler",
     "node",
     "infra/backup/run-restore.mjs",
@@ -171,12 +222,12 @@ export function buildInNetworkRestoreComposeArgs(options = {}) {
     drillProject,
     "--target-host",
     "postgres",
-  ];
+  );
   if (backupId) {
     restoreArgs.push("--backup-id", backupId);
   }
   if (localDir) {
-    restoreArgs.push("--local-dir", localDir);
+    restoreArgs.push("--local-dir", "/tmp/drill-backup");
   }
   return restoreArgs;
 }
@@ -199,9 +250,15 @@ export async function runRestoreDrill(options = {}) {
   const smokeRunner = options.runSmokeChecks ?? defaultSmokeChecks;
   const manageStack = options.manageStack ?? false;
   const inNetworkRestore = options.inNetworkRestore ?? manageStack;
+  const n8nEncryptionKeyFile =
+    options.n8nEncryptionKeyFile ?? env.DRILL_N8N_ENCRYPTION_KEY_FILE ?? "";
+  const postgresAdminPasswordFile =
+    options.postgresAdminPasswordFile ?? env.DRILL_POSTGRES_ADMIN_FILE ?? "";
   const drillStart = performance.now();
   const composeEnv = { ...env, DRILL_PROXY_PORT: String(drillProxyPort) };
 
+  let overrideDir = null;
+  let drillOverrideFile = "";
   let restoreReceipt = null;
   let objectAccess = null;
   let smokeChecks = null;
@@ -210,9 +267,21 @@ export async function runRestoreDrill(options = {}) {
 
   try {
     if (manageStack) {
-      composeRunner(drillProject, ["up", "--wait", "--wait-timeout", "180", "postgres", "redis"], {
-        env: composeEnv,
-      });
+      overrideDir = mkdtempSync(join(realpathSync(tmpdir()), "ai-sop-dr-override-"));
+      drillOverrideFile = join(overrideDir, "compose.drill.yml");
+      writeFileSync(
+        drillOverrideFile,
+        buildDrillComposeOverrideYaml({
+          drillProxyPort,
+          n8nEncryptionKeyFile: n8nEncryptionKeyFile || undefined,
+        }),
+        { mode: 0o600 },
+      );
+      composeRunner(
+        drillProject,
+        ["-f", "docker-compose.yml", "-f", drillOverrideFile, "up", "--wait", "--wait-timeout", "180", "postgres", "redis"],
+        { env: composeEnv },
+      );
     }
 
     if (options.restoreRunner) {
@@ -230,6 +299,9 @@ export async function runRestoreDrill(options = {}) {
           drillProject,
           backupId: options.restoreOptions?.backupId,
           localDir: options.restoreOptions?.localDir,
+          n8nEncryptionKeyFile: n8nEncryptionKeyFile || undefined,
+          postgresAdminPasswordFile: postgresAdminPasswordFile || undefined,
+          drillOverrideFile,
         }),
         { env: composeEnv },
       );
@@ -244,9 +316,24 @@ export async function runRestoreDrill(options = {}) {
     }
 
     if (manageStack) {
-      composeRunner(drillProject, ["up", "--wait", "--wait-timeout", "180", "n8n-main", "n8n-worker", "app"], {
-        env: composeEnv,
-      });
+      composeRunner(
+        drillProject,
+        [
+          "-f",
+          "docker-compose.yml",
+          "-f",
+          drillOverrideFile,
+          "up",
+          "--wait",
+          "--wait-timeout",
+          "180",
+          "n8n-main",
+          "n8n-worker",
+          "app",
+          "proxy",
+        ],
+        { env: composeEnv },
+      );
     }
 
     objectAccess = await objectAccessChecker({
@@ -275,6 +362,9 @@ export async function runRestoreDrill(options = {}) {
       } catch {
         teardownSucceeded = false;
       }
+    }
+    if (overrideDir) {
+      rmSync(overrideDir, { recursive: true, force: true });
     }
   }
 
@@ -341,6 +431,12 @@ function parseCliArgs(argv) {
       index += 1;
     } else if (arg === "--sample-object-key" && next) {
       parsed.sampleObjectKey = next;
+      index += 1;
+    } else if (arg === "--n8n-key-file" && next) {
+      parsed.n8nEncryptionKeyFile = next;
+      index += 1;
+    } else if (arg === "--postgres-admin-file" && next) {
+      parsed.postgresAdminPasswordFile = next;
       index += 1;
     } else if (arg === "--base-url" && next) {
       parsed.baseUrl = next;

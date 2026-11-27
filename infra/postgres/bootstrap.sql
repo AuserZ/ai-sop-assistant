@@ -1,16 +1,21 @@
 \getenv runtime_password APP_RUNTIME_PASSWORD
 \getenv migrator_password APP_MIGRATOR_PASSWORD
 \getenv n8n_password N8N_DB_PASSWORD
+\getenv backup_password BACKUP_DB_PASSWORD
 
 CREATE ROLE sop_runtime LOGIN PASSWORD :'runtime_password';
 CREATE ROLE sop_migrator LOGIN PASSWORD :'migrator_password';
 CREATE ROLE sop_n8n LOGIN PASSWORD :'n8n_password';
+CREATE ROLE sop_backup LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION INHERIT PASSWORD :'backup_password';
 
 CREATE DATABASE sop_app;
 CREATE DATABASE sop_n8n OWNER sop_n8n;
 REVOKE ALL ON DATABASE sop_app, sop_n8n FROM PUBLIC;
 GRANT CONNECT, CREATE ON DATABASE sop_app TO sop_migrator;
 GRANT CONNECT ON DATABASE sop_app TO sop_runtime;
+GRANT CONNECT ON DATABASE sop_app TO sop_backup;
+GRANT CONNECT ON DATABASE sop_n8n TO sop_backup;
+GRANT pg_read_all_data TO sop_backup;
 
 \connect sop_app
 CREATE EXTENSION vector WITH SCHEMA public;

@@ -179,10 +179,10 @@ describe("S07/D1/D5 SOP library contracts, ILIKE escaping, cursor encoding and s
       }),
     ).toThrowError(expect.objectContaining({ code: "SOURCE_LINK_INVALID", status: 403 }));
 
-    // Tampered signature -> 403 SOURCE_LINK_INVALID.
+    // Flip an interior character (index 10) where all 6 base64url bits are significant.
     const [payloadPart, signaturePart] = token.split(".");
-    const flippedChar = signaturePart.endsWith("A") ? "B" : "A";
-    const tamperedSignatureToken = `${payloadPart}.${signaturePart.slice(0, -1)}${flippedChar}`;
+    const flippedChar = signaturePart[10] === "A" ? "B" : "A";
+    const tamperedSignatureToken = `${payloadPart}.${signaturePart.slice(0, 10)}${flippedChar}${signaturePart.slice(11)}`;
     expect(() =>
       verifyDocumentSourceToken(tamperedSignatureToken, documentId, {
         nowSeconds: nowSeconds + 10,

@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
+import { maxProviderResponseBytes } from "../../src/server/ai/bounded-response";
 import { approvedEmbeddingDimensions } from "../../src/server/ingestion/config";
 import { IngestionStageError } from "../../src/server/ingestion/contracts";
 import {
@@ -482,6 +483,59 @@ describe("S09/ADR23 reranker strict validation, injection immunity and error cla
         fetchImpl: vi.fn<typeof fetch>(async () => new Response("<html>proxy error</html>", { status: 200 })),
       }),
     ).rejects.toMatchObject({ code: "RETRIEVAL_RERANKER_INVALID_OUTPUT", transient: false, status: 502 });
+
+    // Oversized streaming provider body (> 256 KiB) cancels stream early and fails closed with 502.
+    let rerankStreamCancelled = false;
+    let rerankChunksPulled = 0;
+    const oversizedRerankStream = new ReadableStream<Uint8Array>(
+      {
+        pull(controller) {
+          rerankChunksPulled += 1;
+          controller.enqueue(new Uint8Array(64 * 1024).fill(97));
+        },
+        cancel() {
+          rerankStreamCancelled = true;
+        },
+      },
+      { highWaterMark: 0 },
+    );
+    const parseSpy = vi.spyOn(JSON, "parse");
+    try {
+      await expect(
+        rerankCandidates("SOP-101", fused, liveConfig, {
+          fetchImpl: vi.fn<typeof fetch>(async () => new Response(oversizedRerankStream, { status: 200 })),
+        }),
+      ).rejects.toMatchObject({ code: "RETRIEVAL_RERANKER_INVALID_OUTPUT", transient: false, status: 502 });
+      expect(rerankStreamCancelled).toBe(true);
+      expect(rerankChunksPulled).toBe(5);
+      expect(parseSpy).not.toHaveBeenCalled();
+    } finally {
+      parseSpy.mockRestore();
+    }
+
+    // Oversized declared Content-Length fails closed before reading body chunks.
+    let declaredChunksPulled = 0;
+    const declaredOversizedStream = new ReadableStream<Uint8Array>(
+      {
+        pull(controller) {
+          declaredChunksPulled += 1;
+          controller.enqueue(new Uint8Array(16).fill(97));
+        },
+      },
+      { highWaterMark: 0 },
+    );
+    await expect(
+      rerankCandidates("SOP-101", fused, liveConfig, {
+        fetchImpl: vi.fn<typeof fetch>(
+          async () =>
+            new Response(declaredOversizedStream, {
+              status: 200,
+              headers: { "content-length": String(maxProviderResponseBytes + 1) },
+            }),
+        ),
+      }),
+    ).rejects.toMatchObject({ code: "RETRIEVAL_RERANKER_INVALID_OUTPUT", transient: false, status: 502 });
+    expect(declaredChunksPulled).toBe(0);
   });
 });
 
@@ -595,6 +649,29 @@ describe("S09 bounded follow-up query rewriting and prompt-injection neutralizat
         fetchImpl: vi.fn<typeof fetch>(async () => new Response("not-json", { status: 200 })),
       }),
     ).rejects.toMatchObject({ code: "RETRIEVAL_REWRITE_INVALID_OUTPUT", transient: false, status: 502 });
+
+    // Oversized rewrite response body (> 256 KiB) cancels stream and fails closed with 502 without JSON.parse.
+    let rewriteStreamCancelled = false;
+    const oversizedRewriteStream = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        controller.enqueue(new Uint8Array(64 * 1024).fill(98));
+      },
+      cancel() {
+        rewriteStreamCancelled = true;
+      },
+    });
+    const parseSpy = vi.spyOn(JSON, "parse");
+    try {
+      await expect(
+        rewriteRetrievalQuery("What pressure?", history, liveConfig, {
+          fetchImpl: vi.fn<typeof fetch>(async () => new Response(oversizedRewriteStream, { status: 200 })),
+        }),
+      ).rejects.toMatchObject({ code: "RETRIEVAL_REWRITE_INVALID_OUTPUT", transient: false, status: 502 });
+      expect(rewriteStreamCancelled).toBe(true);
+      expect(parseSpy).not.toHaveBeenCalled();
+    } finally {
+      parseSpy.mockRestore();
+    }
   });
 });
 

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { ProviderResponseTooLargeError, readBoundedResponseText } from "../ai/bounded-response";
 import type { RerankedPassage } from "../retrieval/contracts";
 import { stripPromptInjectionDirectives } from "../retrieval/rewrite";
 import { extractKeywordTokens } from "../retrieval/search";
@@ -396,8 +397,11 @@ export async function generateAnswerCandidate(
 
   let rawBody: string;
   try {
-    rawBody = await response.text();
-  } catch {
+    rawBody = await readBoundedResponseText(response);
+  } catch (error) {
+    if (error instanceof ProviderResponseTooLargeError) {
+      throw new AnswerStageError("ANSWER_GENERATOR_INVALID_OUTPUT", false, 502);
+    }
     throw new AnswerStageError("ANSWER_PROVIDER_TRANSIENT", true, 503);
   }
 

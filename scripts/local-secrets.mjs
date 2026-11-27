@@ -29,6 +29,7 @@ const coreHexSecrets = [
   "app-runtime",
   "app-migrator",
   "n8n-db",
+  "backup-db",
   "auth-secret",
   "n8n-encryption-key",
   "redis-password",

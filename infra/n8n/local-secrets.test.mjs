@@ -26,7 +26,8 @@ test("S03 secret generation preserves credentials and independent RSA identities
     assert.ok(first.status === 0, "Fresh generation must succeed.");
     for (const [name, value] of original) assert.ok(readFileSync(join(secretsDirectory, name), "utf8") === value, "Existing credentials must be preserved.");
     const snapshot = new Map(readdirSync(secretsDirectory).map(name => [name, readFileSync(join(secretsDirectory, name), "utf8")]));
-    assert.equal(snapshot.size, 12);
+    assert.equal(snapshot.size, 13);
+    assert.ok(snapshot.has("backup-db"), "Least-privilege backup-db secret must be created.");
     const second = run();
     assert.ok(second.status === 0, "Repeated generation must succeed.");
     for (const [name, value] of snapshot) {

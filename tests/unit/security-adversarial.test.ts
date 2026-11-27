@@ -2,6 +2,7 @@ import { createHash, generateKeyPairSync, randomUUID } from "node:crypto";
 import { crc32 } from "node:zlib";
 import { SignJWT, importPKCS8 } from "jose";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import nextConfig, { buildContentSecurityPolicy } from "../../next.config";
 import {
   answerConfiguration,
   generateValidatedSopAnswer,
@@ -658,5 +659,74 @@ describe("S14 bounded concurrency stress and telemetry bounds", () => {
     expect(metrics.providers.openai_judge.ok).toBe(25);
     expect(totalElapsedMs).toBeLessThan(10_000);
     expect(heapDeltaBytes).toBeLessThan(128 * 1024 * 1024);
+  });
+});
+
+describe("SEC-S14-01 Content-Security-Policy connect-src hardening", () => {
+  function parseConnectSrc(csp: string): string[] {
+    const directive = csp
+      .split(";")
+      .map((part) => part.trim())
+      .find((part) => part.startsWith("connect-src "));
+    expect(directive).toBeDefined();
+    return directive!.slice("connect-src ".length).split(/\s+/).filter(Boolean);
+  }
+
+  it("blocks arbitrary https: and loopback wildcards in production when no storage endpoint is configured", () => {
+    const prodCsp = buildContentSecurityPolicy({ NODE_ENV: "production" });
+    const connectSrc = parseConnectSrc(prodCsp);
+
+    expect(connectSrc).toEqual(["'self'", "https://*.r2.cloudflarestorage.com"]);
+    expect(connectSrc).not.toContain("https:");
+    expect(connectSrc).not.toContain("http://127.0.0.1:*");
+    expect(connectSrc).not.toContain("http://localhost:*");
+  });
+
+  it("scopes production connect-src to the exact configured storage origin and ignores unsafe endpoints", () => {
+    const r2AccountOrigin = "https://0123456789abcdef0123456789abcdef.r2.cloudflarestorage.com";
+    const r2Csp = buildContentSecurityPolicy({
+      NODE_ENV: "production",
+      R2_ENDPOINT: `${r2AccountOrigin}/ignored-path`,
+    });
+    expect(parseConnectSrc(r2Csp)).toEqual(["'self'", r2AccountOrigin]);
+
+    const fixtureCsp = buildContentSecurityPolicy({
+      NODE_ENV: "production",
+      R2_ENDPOINT: "http://127.0.0.1:8787/cdn-cgi/local/r2/s3",
+    });
+    expect(parseConnectSrc(fixtureCsp)).toEqual(["'self'", "http://127.0.0.1:8787"]);
+
+    for (const unsafeEndpoint of [
+      "http://evil.example/upload",
+      "https://user:pass@0123456789abcdef0123456789abcdef.r2.cloudflarestorage.com",
+      "javascript:alert(1)",
+      "not-a-url; script-src 'unsafe-eval'",
+    ]) {
+      const fallbackCsp = buildContentSecurityPolicy({
+        NODE_ENV: "production",
+        R2_ENDPOINT: unsafeEndpoint,
+      });
+      expect(parseConnectSrc(fallbackCsp)).toEqual([
+        "'self'",
+        "https://*.r2.cloudflarestorage.com",
+      ]);
+      expect(fallbackCsp).not.toContain("unsafe-eval");
+    }
+  });
+
+  it("permits loopback wildcards only outside production and exposes hardened headers from next.config.ts", async () => {
+    const devCsp = buildContentSecurityPolicy({ NODE_ENV: "development" });
+    const devConnectSrc = parseConnectSrc(devCsp);
+    expect(devConnectSrc).toContain("'self'");
+    expect(devConnectSrc).toContain("http://127.0.0.1:*");
+    expect(devConnectSrc).toContain("http://localhost:*");
+    expect(devConnectSrc).not.toContain("https:");
+
+    const rules = await nextConfig.headers?.();
+    const cspHeader = rules?.[0]?.headers.find(
+      (header) => header.key === "Content-Security-Policy",
+    );
+    expect(cspHeader).toBeDefined();
+    expect(parseConnectSrc(cspHeader!.value)).not.toContain("https:");
   });
 });

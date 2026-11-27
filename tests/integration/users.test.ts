@@ -1,5 +1,5 @@
 import { createHash, generateKeyPairSync, randomUUID } from "node:crypto";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, gt, inArray, isNull, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
@@ -26,6 +26,7 @@ import { databaseUrl } from "../../src/server/db/config";
 import * as schema from "../../src/server/db/schema";
 import {
   authorizeDocumentSource,
+  deleteDocument,
   finalizeDocumentUpload,
   initializeDocumentUpload,
   readDocumentSourceContent,
@@ -305,60 +306,51 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  if (seededConversationIds.length > 0) {
-    await database
-      .delete(schema.workflowJobs)
-      .where(inArray(schema.workflowJobs.conversationId, seededConversationIds));
-    await database
-      .delete(schema.chatConversations)
-      .where(inArray(schema.chatConversations.id, seededConversationIds));
+  try {
+    if (seededConversationIds.length > 0) {
+      await database
+        .delete(schema.workflowJobs)
+        .where(inArray(schema.workflowJobs.conversationId, seededConversationIds))
+        .catch(() => undefined);
+      await database
+        .delete(schema.chatConversations)
+        .where(inArray(schema.chatConversations.id, seededConversationIds))
+        .catch(() => undefined);
+    }
+    for (const documentId of seededDocumentIds) {
+      await deleteDocument(primaryAdmin, documentId, database).catch(() => undefined);
+      await database
+        .delete(schema.sopChunks)
+        .where(eq(schema.sopChunks.documentId, documentId))
+        .catch(() => undefined);
+      await database
+        .delete(schema.sopExtractionPages)
+        .where(eq(schema.sopExtractionPages.documentId, documentId))
+        .catch(() => undefined);
+      await database
+        .delete(schema.sopVerificationIssues)
+        .where(eq(schema.sopVerificationIssues.documentId, documentId))
+        .catch(() => undefined);
+    }
+    if (seededEmails.length > 0) {
+      await database
+        .delete(schema.authInvitations)
+        .where(inArray(schema.authInvitations.email, seededEmails))
+        .catch(() => undefined);
+    }
+    if (seededUserIds.length > 0) {
+      await database
+        .delete(schema.authInvitations)
+        .where(inArray(schema.authInvitations.invitedBy, seededUserIds))
+        .catch(() => undefined);
+      await database
+        .delete(schema.authSessions)
+        .where(inArray(schema.authSessions.userId, seededUserIds))
+        .catch(() => undefined);
+    }
+  } finally {
+    await Promise.all([connection.end(), getDatabase().$client.end()]);
   }
-  if (seededDocumentIds.length > 0) {
-    await database
-      .delete(schema.sopVerificationRecords)
-      .where(inArray(schema.sopVerificationRecords.documentId, seededDocumentIds));
-    await database
-      .update(schema.sopDocuments)
-      .set({
-        latestJobId: null,
-        processedJobId: null,
-        processedPipelineVersion: null,
-        processedAttemptId: null,
-        activeJobId: null,
-        activePipelineVersion: null,
-        activeAttemptId: null,
-        status: "UPLOADED",
-      })
-      .where(inArray(schema.sopDocuments.id, seededDocumentIds));
-    await database
-      .delete(schema.workflowJobs)
-      .where(inArray(schema.workflowJobs.documentId, seededDocumentIds));
-    await database
-      .delete(schema.sopDocuments)
-      .where(inArray(schema.sopDocuments.id, seededDocumentIds));
-    await database
-      .delete(schema.documentUploadIntents)
-      .where(inArray(schema.documentUploadIntents.id, seededDocumentIds));
-  }
-  if (seededEmails.length > 0) {
-    await database
-      .delete(schema.authInvitations)
-      .where(inArray(schema.authInvitations.email, seededEmails));
-  }
-  if (seededUserIds.length > 0) {
-    await database
-      .delete(schema.authInvitations)
-      .where(inArray(schema.authInvitations.invitedBy, seededUserIds));
-    await database
-      .delete(schema.authUsers)
-      .where(inArray(schema.authUsers.id, seededUserIds));
-  }
-  if (seededEmails.length > 0) {
-    await database
-      .delete(schema.authUsers)
-      .where(inArray(schema.authUsers.email, seededEmails));
-  }
-  await Promise.all([connection.end(), getDatabase().$client.end()]);
 });
 
 describe("S12 U1/U2/U3/U4 Admin user directory and account management with real PostgreSQL", () => {
@@ -655,6 +647,56 @@ describe("S12 U1/U2/U3/U4 Admin user directory and account management with real 
       code: "ACCOUNT_EXISTS",
       status: 409,
     });
+  });
+
+  it("serializes concurrent issueInvitation calls for the same fresh email via advisory lock (SEC-S12-01)", async () => {
+    const email = `s12-race-invite-${randomUUID()}@example.invalid`;
+    seededEmails.push(email);
+
+    const attempts = await Promise.all(
+      [
+        { actor: primaryAdmin, inputEmail: email },
+        { actor: secondaryAdmin, inputEmail: email.toUpperCase() },
+      ].map(({ actor, inputEmail }) =>
+        issueInvitation(
+          actor,
+          { email: inputEmail, role: "STAFF" },
+          {
+            database,
+            configuration,
+            sendEmail: async () => undefined,
+          },
+        ).then(
+          (value) => ({ ok: true as const, value }),
+          (error: unknown) => ({ ok: false as const, error }),
+        ),
+      ),
+    );
+
+    const succeeded = attempts.filter((entry) => entry.ok);
+    const failed = attempts.filter((entry) => !entry.ok);
+    expect(succeeded).toHaveLength(1);
+    expect(failed).toHaveLength(1);
+    expect(succeeded[0].value.email).toBe(email);
+    expect(failed[0].error).toBeInstanceOf(AuthFailure);
+    expect(failed[0].error).toMatchObject({
+      code: "INVITATION_ALREADY_PENDING",
+      status: 409,
+    });
+
+    const liveInvitations = await database
+      .select({ id: schema.authInvitations.id })
+      .from(schema.authInvitations)
+      .where(
+        and(
+          eq(schema.authInvitations.email, email),
+          isNull(schema.authInvitations.consumedAt),
+          isNull(schema.authInvitations.revokedAt),
+          gt(schema.authInvitations.expiresAt, sql`clock_timestamp()`),
+        ),
+      );
+    expect(liveInvitations).toHaveLength(1);
+    expect(liveInvitations[0].id).toBe(succeeded[0].value.invitationId);
   });
 
   it("enforces self-lockout (409 SELF_ACCESS_CHANGE_DENIED) and last-active-Admin (409 LAST_ADMIN_REQUIRED) safeguards", async () => {

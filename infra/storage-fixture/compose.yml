@@ -1,5 +1,8 @@
 services:
   app:
+    build:
+      args:
+        R2_ENDPOINT: http://127.0.0.1:8787/cdn-cgi/local/r2/s3
     environment:
       R2_BUCKET: s04-synthetic-uploads
       R2_ENDPOINT: http://127.0.0.1:8787/cdn-cgi/local/r2/s3

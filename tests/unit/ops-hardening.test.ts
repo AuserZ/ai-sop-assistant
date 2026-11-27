@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  auditBackupCompose,
   auditCompose,
   auditDockerfile,
   auditN8nWorkflow,
@@ -72,6 +73,62 @@ networks:
     expect(audit.violations.some((item) => item.includes("loopback 127.0.0.1"))).toBe(true);
     expect(audit.violations.some((item) => item.includes('service "paddleocr" must keep logging driver: none'))).toBe(true);
     expect(audit.violations.some((item) => item.includes("EXECUTIONS_DATA_PRUNE"))).toBe(true);
+  });
+
+  it("enforces migrate container hardening (SEC-S14-02) and forbids superuser credentials in backup compose (SEC-S15-01)", () => {
+    const unhardenedMigrateCompose = `
+services:
+  migrate:
+    build:
+      context: .
+      target: tooling
+    command: ["npm", "run", "db:migrate"]
+    environment:
+      DB_HOST: postgres
+`;
+    const migrateAudit = auditCompose(unhardenedMigrateCompose);
+    expect(migrateAudit.ok).toBe(false);
+    expect(migrateAudit.violations).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('service "migrate" must set read_only: true'),
+        expect.stringContaining('service "migrate" must drop ALL capabilities'),
+        expect.stringContaining('service "migrate" must set no-new-privileges:true'),
+        expect.stringContaining('service "migrate" must mount a /tmp tmpfs'),
+        expect.stringContaining('service "migrate" must set HOME: /tmp'),
+        expect.stringContaining('service "migrate" must configure bounded logging'),
+        expect.stringContaining('service "migrate" must set mem_limit'),
+        expect.stringContaining('service "migrate" must set cpus'),
+        expect.stringContaining('service "migrate" must set pids_limit'),
+      ]),
+    );
+
+    const privilegedBackupCompose = `
+services:
+  backup-scheduler:
+    profiles: [backup]
+    user: "1000:1000"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    environment:
+      DB_ADMIN_USER: sop_bootstrap
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres-admin
+    secrets:
+      - postgres-admin
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    mem_limit: 512m
+    cpus: 1.0
+    pids_limit: 64
+`;
+    const backupAudit = auditBackupCompose(privilegedBackupCompose);
+    expect(backupAudit.ok).toBe(false);
+    expect(backupAudit.violations.some((item) => item.includes("postgres-admin"))).toBe(true);
+    expect(backupAudit.violations.some((item) => item.includes("sop_bootstrap"))).toBe(true);
+    expect(backupAudit.violations.some((item) => item.includes("sop_backup"))).toBe(true);
   });
 
   it("rejects nginx configs missing server_tokens off, internal route block, or security headers", () => {
