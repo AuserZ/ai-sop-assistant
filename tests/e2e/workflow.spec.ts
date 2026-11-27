@@ -3,12 +3,19 @@ import { readFileSync } from "node:fs";
 import { expect, test, type Page } from "@playwright/test";
 import { z } from "zod";
 
-const fixture = z.object({
+const rawFixture = z.object({
   baseURL: z.literal("http://127.0.0.1:3000"),
   staff: z.object({ email: z.email() }),
   admin: z.object({ email: z.email() }),
+  workflowAdminUser: z.object({ email: z.email() }).optional(),
+  workflowStaff: z.object({ email: z.email() }).optional(),
   password: z.string(),
 }).parse(JSON.parse(readFileSync(".local-secrets/browser-fixtures/s02-browser-fixture.json", "utf8")));
+const fixture = {
+  ...rawFixture,
+  admin: rawFixture.workflowAdminUser ?? rawFixture.admin,
+  staff: rawFixture.workflowStaff ?? rawFixture.staff,
+};
 const jobResult = z.object({ jobId: z.uuid(), eventsUrl: z.string(), synthetic: z.literal(true) });
 
 async function signIn(page: Page, email = fixture.staff.email) {

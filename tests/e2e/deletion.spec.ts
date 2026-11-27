@@ -4,14 +4,21 @@ import { expect, test, type Page } from "@playwright/test";
 import { z } from "zod";
 import { syntheticPdf } from "../fixtures/document-files";
 
-const fixture = z
+const rawFixture = z
   .object({
     baseURL: z.literal("http://127.0.0.1:3000"),
     password: z.string(),
     admin: z.object({ email: z.email() }),
     staff: z.object({ email: z.email() }),
+    deletionAdmin: z.object({ email: z.email() }).optional(),
+    deletionStaff: z.object({ email: z.email() }).optional(),
   })
   .parse(JSON.parse(readFileSync(".local-secrets/browser-fixtures/s02-browser-fixture.json", "utf8")));
+const fixture = {
+  ...rawFixture,
+  admin: rawFixture.deletionAdmin ?? rawFixture.admin,
+  staff: rawFixture.deletionStaff ?? rawFixture.staff,
+};
 
 async function signIn(page: Page, role: "admin" | "staff" = "admin") {
   const response = await page.request.post("/api/auth/sign-in/email", {

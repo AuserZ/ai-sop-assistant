@@ -22,6 +22,16 @@ async function seedBrowserFixtures() {
     const database = drizzle(connection, { schema });
     const admin = await seedSyntheticAccount(database, "ADMIN");
     const staff = await seedSyntheticAccount(database);
+    const chatAdmin = await seedSyntheticAccount(database, "ADMIN");
+    const chatStaff = await seedSyntheticAccount(database);
+    const deletionAdmin = await seedSyntheticAccount(database, "ADMIN");
+    const deletionStaff = await seedSyntheticAccount(database);
+    const s13Admin = await seedSyntheticAccount(database, "ADMIN");
+    const s13Staff = await seedSyntheticAccount(database);
+    const usersAdmin = await seedSyntheticAccount(database, "ADMIN");
+    const usersStaff = await seedSyntheticAccount(database);
+    const workflowAdminUser = await seedSyntheticAccount(database, "ADMIN");
+    const workflowStaff = await seedSyntheticAccount(database);
     const actor = await seedSyntheticSession(database, admin);
     const workflowRevocationUser = await seedSyntheticAccount(database);
     const invitations: Array<{ email: string; acceptUrl: string }> = [];
@@ -37,6 +47,8 @@ async function seedBrowserFixtures() {
     await writeFile(join(outputDirectory, "s02-browser-fixture.json"), JSON.stringify({
       version: 1, baseURL: configuration.baseURL, admin, staff, password: syntheticPassword, invitations,
       workflowRevocationUser, workflowAdmin: actor,
+      chatAdmin, chatStaff, deletionAdmin, deletionStaff, s13Admin, s13Staff, usersAdmin, usersStaff,
+      workflowAdminUser, workflowStaff,
     }), { mode: 0o600 });
     process.stdout.write("Synthetic browser fixtures ready. Delivery was injected; no email provider was called.\n");
   } finally {

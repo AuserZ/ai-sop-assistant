@@ -3,16 +3,23 @@ import { readFileSync } from "node:fs";
 import { expect, test, type Page } from "@playwright/test";
 import { z } from "zod";
 
-const fixture = z
+const rawFixture = z
   .object({
     baseURL: z.literal("http://127.0.0.1:3000"),
     password: z.string(),
     admin: z.object({ email: z.email() }),
     staff: z.object({ email: z.email() }),
+    chatAdmin: z.object({ email: z.email() }).optional(),
+    chatStaff: z.object({ email: z.email() }).optional(),
   })
   .parse(
     JSON.parse(readFileSync(".local-secrets/browser-fixtures/s02-browser-fixture.json", "utf8")),
   );
+const fixture = {
+  ...rawFixture,
+  admin: rawFixture.chatAdmin ?? rawFixture.admin,
+  staff: rawFixture.chatStaff ?? rawFixture.staff,
+};
 
 function escapePdfLiteral(line: string): string {
   return line.replace(/\\/g, "\\\\").replace(/\(/g, "\\(").replace(/\)/g, "\\)");
