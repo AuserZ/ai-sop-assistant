@@ -8,9 +8,14 @@
 !drizzle/
 !drizzle/**
 !n8n/
-!n8n/s03-probe.v1.json
+!n8n/*.json
 !scripts/
-!scripts/seed-synthetic-admin.ts
+!scripts/**
+!infra/
+!infra/backup/
+!infra/backup/*.mjs
+!infra/deploy/
+!infra/deploy/*.mjs
 !src/
 !src/**
 !tests/
