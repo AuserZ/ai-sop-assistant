@@ -4,20 +4,17 @@ Source: [approved technical PRD](<AI SOP Assistant — Technical Product Req.md>
 
 ## Current state
 
-- **Verified sprints:** `S01`–`S07` are **VERIFIED** against their recorded candidates (detailed S01–S07 history archived in [verification history](docs/verification/history.md)).
-- **Implemented sprints (local verified; hosted CI / `security-expert` deferred per 23 Nov 2026 user instruction):**
-  - `S08` (`effb4d375c009b3afd7a29e313bdf21ee8daee01` + `526b9ae51f613450a29744379d39f9ec27e8d54a`) on `codex/s08-deletion-unindexing` — **IMPLEMENTED** ([S08 evidence](docs/verification/S08.md)).
-  - `S09` (`996d653dfc0384349eb4bb9c2bed1ae2cb33fa47`, tree `63c13dbee321a9c561f15c904dfbeb5677d8d0b3`) on `codex/s09-hybrid-retrieval` — **IMPLEMENTED** (local `check:prd`, `lint`, `typecheck`, `93/93` unit tests, `next build --webpack`, and Pass 1 QA `validate-rag` PASS; real PostgreSQL `test:db`, hosted CI, and `security-expert` deferred until pre-V01 closure). [S09 evidence](docs/verification/S09.md).
-  - `S10` (`026e9f3562c9805638f003f4c6c2036e3192f5fb`, tree `b1c156ed2f2dfeab4ca348810a813d67d054f26c`) on `codex/s10-answer-validation` — **IMPLEMENTED** (local `check:prd`, `lint`, `typecheck`, `108/108` unit tests incl. `50/50` Tier A synthetic benchmark with `100%` valid citations & `0` invented steps, `next build --webpack`, and Pass 1 QA `validate-rag` PASS; real PostgreSQL `test:db`, hosted CI, `security-expert`, and Tier B live-model benchmark deferred/open until pre-V01 closure). [S10 evidence](docs/verification/S10.md).
-  - `S11` (`03ac8adc8413cd272052815df17a87083fdc06cc`, tree `4e44589608a0b6380c3126054680f1b683701462`) on `codex/s11-chat-sse` — **IMPLEMENTED** (local `check:prd`, `lint`, `typecheck`, `119/119` unit tests, `docker compose config --quiet`, `next build --webpack`, and Pass 1 QA `validate-rag` PASS; real PostgreSQL `test:db`, Playwright `test:browser`, hosted CI, and `security-expert` deferred until pre-V01 closure). [S11 evidence](docs/verification/S11.md).
-  - `S12` (`ba57672e3f377e4a057cc668db2cd5473a02977d`, tree `ae3286ace2b210878058b0f6246a6831f36fc04a`) on `codex/s12-user-management` — **IMPLEMENTED** (local `check:prd`, `lint`, `typecheck`, `124/124` unit tests, `next build --webpack`, and Pass 1 QA PASS with `0` defects; real PostgreSQL `test:db`, Playwright `test:browser`, hosted CI, and `security-expert` deferred until pre-V01 closure). [S12 evidence](docs/verification/S12.md).
-  - `S13` (`4b8dd063df27e83358a290012e19a4ead34e8996`, tree `5f9e5f8e4337273cbb3067cb190169ea17e5115b`) on `codex/s13-responsive-shell` — **IMPLEMENTED** (local `check:prd`, `lint`, `typecheck`, `130/130` unit tests, `next build --webpack`, compiled CSS & 8-spec E2E audit, and Pass 1 QA PASS after closing `Q-S13-1`..`Q-S13-5`; real PostgreSQL `test:db`, Playwright `test:browser`, hosted CI, and `security-expert` deferred until pre-V01 closure). [S13 evidence](docs/verification/S13.md).
-  - `S14` (`867b61885097cc203647200eb44f2c2af21cde35`, tree `fc9602ab5a85c06828b7d2206bb0eb4d0fcd9f76`) on `codex/s14-monitoring-hardening` — **IMPLEMENTED** (local `check:prd`, `verify-hardening`, `security-scan-artifacts`, `docker compose config`, `lint`, `typecheck`, `158/158` unit tests, `next build --webpack`, and Pass 1 QA PASS after closing `Q-S14-1`..`Q-S14-3`; real PostgreSQL `test:db`, Playwright `test:browser`, hosted CI, and `security-expert` deferred until pre-V01 closure). [S14 evidence](docs/verification/S14.md).
-  - `S15` (`83a8cdf17af247140502747e4598ddbafd3f748f`, tree `1b10465ccf6a8e2bd96a29d31498faf53b83b360`) on `codex/s15-backups-recovery` — **IMPLEMENTED** (local `check:prd`, `verify-hardening`, `security-scan-artifacts`, `compose.backup.yml` config, `local-secrets.test.mjs`, `lint`, `typecheck`, `177/177` unit tests, and Pass 1 QA PASS after closing `Q-S15-1`..`Q-S15-8`; live isolated Docker PG 18 / R2 drill, hosted CI, and `security-expert` deferred/open until pre-V01 closure). [S15 evidence](docs/verification/S15.md).
-  - `S16` (`a5009fcb2496624c2d71e9396b04b1aceeef740b`, tree `a94f04506b81a24448c8c66b8ab67f2ba4502c06`) on `codex/s16-deploy-rollback` — **IMPLEMENTED** (local `check:prd`, `verify-hardening` 10 manifests, `security-scan-artifacts`, release + backup Compose config, `lint`, `typecheck`, `192/192` unit tests, and Pass 1 QA PASS after closing `Q-S16-1`..`Q-S16-8`; hosted CI, live non-prod VPS deploy/rollback rehearsal, and `security-expert` deferred/open until pre-V01 closure). [S16 evidence](docs/verification/S16.md).
-- **Next required stage:** Pre-V01 closure (deferred `security-expert` audit across `S08`–`S16`, full hosted CI `test:db`/`test:browser`/live DR drill/non-prod rehearsal, and PRD §16 external gates) before **V01** release-candidate verification.
-- **Team & workflow cadence (updated 23 Nov 2026 per user instructions):** Project manager orchestrates fresh per-sprint specialist subagents (up to 3 concurrent; invoke DevOps only when Docker/Compose/CI/runtime files change) using [sprint preflight checklist](docs/sprint-preflight-checklist.md). Per user instructions on 23 Nov 2026, both `security-expert` invocation AND hosted CI waits are **deferred** during intermediate sprints (`S08`–`S16`) as long as local checks (`check:prd`, `lint`, `typecheck`, `npm test`, infra unit tests, `next build --webpack`) and Pass 1 QA review pass; intermediate sprints record `IMPLEMENTED` (never falsely `VERIFIED`), and full hosted CI (including S08 Step 14 Playwright), `security-expert` audit, and full `VERIFIED` closure remain mandatory before V01 release-candidate acceptance ([development-team.md](docs/development-team.md), [coding-standards.md](docs/coding-standards.md)).
-- **Standing constraints:** Preserve P0 order, 3-menu cap, protected PRDs, and all PRD section 16 open gates below. Open S14/pre-V01 item: 4 moderate dev-chain Node advisories (`GHSA-67mh-4wv8-2f99`); do not describe full audit as clean.
+- **Verified sprints (`S01`–`S08`, `S11`–`S13`):**
+  - `S01`–`S07` are **VERIFIED** against their recorded candidates ([verification history](docs/verification/history.md)).
+  - `S08` (`D4` — closes **Phase 1 exit `S04`–`S08`**), `S11` (runtime/SSE/persistence scope), `S12` (`U1`–`U4`), and `S13` (responsive 3-menu experience) are **VERIFIED** at candidate `61ababf676e224bff7387062ecafdf8032fb7db9` (tree `aed0d3fda5d512eccfcd0296c404f07957d93cf7`, hosted CI [`46019256848`](https://github.com/AuserZ/ai-sop-assistant/actions/runs/46019256848) + `paddleocr` [`46017116217`](https://github.com/AuserZ/ai-sop-assistant/actions/runs/46017116217), [S08-S16-security.md](docs/verification/S08-S16-security.md) **PASS 7/7 CLOSED**, [pre-v01-qa.md](docs/verification/pre-v01-qa.md) **PASS 0 defects**).
+- **Implemented sprints — CI + Security + Pass 2 QA PASS, awaiting external / live-environment gates before `VERIFIED` & `V01` (`S09`, `S10`, `S14`, `S15`, `S16`):**
+  - `S09` (`C2`, `ADR 10/23`) — real PG/pgvector dual-branch ACTIVE-only & `SEC-S09-01` verified in CI `46019256848`; **open gate:** live OpenAI reranker/rewrite model IDs & entitlement (ADR 23). [S09.md](docs/verification/S09.md).
+  - `S10` (`C2`–`C5`, `ADR 12`) — Tier A synthetic benchmark `50/50` (`100%` valid citations, `0` invented steps) & real PG `answers.test.ts` verified in CI `46019256848`; **open gates:** live OpenAI answer/judge model IDs, rubric/p50/p95 sign-off, and **Tier B live-model 50-question golden benchmark**. [S10.md](docs/verification/S10.md).
+  - `S14` (`ADR 13/15`, PRD §§12–14) — `verify-hardening` (`10` manifests), `security-scan-artifacts` (`249` files), `npm audit --omit=dev`, `hardening.test.ts`, `read_only: true` `app`/`migrate`, and `SEC-S14-01`/`SEC-S14-02` verified in CI `46019256848`; **open gates:** real target-VPS load test (`20 MB` / `4 vCPU / 8 GB`) and PRD §16 retention/Admin MFA/company privacy approvals. [S14.md](docs/verification/S14.md).
+  - `S15` (`ADR 16`, PRD §13) — `sop_backup` read-only role (`SEC-S15-01`) & live isolated PG18 `backup-drill` (`11/11` steps: PG18/Node24 ABI, encrypted dump, escrow create/verify/recover, isolated restore + `JOB_RECONCILIATION_SQL`, restored `n8n-main`) verified in CI `46019256848`; **open gates:** live offsite R2 backup bucket/upload/alerting, full restored-app `drill.mjs` smoke run, and approved backup retention / key-escrow custody policy. [S15.md](docs/verification/S15.md).
+  - `S16` (`ADR 09/14`, PRD §§14/16) — `SEC-S16-01`/`SEC-S16-02` closed & release/backup Compose configs verified in CI `46019256848`; **open gates:** live GHCR digest-pinned build, GitHub `production` manual-approval reviewers, live non-prod VPS deploy/rollback rehearsal, and named Launch/Rollback/Support/Pilot owners. [S16.md](docs/verification/S16.md).
+- **Next required stage:** Resolve the PRD §16 external/live gates above (live OpenAI model IDs + Tier B benchmark, live offsite R2 backup + full `drill.mjs`, target-VPS load test + live non-prod VPS deploy/rollback rehearsal, company privacy/retention/MFA/owner approvals), then run **V01** release-candidate verification ([verify-release](.agents/skills/verify-release/SKILL.md)).
+- **Standing constraints:** Preserve P0 order, 3-menu cap, protected PRDs, and all PRD section 16 open gates below. Open dev-chain advisory: 4 moderate `esbuild` (`GHSA-67mh-4wv8-2f99`) via `drizzle-kit` (`0` high/critical prod vulns).
 
 ## Sprint sequence
 
@@ -32,15 +29,15 @@ Default execution order is S01–S16. Each sprint depends on the VERIFIED predec
 | S05 | SOP extraction, OCR, previews and indexing | 1 | D3; ADR 04/05/11/21/22 | VERIFIED | [S05.md](docs/verification/S05.md) |
 | S06 | Assisted verification and revision-bound activation | 1 | D3; ADR 17 | VERIFIED | [S06.md](docs/verification/S06.md) |
 | S07 | SOP library search and authorized original access | 1 | D1/D5 | VERIFIED | [S07.md](docs/verification/S07.md) |
-| S08 | SOP deletion and reliable unindexing | 1 | D4 | IMPLEMENTED | [S08.md](docs/verification/S08.md) |
-| S09 | Verified ACTIVE hybrid retrieval and reranking | 2 | C2; ADR 10/23 | IMPLEMENTED | [S09.md](docs/verification/S09.md) |
-| S10 | Evidence-validated procedural answers and citations | 2 | C2/C3/C4/C5; ADR 12 | IMPLEMENTED | [S10.md](docs/verification/S10.md) |
-| S11 | Chat SSE and persisted current-session conversation | 3 | C1–C5; ADR 18/19 | IMPLEMENTED | [S11.md](docs/verification/S11.md) |
-| S12 | Admin user directory and account management | 3 | U1/U2/U3/U4 | IMPLEMENTED | [S12.md](docs/verification/S12.md) |
-| S13 | Responsive three-menu experience | 3 | C1/D1/D5/U1/U4; ADR 20 | IMPLEMENTED | [S13.md](docs/verification/S13.md) |
-| S14 | Operational monitoring and security hardening | 4 | ADR 13/15; PRD sections 12–14 | IMPLEMENTED | [S14.md](docs/verification/S14.md) |
-| S15 | Encrypted backups and verified disaster recovery | 4 | ADR 16; PRD section 13 | IMPLEMENTED | [S15.md](docs/verification/S15.md) |
-| S16 | Approval-gated deployment and rollback capability | 4 | ADR 09/14; PRD sections 14/16 | IMPLEMENTED | [S16.md](docs/verification/S16.md) |
+| S08 | SOP deletion and reliable unindexing | 1 | D4 | VERIFIED | [S08.md](docs/verification/S08.md) |
+| S09 | Verified ACTIVE hybrid retrieval and reranking | 2 | C2; ADR 10/23 | IMPLEMENTED (external gate) | [S09.md](docs/verification/S09.md) |
+| S10 | Evidence-validated procedural answers and citations | 2 | C2/C3/C4/C5; ADR 12 | IMPLEMENTED (external gate) | [S10.md](docs/verification/S10.md) |
+| S11 | Chat SSE and persisted current-session conversation | 3 | C1–C5; ADR 18/19 | VERIFIED (runtime scope) | [S11.md](docs/verification/S11.md) |
+| S12 | Admin user directory and account management | 3 | U1/U2/U3/U4 | VERIFIED | [S12.md](docs/verification/S12.md) |
+| S13 | Responsive three-menu experience | 3 | C1/D1/D5/U1/U4; ADR 20 | VERIFIED (runtime scope) | [S13.md](docs/verification/S13.md) |
+| S14 | Operational monitoring and security hardening | 4 | ADR 13/15; PRD sections 12–14 | IMPLEMENTED (load/policy gates) | [S14.md](docs/verification/S14.md) |
+| S15 | Encrypted backups and verified disaster recovery | 4 | ADR 16; PRD section 13 | IMPLEMENTED (offsite/policy gates) | [S15.md](docs/verification/S15.md) |
+| S16 | Approval-gated deployment and rollback capability | 4 | ADR 09/14; PRD sections 14/16 | IMPLEMENTED (rehearsal/owners) | [S16.md](docs/verification/S16.md) |
 
 ## Definition of done — applies to every sprint
 
@@ -110,19 +107,11 @@ Status flow: `PLANNED → IN_PROGRESS → IMPLEMENTED → VERIFYING → VERIFIED
 - [x] Browser tests cover search, open/download, keyboard operation and usable narrow-screen behavior; no fourth menu is added.
 
 ### S08 — deletion and reliable unindexing
-**Outcome:** Admin deletion immediately removes evidence eligibility and reliably cleans up indexes/private files. **Depends on:** S07. **Mapping:** D4 with C2/C3/D5 integrity.
-
-Development scope:
-- Implement an Admin delete action whose transaction commits a DELETED tombstone before any asynchronous physical cleanup.
-- Reconcile chunk/vector, original and preview cleanup with idempotent retries and meaningful Admin status.
-- Reject stale ingestion/verification callbacks that could restore deleted eligibility; invalidate current source resolution.
-- Mark historical citations unavailable and document that approved backup retention may outlast live deletion.
-
-Verify after development:
-- [ ] Staff/anonymous delete fails; Admin deletion removes eligibility immediately even if storage cleanup fails.
-- [ ] Duplicate deletion, cleanup retries and worker restarts converge without losing the tombstone or reviving evidence.
-- [ ] Concurrent extraction/activation/source requests cannot reuse a deleted snapshot; historical source access becomes unavailable.
-- [ ] Integration checks prove deleted chunks are excluded from eligible data access; S09/S11 later repeat the race through actual retrieval/answer delivery.
+**VERIFIED** (`61ababf`, hosted `46019256848`, [S08.md](docs/verification/S08.md), [pre-v01-qa.md](docs/verification/pre-v01-qa.md)). **Mapping:** D4 with C2/C3/D5 integrity.
+- [x] Staff/anonymous delete fails; Admin deletion removes eligibility immediately even if storage cleanup fails.
+- [x] Duplicate deletion, cleanup retries and worker restarts converge without losing the tombstone or reviving evidence.
+- [x] Concurrent extraction/activation/source requests cannot reuse a deleted snapshot; historical source access becomes unavailable.
+- [x] Integration checks prove deleted chunks are excluded from eligible data access; S09/S11 later repeat the race through actual retrieval/answer delivery.
 
 **Phase 1 exit:** S04–S08 VERIFIED with native/scanned/mixed PDF/DOCX, OCR failure, job idempotency, revision-bound approval, private source access and deletion/retry-race evidence. No unverified document becomes eligible.
 
@@ -163,49 +152,25 @@ Verify after development:
 ## Phase 3 — chat and complete product experience
 
 ### S11 — safe chat SSE and current-session persistence
-**Outcome:** An authorized user can chat, follow up, and see truthful progress followed by one checked final outcome and current-session history. **Depends on:** S10 and the proven S03 bridge. **Mapping:** C1–C5, ADR 18/19.
-
-Development scope:
-- Implement authenticated Next.js-owned SSE with a versioned allowlisted event contract; no arbitrary n8n strings or generated token deltas.
-- Persist owner-scoped conversations/messages/validation/source references with request idempotency; bound recent context and perform fresh retrieval for every question.
-- Handle disconnect/reconnect, replay, backpressure, timeout and late callbacks; recheck current user/source eligibility at release and source-link issuance.
-- Build chat input, current-session history, safe final Markdown/citations, progress and error/fallback states. Past-conversation reopening remains C7/P1.
-
-Verify after development:
-- [ ] Capture actual outbound SSE bytes through Next.js/proxy/n8n: no draft procedural content arrives before deterministic checks and judge PASS.
-- [ ] Repeated requests, reconnect/replay and worker callbacks yield one logical final message; cross-user access is denied.
-- [ ] Delete/retire/deactivate during a request prevents unauthorized final answer/source release; provider and validation failure expose only safe terminal outcomes.
-- [ ] Browser tests cover current-session history, follow-ups, valid citations, exact fallback and safe errors; measure progress, first meaningful answer and completion separately.
+**VERIFIED (runtime/SSE/persistence scope)** (`61ababf`, hosted `46019256848`, [S11.md](docs/verification/S11.md), [pre-v01-qa.md](docs/verification/pre-v01-qa.md); live OpenAI recheck gated under S09/S10 & V01). **Mapping:** C1–C5, ADR 18/19.
+- [x] Capture actual outbound SSE bytes through Next.js/proxy/n8n: no draft procedural content arrives before deterministic checks and judge PASS.
+- [x] Repeated requests, reconnect/replay and worker callbacks yield one logical final message; cross-user access is denied.
+- [x] Delete/retire/deactivate during a request prevents unauthorized final answer/source release; provider and validation failure expose only safe terminal outcomes.
+- [x] Browser tests cover current-session history, follow-ups, valid citations, exact fallback and safe errors; measure progress, first meaningful answer and completion separately.
 
 ### S12 — Admin user management
-**Outcome:** Admin can invite, list, update roles and deactivate/reactivate users without engineering help. **Depends on:** S11 and S02 authorization. **Mapping:** U1/U2/U3/U4.
-
-Development scope:
-- Implement the Admin-only directory with name/email/role/status and protected invite, role-change and active-status APIs/UI.
-- Reuse S02 invitation delivery and current-account/session enforcement, with audit and safe errors.
-- Apply deactivation safeguards and verify ongoing sessions/streams/download authorization lose access as required.
-- Keep password-reset enhancements U5/P1 and SSO U6/P2 deferred; resolve operational recovery/sender-domain readiness as launch gates.
-
-Verify after development:
-- [ ] Admin list/invite/role/deactivate/reactivate journeys work with actual persisted state and intended-email invitation rules.
-- [ ] Staff/anonymous requests and crafted direct API mutations are denied; role changes do not grant stale-session privileges.
-- [ ] Deactivation blocks protected access during active usage; reactivation restores only currently authorized capabilities.
-- [ ] Duplicate/expired invitations, invalid input, email failures and audit redaction behave safely; no passwords are emailed.
+**VERIFIED** (`61ababf`, hosted `46019256848`, [S12.md](docs/verification/S12.md), [pre-v01-qa.md](docs/verification/pre-v01-qa.md); production account recovery & Resend sender domain remain launch/V01 gates). **Mapping:** U1/U2/U3/U4.
+- [x] Admin list/invite/role/deactivate/reactivate journeys work with actual persisted state and intended-email invitation rules.
+- [x] Staff/anonymous requests and crafted direct API mutations are denied; role changes do not grant stale-session privileges.
+- [x] Deactivation blocks protected access during active usage; reactivation restores only currently authorized capabilities.
+- [x] Duplicate/expired invitations, invalid input, email failures and audit redaction behave safely; no passwords are emailed.
 
 ### S13 — responsive three-menu experience
-**Outcome:** The complete P0 experience works on current desktop/mobile browsers with exactly the approved menus. **Depends on:** S12 and prior document/chat interfaces. **Mapping:** C1/D1/D5/U1/U4, ADR 20. **Approved visual spec:** [ui-design-system.md](docs/ui-design-system.md) (Option 1 · Clinical Precision, approved 23 Nov 2026).
-
-Development scope:
-- Integrate exactly Chat, List Document SOP and User Management; Staff sees only permitted navigation/actions and server checks remain authoritative.
-- Complete responsive navigation/tables, stacked mobile verification panels and usable PDF/extraction interactions with the confirmed frontend stack.
-- Validate keyboard focus/labels, forms, readable errors and honest loading/empty/retry states across the integrated journeys.
-- Keep document verification within documents and exclude dashboards, feedback, past-chat reopen and replacement UI.
-
-Verify after development:
-- [ ] Playwright journeys cover invite/login, Admin upload→review→activate, Staff find/chat/download, Admin delete and user deactivation.
-- [ ] Desktop/mobile layouts and keyboard use work without inaccessible actions, clipped essential content or a fourth menu.
-- [ ] Navigation visibility and direct-route/API tests agree on current roles; user-controlled content is sanitized.
-- [ ] Recheck SSE, citations and current-session persistence through the finished UI; no placeholder controls or fake metrics imply completion.
+**VERIFIED (runtime/UI scope)** (`61ababf`, hosted `46019256848`, [S13.md](docs/verification/S13.md), [pre-v01-qa.md](docs/verification/pre-v01-qa.md); live-provider recheck runs in V01). **Mapping:** C1/D1/D5/U1/U4, ADR 20. **Approved visual spec:** [ui-design-system.md](docs/ui-design-system.md) (Option 1 · Clinical Precision, approved 23 Nov 2026).
+- [x] Playwright journeys cover invite/login, Admin upload→review→activate, Staff find/chat/download, Admin delete and user deactivation.
+- [x] Desktop/mobile layouts and keyboard use work without inaccessible actions, clipped essential content or a fourth menu.
+- [x] Navigation visibility and direct-route/API tests agree on current roles; user-controlled content is sanitized.
+- [x] Recheck SSE, citations and current-session persistence through the finished UI; no placeholder controls or fake metrics imply completion.
 
 **Phase 3 exit:** S11–S13 VERIFIED; all 14 original P0 feature IDs have working user journeys and test evidence. Full-system release acceptance still requires Phase 4 and final verification.
 
