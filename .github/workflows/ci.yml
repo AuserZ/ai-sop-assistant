@@ -92,6 +92,7 @@ jobs:
           node --check infra/conversion/verify.mjs
           node --check infra/n8n/bootstrap.mjs
           node --check infra/backup/crypto.mjs infra/backup/storage.mjs infra/backup/run-backup.mjs infra/backup/run-restore.mjs infra/backup/escrow-keys.mjs infra/backup/schedule.mjs infra/backup/drill.mjs
+          for script in infra/deploy/release-manifest.mjs infra/deploy/smoke-check.mjs infra/deploy/deploy.mjs infra/deploy/rollback.mjs; do node --check "$script"; done
           node --check scripts/security-scan-artifacts.mjs scripts/verify-hardening.mjs scripts/ops-monitor.mjs scripts/load-benchmark.mjs
           node infra/conversion/verify.mjs
           node scripts/verify-hardening.mjs
@@ -107,6 +108,18 @@ jobs:
           node infra/storage-fixture/create-secrets.mjs
           docker compose --profile verify --profile conversion config --quiet
           docker compose -f docker-compose.yml -f infra/backup/compose.backup.yml --profile backup config --quiet
+          APP_IMAGE_DIGEST="ghcr.io/auserz/ai-sop-assistant-app@sha256:1111111111111111111111111111111111111111111111111111111111111111" \
+          MIGRATE_IMAGE_DIGEST="ghcr.io/auserz/ai-sop-assistant-migrate@sha256:2222222222222222222222222222222222222222222222222222222222222222" \
+          PADDLEOCR_IMAGE_DIGEST="ghcr.io/auserz/ai-sop-assistant-paddleocr@sha256:3333333333333333333333333333333333333333333333333333333333333333" \
+          CONVERSION_IMAGE_DIGEST="ghcr.io/auserz/ai-sop-assistant-convert-worker@sha256:4444444444444444444444444444444444444444444444444444444444444444" \
+          BACKUP_SCHEDULER_IMAGE_DIGEST="ghcr.io/auserz/ai-sop-assistant-backup-scheduler@sha256:5555555555555555555555555555555555555555555555555555555555555555" \
+          docker compose -f docker-compose.yml -f infra/deploy/compose.release.yml config --quiet
+          APP_IMAGE_DIGEST="ghcr.io/auserz/ai-sop-assistant-app@sha256:1111111111111111111111111111111111111111111111111111111111111111" \
+          MIGRATE_IMAGE_DIGEST="ghcr.io/auserz/ai-sop-assistant-migrate@sha256:2222222222222222222222222222222222222222222222222222222222222222" \
+          PADDLEOCR_IMAGE_DIGEST="ghcr.io/auserz/ai-sop-assistant-paddleocr@sha256:3333333333333333333333333333333333333333333333333333333333333333" \
+          CONVERSION_IMAGE_DIGEST="ghcr.io/auserz/ai-sop-assistant-convert-worker@sha256:4444444444444444444444444444444444444444444444444444444444444444" \
+          BACKUP_SCHEDULER_IMAGE_DIGEST="ghcr.io/auserz/ai-sop-assistant-backup-scheduler@sha256:5555555555555555555555555555555555555555555555555555555555555555" \
+          docker compose -f docker-compose.yml -f infra/backup/compose.backup.yml -f infra/deploy/compose.release.yml --profile backup config --quiet
           docker compose --profile verify build app migrate verify-db
           docker compose build storage-fixture paddleocr convert-worker
           SOP_STORAGE_FIXTURE_VERIFY=1 SOP_STORAGE_FIXTURE_IMAGE=ai-sop-assistant-storage-fixture node infra/storage-fixture/verify-native.mjs

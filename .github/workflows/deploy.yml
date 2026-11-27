@@ -1,0 +1,342 @@
+name: Controlled deployment
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_environment:
+        description: Target deployment environment (production requires manual environment approval and V01 candidate SHA)
+        type: choice
+        required: true
+        default: staging
+        options:
+          - staging
+          - production
+      v01_candidate_sha:
+        description: Required for production; must match the exact 40-hex V01-verified commit SHA
+        type: string
+        required: false
+        default: ""
+      schema_change_type:
+        description: Reviewed Drizzle migration classification for rollback safety
+        type: choice
+        required: true
+        default: none
+        options:
+          - none
+          - additive_backward_compatible
+          - breaking_requires_restore
+      rehearse_rollback:
+        description: Run non-production rollback rehearsal when a previous known-good release exists on staging
+        type: boolean
+        required: false
+        default: true
+
+permissions: {}
+
+concurrency:
+  group: deploy-${{ inputs.target_environment }}
+  cancel-in-progress: false
+
+jobs:
+  verify-candidate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+    env:
+      NEXT_TELEMETRY_DISABLED: 1
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run check:prd
+      - run: node scripts/verify-hardening.mjs
+      - run: |
+          for script in infra/deploy/release-manifest.mjs infra/deploy/smoke-check.mjs infra/deploy/deploy.mjs infra/deploy/rollback.mjs; do
+            node --check "$script"
+          done
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm audit --omit=dev --audit-level=high
+      - run: npm run build
+      - run: node scripts/security-scan-artifacts.mjs
+
+  build-immutable-artifacts:
+    needs: verify-candidate
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: 24
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: meta
+        shell: bash
+        run: |
+          IMAGE_PREFIX="ghcr.io/$(echo "${GITHUB_REPOSITORY}" | tr '[:upper:]' '[:lower:]')"
+          echo "prefix=${IMAGE_PREFIX}" >> "$GITHUB_OUTPUT"
+          echo "tag=sha-${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+      - id: build-app
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8
+        with:
+          context: .
+          file: Dockerfile
+          target: runtime
+          push: true
+          tags: ${{ steps.meta.outputs.prefix }}-app:${{ steps.meta.outputs.tag }}
+      - id: build-migrate
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8
+        with:
+          context: .
+          file: Dockerfile
+          target: tooling
+          push: true
+          tags: ${{ steps.meta.outputs.prefix }}-migrate:${{ steps.meta.outputs.tag }}
+      - id: build-paddleocr
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8
+        with:
+          context: ./infra/paddleocr
+          file: ./infra/paddleocr/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.prefix }}-paddleocr:${{ steps.meta.outputs.tag }}
+      - id: build-convert-worker
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8
+        with:
+          context: ./infra/conversion
+          file: ./infra/conversion/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.prefix }}-convert-worker:${{ steps.meta.outputs.tag }}
+      - id: build-backup-scheduler
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8
+        with:
+          context: .
+          file: infra/backup/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.prefix }}-backup-scheduler:${{ steps.meta.outputs.tag }}
+      - name: Generate immutable release manifest, validate Compose overlays, and package release bundle
+        shell: bash
+        env:
+          SCHEMA_CHANGE_TYPE: ${{ inputs.schema_change_type }}
+          APP_IMAGE_DIGEST: ${{ steps.meta.outputs.prefix }}-app@${{ steps.build-app.outputs.digest }}
+          MIGRATE_IMAGE_DIGEST: ${{ steps.meta.outputs.prefix }}-migrate@${{ steps.build-migrate.outputs.digest }}
+          PADDLEOCR_IMAGE_DIGEST: ${{ steps.meta.outputs.prefix }}-paddleocr@${{ steps.build-paddleocr.outputs.digest }}
+          CONVERSION_IMAGE_DIGEST: ${{ steps.meta.outputs.prefix }}-convert-worker@${{ steps.build-convert-worker.outputs.digest }}
+          BACKUP_SCHEDULER_IMAGE_DIGEST: ${{ steps.meta.outputs.prefix }}-backup-scheduler@${{ steps.build-backup-scheduler.outputs.digest }}
+        run: |
+          set -euo pipefail
+          node infra/deploy/release-manifest.mjs \
+            --git-sha "${GITHUB_SHA}" \
+            --git-ref "${GITHUB_REF}" \
+            --schema-change-type "$SCHEMA_CHANGE_TYPE" \
+            --output release-manifest.json
+          node infra/deploy/release-manifest.mjs --validate release-manifest.json
+          docker compose -f docker-compose.yml -f infra/deploy/compose.release.yml config --quiet
+          docker compose -f docker-compose.yml -f infra/backup/compose.backup.yml -f infra/deploy/compose.release.yml --profile backup config --quiet
+          tar -czf release-bundle.tar.gz \
+            release-manifest.json \
+            n8n \
+            infra/deploy \
+            infra/proxy/nginx.conf \
+            infra/n8n/bootstrap.mjs \
+            infra/n8n/redis-entrypoint.sh \
+            infra/n8n/redis-health.sh \
+            infra/postgres/init-databases.sh \
+            infra/postgres/bootstrap.sql \
+            docker-compose.yml \
+            infra/backup/compose.backup.yml
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: release-bundle-${{ github.sha }}
+          path: |
+            release-manifest.json
+            release-bundle.tar.gz
+          retention-days: 30
+
+  deploy-nonprod:
+    needs:
+      - verify-candidate
+      - build-immutable-artifacts
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    environment: staging
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: 24
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: release-bundle-${{ github.sha }}
+          path: .
+      - name: Validate candidate release manifest
+        run: node infra/deploy/release-manifest.mjs --validate release-manifest.json
+      - name: Deploy pinned release to authorized staging VPS and rehearse rollback
+        shell: bash
+        env:
+          VPS_HOST: ${{ secrets.STAGING_VPS_HOST }}
+          VPS_USER: ${{ secrets.STAGING_VPS_USER }}
+          VPS_SSH_KEY: ${{ secrets.STAGING_VPS_SSH_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.STAGING_VPS_KNOWN_HOSTS }}
+          DEPLOY_PATH: ${{ secrets.STAGING_DEPLOY_PATH }}
+          APP_BASE_URL: ${{ secrets.STAGING_APP_BASE_URL }}
+          SMOKE_SESSION_COOKIE: ${{ secrets.STAGING_SYNTHETIC_SESSION_COOKIE }}
+          REHEARSE_ROLLBACK: ${{ inputs.rehearse_rollback }}
+        run: |
+          set -euo pipefail
+          for required_var in VPS_HOST VPS_USER VPS_SSH_KEY VPS_KNOWN_HOSTS DEPLOY_PATH APP_BASE_URL SMOKE_SESSION_COOKIE; do
+            if [ -z "${!required_var:-}" ]; then
+              echo "Missing required staging deployment configuration." >&2
+              exit 1
+            fi
+          done
+          install -d -m 700 "$HOME/.ssh"
+          umask 077
+          trap 'rm -f "$HOME/.ssh/deploy_key" /tmp/smoke-session.cookie' EXIT
+          printf '%s\n' "$VPS_SSH_KEY" > "$HOME/.ssh/deploy_key"
+          printf '%s\n' "$VPS_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          printf '%s' "$SMOKE_SESSION_COOKIE" > /tmp/smoke-session.cookie
+          ssh -i "$HOME/.ssh/deploy_key" -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -o StrictHostKeyChecking=yes \
+            "${VPS_USER}@${VPS_HOST}" bash -euo pipefail -s -- "$DEPLOY_PATH" <<'PREP_EOF'
+          DEPLOY_PATH="$1"
+          install -d -m 700 "${DEPLOY_PATH}/.deploy-state"
+          PREP_EOF
+          scp -i "$HOME/.ssh/deploy_key" -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -o StrictHostKeyChecking=yes \
+            /tmp/smoke-session.cookie "${VPS_USER}@${VPS_HOST}:${DEPLOY_PATH}/.deploy-state/smoke-session.cookie"
+          rm -f /tmp/smoke-session.cookie
+          scp -i "$HOME/.ssh/deploy_key" -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -o StrictHostKeyChecking=yes \
+            release-bundle.tar.gz "${VPS_USER}@${VPS_HOST}:${DEPLOY_PATH}/release-bundle.tar.gz"
+          ssh -i "$HOME/.ssh/deploy_key" -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -o StrictHostKeyChecking=yes \
+            "${VPS_USER}@${VPS_HOST}" bash -euo pipefail -s -- "$DEPLOY_PATH" "$APP_BASE_URL" "$REHEARSE_ROLLBACK" <<'REMOTE_EOF'
+          DEPLOY_PATH="$1"
+          APP_BASE_URL="$2"
+          REHEARSE_ROLLBACK="$3"
+          cd "$DEPLOY_PATH"
+          trap 'rm -f .deploy-state/smoke-session.cookie release-bundle.tar.gz' EXIT
+          tar -xzf release-bundle.tar.gz -C "$DEPLOY_PATH"
+          node infra/deploy/deploy.mjs \
+            --environment staging \
+            --manifest release-manifest.json \
+            --base-url "$APP_BASE_URL" \
+            --session-cookie-file .deploy-state/smoke-session.cookie
+          if [ "$REHEARSE_ROLLBACK" = "true" ] && [ -f .deploy-state/previous-known-good.json ]; then
+            node infra/deploy/rollback.mjs \
+              --base-url "$APP_BASE_URL" \
+              --session-cookie-file .deploy-state/smoke-session.cookie
+            tar -xzf release-bundle.tar.gz -C "$DEPLOY_PATH"
+            node infra/deploy/deploy.mjs \
+              --environment staging \
+              --manifest release-manifest.json \
+              --base-url "$APP_BASE_URL" \
+              --session-cookie-file .deploy-state/smoke-session.cookie
+          fi
+          REMOTE_EOF
+
+  deploy-production:
+    needs:
+      - verify-candidate
+      - build-immutable-artifacts
+      - deploy-nonprod
+    if: ${{ inputs.target_environment == 'production' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    environment: production
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: 24
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: release-bundle-${{ github.sha }}
+          path: .
+      - name: Enforce V01 candidate SHA match and manifest validity
+        shell: bash
+        env:
+          V01_CANDIDATE_SHA: ${{ inputs.v01_candidate_sha }}
+          TARGET_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          if [ -z "$V01_CANDIDATE_SHA" ] || [ "$V01_CANDIDATE_SHA" != "$TARGET_SHA" ]; then
+            echo "Production deploy blocked: V01 candidate SHA must exactly match target commit SHA." >&2
+            exit 1
+          fi
+          node infra/deploy/release-manifest.mjs --validate release-manifest.json
+      - name: Deploy approved release to production VPS
+        shell: bash
+        env:
+          GITHUB_ENVIRONMENT: production
+          V01_CANDIDATE_SHA: ${{ inputs.v01_candidate_sha }}
+          VPS_HOST: ${{ secrets.PROD_VPS_HOST }}
+          VPS_USER: ${{ secrets.PROD_VPS_USER }}
+          VPS_SSH_KEY: ${{ secrets.PROD_VPS_SSH_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.PROD_VPS_KNOWN_HOSTS }}
+          DEPLOY_PATH: ${{ secrets.PROD_DEPLOY_PATH }}
+          APP_BASE_URL: ${{ secrets.PROD_APP_BASE_URL }}
+          SMOKE_SESSION_COOKIE: ${{ secrets.PROD_SYNTHETIC_SESSION_COOKIE }}
+        run: |
+          set -euo pipefail
+          for required_var in VPS_HOST VPS_USER VPS_SSH_KEY VPS_KNOWN_HOSTS DEPLOY_PATH APP_BASE_URL SMOKE_SESSION_COOKIE; do
+            if [ -z "${!required_var:-}" ]; then
+              echo "Missing required production deployment configuration." >&2
+              exit 1
+            fi
+          done
+          install -d -m 700 "$HOME/.ssh"
+          umask 077
+          trap 'rm -f "$HOME/.ssh/deploy_key" /tmp/smoke-session.cookie' EXIT
+          printf '%s\n' "$VPS_SSH_KEY" > "$HOME/.ssh/deploy_key"
+          printf '%s\n' "$VPS_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          printf '%s' "$SMOKE_SESSION_COOKIE" > /tmp/smoke-session.cookie
+          ssh -i "$HOME/.ssh/deploy_key" -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -o StrictHostKeyChecking=yes \
+            "${VPS_USER}@${VPS_HOST}" bash -euo pipefail -s -- "$DEPLOY_PATH" <<'PREP_EOF'
+          DEPLOY_PATH="$1"
+          install -d -m 700 "${DEPLOY_PATH}/.deploy-state"
+          PREP_EOF
+          scp -i "$HOME/.ssh/deploy_key" -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -o StrictHostKeyChecking=yes \
+            /tmp/smoke-session.cookie "${VPS_USER}@${VPS_HOST}:${DEPLOY_PATH}/.deploy-state/smoke-session.cookie"
+          rm -f /tmp/smoke-session.cookie
+          scp -i "$HOME/.ssh/deploy_key" -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -o StrictHostKeyChecking=yes \
+            release-bundle.tar.gz "${VPS_USER}@${VPS_HOST}:${DEPLOY_PATH}/release-bundle.tar.gz"
+          ssh -i "$HOME/.ssh/deploy_key" -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -o StrictHostKeyChecking=yes \
+            "${VPS_USER}@${VPS_HOST}" bash -euo pipefail -s -- "$DEPLOY_PATH" "$APP_BASE_URL" "$V01_CANDIDATE_SHA" <<'REMOTE_EOF'
+          DEPLOY_PATH="$1"
+          APP_BASE_URL="$2"
+          V01_CANDIDATE_SHA="$3"
+          cd "$DEPLOY_PATH"
+          trap 'rm -f .deploy-state/smoke-session.cookie release-bundle.tar.gz' EXIT
+          tar -xzf release-bundle.tar.gz -C "$DEPLOY_PATH"
+          rm -f release-bundle.tar.gz
+          GITHUB_ENVIRONMENT=production node infra/deploy/deploy.mjs \
+            --environment production \
+            --v01-candidate-sha "$V01_CANDIDATE_SHA" \
+            --manifest release-manifest.json \
+            --base-url "$APP_BASE_URL" \
+            --session-cookie-file .deploy-state/smoke-session.cookie
+          REMOTE_EOF

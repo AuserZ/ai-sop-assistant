@@ -393,6 +393,252 @@ export function auditBackupCompose(content) {
   return { ok: violations.length === 0, violations };
 }
 
+function parseJobNeeds(jobBlock) {
+  const needs = new Set();
+  const lines = jobBlock.split(/\r?\n/);
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    const match = /^(\s+)needs:\s*(.*)$/.exec(line);
+    if (!match) continue;
+    const baseIndent = match[1].length;
+    const inlineValue = match[2].trim();
+    if (inlineValue) {
+      if (inlineValue.startsWith("[") && inlineValue.endsWith("]")) {
+        for (const item of inlineValue.slice(1, -1).split(",")) {
+          const cleaned = item.trim().replace(/^["']|["']$/g, "");
+          if (cleaned) needs.add(cleaned);
+        }
+      } else {
+        needs.add(inlineValue.replace(/^["']|["']$/g, ""));
+      }
+      break;
+    }
+    for (let cursor = index + 1; cursor < lines.length; cursor += 1) {
+      const nextLine = lines[cursor];
+      if (!nextLine.trim() || nextLine.trim().startsWith("#")) continue;
+      const itemMatch = /^(\s+)-\s*([^\s#]+)/.exec(nextLine);
+      if (itemMatch && itemMatch[1].length >= baseIndent) {
+        needs.add(itemMatch[2].trim().replace(/^["']|["']$/g, ""));
+      } else {
+        break;
+      }
+    }
+    break;
+  }
+  return needs;
+}
+
+function findInlineInputsInRunBlocks(content) {
+  const hits = [];
+  const lines = content.split(/\r?\n/);
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    const runMatch = /^(\s*)(?:-\s*)?run:\s*(.*)$/.exec(line);
+    if (!runMatch) continue;
+    const runIndent = runMatch[1].length;
+    const value = runMatch[2].trim();
+    if (value && !/^[|>][+-]?$/.test(value)) {
+      if (/\$\{\{\s*inputs\./.test(value)) {
+        hits.push(index + 1);
+      }
+      continue;
+    }
+    for (let cursor = index + 1; cursor < lines.length; cursor += 1) {
+      const bodyLine = lines[cursor];
+      if (!bodyLine.trim()) continue;
+      const bodyIndent = bodyLine.length - bodyLine.trimStart().length;
+      if (bodyIndent <= runIndent) break;
+      if (/\$\{\{\s*inputs\./.test(bodyLine)) {
+        hits.push(cursor + 1);
+      }
+    }
+  }
+  return hits;
+}
+
+export function auditReleaseCompose(content) {
+  const violations = [];
+  const sections = splitTopLevelSections(content);
+  const services = splitNamedBlocks(sections.get("services") ?? []);
+
+  if (/:latest(?:\s|$|["'])/.test(content)) {
+    violations.push("infra/deploy/compose.release.yml: must not reference mutable :latest image tags");
+  }
+
+  const requiredDigestServices = [
+    ["app", "APP_IMAGE_DIGEST"],
+    ["migrate", "MIGRATE_IMAGE_DIGEST"],
+    ["paddleocr", "PADDLEOCR_IMAGE_DIGEST"],
+    ["convert-worker", "CONVERSION_IMAGE_DIGEST"],
+    ["backup-scheduler", "BACKUP_SCHEDULER_IMAGE_DIGEST"],
+  ];
+
+  for (const [serviceName, envVar] of requiredDigestServices) {
+    const block = services.get(serviceName);
+    if (!block) {
+      violations.push(`infra/deploy/compose.release.yml: missing required service "${serviceName}"`);
+      continue;
+    }
+    const imagePattern = new RegExp(`^\\s+image:\\s*\\$\\{${envVar}:\\?[^}]+\\}\\s*$`, "m");
+    if (!imagePattern.test(block)) {
+      violations.push(
+        `infra/deploy/compose.release.yml: service "${serviceName}" must pin image to required \${${envVar}:?...} digest variable`,
+      );
+    }
+    if (/^\s+build:\s*\n\s+context:/m.test(block)) {
+      violations.push(
+        `infra/deploy/compose.release.yml: service "${serviceName}" must not configure local build context fallback`,
+      );
+    }
+  }
+
+  const backupBlock = services.get("backup-scheduler") ?? "";
+  if (backupBlock && !/^\s+profiles:\s*\[backup\]\s*$/m.test(backupBlock)) {
+    violations.push('infra/deploy/compose.release.yml: service "backup-scheduler" must declare profiles: [backup]');
+  }
+
+  for (const [serviceName, block] of services.entries()) {
+    if (/^\s+ports:/m.test(block)) {
+      violations.push(
+        `infra/deploy/compose.release.yml: service "${serviceName}" must not publish additional host ports`,
+      );
+    }
+  }
+
+  const appBlock = services.get("app") ?? "";
+  const requiredDisabledFlags = [
+    "SOP_WORKFLOW_PROBE_ENABLED",
+    "SOP_LOCAL_STORAGE_FIXTURE_ENABLED",
+    "SOP_LOCAL_EMBEDDING_FIXTURE_ENABLED",
+    "SOP_LOCAL_RETRIEVAL_FIXTURE_ENABLED",
+    "SOP_LOCAL_ANSWER_FIXTURE_ENABLED",
+  ];
+  for (const flag of requiredDisabledFlags) {
+    if (!new RegExp(`^\\s+${flag}:\\s*"0"\\s*$`, "m").test(appBlock)) {
+      violations.push(`infra/deploy/compose.release.yml: app must force ${flag}: "0"`);
+    }
+  }
+
+  for (const serviceName of ["app", "proxy", "postgres", "redis"]) {
+    const block = services.get(serviceName) ?? "";
+    if (!/^\s+restart:\s*unless-stopped\s*$/m.test(block)) {
+      violations.push(
+        `infra/deploy/compose.release.yml: service "${serviceName}" must set restart: unless-stopped`,
+      );
+    }
+  }
+
+  return { ok: violations.length === 0, violations };
+}
+
+export function auditDeployWorkflow(content) {
+  const violations = [];
+  const sections = splitTopLevelSections(content);
+
+  const onText = (sections.get("on") ?? []).join("\n");
+  if (!/\bworkflow_dispatch\s*:/.test(onText)) {
+    violations.push(".github/workflows/deploy.yml: trigger must declare workflow_dispatch");
+  }
+  for (const forbiddenTrigger of ["push", "pull_request", "pull_request_target", "schedule"]) {
+    if (new RegExp(`^\\s+${forbiddenTrigger}\\s*:`, "m").test(onText)) {
+      violations.push(
+        `.github/workflows/deploy.yml: trigger must be workflow_dispatch only (forbidden "${forbiddenTrigger}")`,
+      );
+    }
+  }
+
+  if (!/^permissions:\s*\{\}\s*$/m.test(content)) {
+    violations.push(".github/workflows/deploy.yml: top-level permissions must be restricted to {}");
+  }
+
+  const lines = content.split(/\r?\n/);
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    const usesMatch = /^\s*(?:-\s*)?uses:\s*([^\s#]+)/.exec(line);
+    if (usesMatch) {
+      const actionRef = usesMatch[1];
+      if (!/@[a-f0-9]{40}$/.test(actionRef)) {
+        violations.push(
+          `.github/workflows/deploy.yml:${index + 1}: action "${actionRef}" must be pinned to a full 40-hex commit SHA`,
+        );
+      }
+    }
+    if (/\becho\b.*secrets\./.test(line)) {
+      violations.push(
+        `.github/workflows/deploy.yml:${index + 1}: workflow must never echo secret values`,
+      );
+    }
+  }
+
+  for (const lineNumber of findInlineInputsInRunBlocks(content)) {
+    violations.push(
+      `.github/workflows/deploy.yml:${lineNumber}: must pass workflow inputs via env rather than interpolating \${{ inputs.* }} inside run:`,
+    );
+  }
+
+  if (/:latest(?:\s|$|["'])/.test(content)) {
+    violations.push(".github/workflows/deploy.yml: must not push or reference mutable :latest image tags");
+  }
+
+  const jobs = splitNamedBlocks(sections.get("jobs") ?? []);
+  const requiredJobs = [
+    "verify-candidate",
+    "build-immutable-artifacts",
+    "deploy-nonprod",
+    "deploy-production",
+  ];
+  for (const jobName of requiredJobs) {
+    if (!jobs.has(jobName)) {
+      violations.push(`.github/workflows/deploy.yml: missing required job "${jobName}"`);
+    }
+  }
+
+  const buildNeeds = parseJobNeeds(jobs.get("build-immutable-artifacts") ?? "");
+  if (!buildNeeds.has("verify-candidate")) {
+    violations.push(
+      '.github/workflows/deploy.yml: "build-immutable-artifacts" must depend on "verify-candidate"',
+    );
+  }
+
+  const nonprodJob = jobs.get("deploy-nonprod") ?? "";
+  const nonprodNeeds = parseJobNeeds(nonprodJob);
+  if (!nonprodNeeds.has("verify-candidate") || !nonprodNeeds.has("build-immutable-artifacts")) {
+    violations.push(
+      '.github/workflows/deploy.yml: "deploy-nonprod" must require verify-candidate and build-immutable-artifacts',
+    );
+  }
+  if (!/^\s+environment:\s*staging\s*$/m.test(nonprodJob)) {
+    violations.push('.github/workflows/deploy.yml: "deploy-nonprod" must target environment: staging');
+  }
+
+  const prodJob = jobs.get("deploy-production") ?? "";
+  const prodNeeds = parseJobNeeds(prodJob);
+  for (const dep of ["verify-candidate", "build-immutable-artifacts", "deploy-nonprod"]) {
+    if (!prodNeeds.has(dep)) {
+      violations.push(
+        `.github/workflows/deploy.yml: "deploy-production" must require "${dep}" in needs`,
+      );
+    }
+  }
+  if (!/^\s+environment:\s*production\s*$/m.test(prodJob)) {
+    violations.push(
+      '.github/workflows/deploy.yml: "deploy-production" must enforce manual gate via environment: production',
+    );
+  }
+  if (!prodJob.includes("inputs.target_environment == 'production'")) {
+    violations.push(
+      '.github/workflows/deploy.yml: "deploy-production" must guard execution with inputs.target_environment == \'production\'',
+    );
+  }
+  if (!prodJob.includes("inputs.v01_candidate_sha") || !prodJob.includes("github.sha")) {
+    violations.push(
+      '.github/workflows/deploy.yml: "deploy-production" must verify inputs.v01_candidate_sha against github.sha',
+    );
+  }
+
+  return { ok: violations.length === 0, violations };
+}
+
 export function verifyHardening(rootDir = process.cwd()) {
   const violations = [];
   const checkedFiles = [];
@@ -412,6 +658,14 @@ export function verifyHardening(rootDir = process.cwd()) {
   const backupComposePath = join(rootDir, "infra", "backup", "compose.backup.yml");
   checkedFiles.push("infra/backup/compose.backup.yml");
   violations.push(...auditBackupCompose(readFileSync(backupComposePath, "utf8")).violations);
+
+  const releaseComposePath = join(rootDir, "infra", "deploy", "compose.release.yml");
+  checkedFiles.push("infra/deploy/compose.release.yml");
+  violations.push(...auditReleaseCompose(readFileSync(releaseComposePath, "utf8")).violations);
+
+  const deployWorkflowPath = join(rootDir, ".github", "workflows", "deploy.yml");
+  checkedFiles.push(".github/workflows/deploy.yml");
+  violations.push(...auditDeployWorkflow(readFileSync(deployWorkflowPath, "utf8")).violations);
 
   const nginxPath = join(rootDir, "infra", "proxy", "nginx.conf");
   checkedFiles.push("infra/proxy/nginx.conf");

@@ -1,0 +1,43 @@
+services:
+  postgres:
+    restart: unless-stopped
+
+  redis:
+    restart: unless-stopped
+
+  proxy:
+    restart: unless-stopped
+
+  migrate:
+    image: ${MIGRATE_IMAGE_DIGEST:?MIGRATE_IMAGE_DIGEST must be pinned to an immutable @sha256 digest}
+    build: !reset null
+    pull_policy: always
+
+  app:
+    image: ${APP_IMAGE_DIGEST:?APP_IMAGE_DIGEST must be pinned to an immutable @sha256 digest}
+    build: !reset null
+    pull_policy: always
+    restart: unless-stopped
+    environment:
+      AUTH_BASE_URL: ${AUTH_BASE_URL:-http://127.0.0.1:3000}
+      SOP_WORKFLOW_PROBE_ENABLED: "0"
+      SOP_LOCAL_STORAGE_FIXTURE_ENABLED: "0"
+      SOP_LOCAL_EMBEDDING_FIXTURE_ENABLED: "0"
+      SOP_LOCAL_RETRIEVAL_FIXTURE_ENABLED: "0"
+      SOP_LOCAL_ANSWER_FIXTURE_ENABLED: "0"
+
+  paddleocr:
+    image: ${PADDLEOCR_IMAGE_DIGEST:?PADDLEOCR_IMAGE_DIGEST must be pinned to an immutable @sha256 digest}
+    build: !reset null
+    pull_policy: always
+
+  convert-worker:
+    image: ${CONVERSION_IMAGE_DIGEST:?CONVERSION_IMAGE_DIGEST must be pinned to an immutable @sha256 digest}
+    build: !reset null
+    pull_policy: always
+
+  backup-scheduler:
+    profiles: [backup]
+    image: ${BACKUP_SCHEDULER_IMAGE_DIGEST:?BACKUP_SCHEDULER_IMAGE_DIGEST must be pinned to an immutable @sha256 digest}
+    build: !reset null
+    pull_policy: always
