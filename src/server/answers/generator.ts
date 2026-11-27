@@ -54,10 +54,13 @@ function isTransientHttpStatus(status: number): boolean {
 }
 
 function sanitizePassageText(rawText: string): string {
-  const safeLines = rawText
+  // Sanitize per line so numbered steps and Markdown pipe tables keep their line boundaries.
+  return rawText
     .split(/\r?\n/)
-    .filter((line) => !containsInjectionDirective(line));
-  return stripPromptInjectionDirectives(safeLines.join("\n"));
+    .filter((line) => !containsInjectionDirective(line))
+    .map((line) => stripPromptInjectionDirectives(line))
+    .filter((line) => line.length > 0)
+    .join("\n");
 }
 
 function splitCleanSentences(text: string): string[] {

@@ -78,10 +78,16 @@ ALTER TABLE "app"."workflow_jobs" ADD CONSTRAINT "workflow_jobs_attempt_bounds" 
 --> statement-breakpoint
 CREATE OR REPLACE FUNCTION app.keep_workflow_job_identity() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
-  IF OLD.owner_id IS DISTINCT FROM NEW.owner_id OR OLD.request_key IS DISTINCT FROM NEW.request_key
+  IF TG_OP = 'UPDATE' AND (OLD.owner_id IS DISTINCT FROM NEW.owner_id OR OLD.request_key IS DISTINCT FROM NEW.request_key
     OR OLD.input_hash IS DISTINCT FROM NEW.input_hash OR OLD.kind IS DISTINCT FROM NEW.kind
-    OR OLD.scenario IS DISTINCT FROM NEW.scenario OR OLD.conversation_id IS DISTINCT FROM NEW.conversation_id THEN
+    OR OLD.scenario IS DISTINCT FROM NEW.scenario OR OLD.document_id IS DISTINCT FROM NEW.document_id
+    OR OLD.source_sha256 IS DISTINCT FROM NEW.source_sha256 OR OLD.pipeline_version IS DISTINCT FROM NEW.pipeline_version
+    OR OLD.conversation_id IS DISTINCT FROM NEW.conversation_id) THEN
     RAISE EXCEPTION 'Workflow identity is immutable' USING ERRCODE = '23514';
+  END IF;
+  IF NEW.kind = 'document_ingestion' AND NOT EXISTS (SELECT 1 FROM app.sop_documents d
+    WHERE d.id = NEW.document_id AND d.sha256 = NEW.source_sha256 AND d.uploaded_by = NEW.owner_id) THEN
+    RAISE EXCEPTION 'Ingestion must match immutable document source' USING ERRCODE = '23514';
   END IF;
   RETURN NEW;
 END;

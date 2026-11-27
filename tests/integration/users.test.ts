@@ -288,6 +288,7 @@ async function seedActivePdfDocument(storage: MemoryStorage, title: string) {
 }
 
 beforeAll(async () => {
+  process.env.DOCUMENT_UPLOAD_QUOTA_BYTES ??= String(500 * 1024 * 1024);
   primaryAdmin = await createAccountWithSession(
     "ADMIN",
     `s12-admin-primary-${randomUUID()}@example.invalid`,

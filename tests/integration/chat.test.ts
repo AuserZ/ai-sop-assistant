@@ -256,11 +256,12 @@ async function seedActiveSop(options: {
     adminAccount,
     documentId,
     {
-      decision: "APPROVED",
-      jobId: job.id,
-      sourceSha256: job.sourceSha256!,
-      pipelineVersion: job.pipelineVersion!,
-      attemptId: job.attemptId,
+      decision: "APPROVE",
+      expectedSha256: job.sourceSha256!,
+      expectedJobId: job.id,
+      expectedPipelineVersion: job.pipelineVersion!,
+      expectedAttemptId: job.attemptId,
+      explicitConfirmation: true,
       notes: "Verified synthetic SOP for S11 chat integration tests",
     },
     database,
@@ -289,6 +290,7 @@ describe("S11 safe chat SSE, staged n8n callbacks, and persistence (PostgreSQL +
   const purgeVectorIndex = 111;
 
   beforeAll(async () => {
+    process.env.DOCUMENT_UPLOAD_QUOTA_BYTES ??= String(500 * 1024 * 1024);
     adminAccount = await seedSyntheticSession(
       database,
       await seedSyntheticAccount(database, "ADMIN"),

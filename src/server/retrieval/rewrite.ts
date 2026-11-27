@@ -78,12 +78,44 @@ export function boundConversationHistory(
     .filter((turn) => turn.content.length > 0);
 }
 
-function deterministicFollowUpRewrite(question: string, boundedHistory: ConversationTurn[]): string {
+const followUpReferencePattern =
+  /\b(?:it|its|they|them|their|that|this|those|these|same|previous|prior|above|earlier|again|also|next|then|else|instead|otherwise|there)\b|^(?:and|what about|how about|what if|for how long|how long|how much|how many)\b/i;
+
+function isLikelyFollowUpQuestion(sanitizedQuestion: string, priorUserTurns: ConversationTurn[]): boolean {
+  if (priorUserTurns.length === 0) return false;
+  if (followUpReferencePattern.test(sanitizedQuestion)) return true;
+
+  const questionTokens = extractKeywordTokens(sanitizedQuestion, 32);
+  if (questionTokens.length <= 3) return true;
+
+  const questionTokenSet = new Set(questionTokens);
+  for (const turn of priorUserTurns) {
+    const cleanedTurn = stripPromptInjectionDirectives(turn.content);
+    for (const token of extractKeywordTokens(cleanedTurn, 24)) {
+      if (questionTokenSet.has(token)) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+function deterministicFollowUpRewrite(
+  question: string,
+  boundedHistory: ConversationTurn[],
+): { standaloneQuery: string; rewrittenFromHistory: boolean } {
   const sanitizedQuestion = stripPromptInjectionDirectives(question) || sanitizeUntrustedQueryText(question);
   const questionTokens = new Set(extractKeywordTokens(sanitizedQuestion, 32));
 
   // Extract topic anchors exclusively from prior user turns so prior assistant answers never act as evidence.
   const priorUserTurns = boundedHistory.filter((turn) => turn.role === "user");
+  if (!isLikelyFollowUpQuestion(sanitizedQuestion, priorUserTurns)) {
+    return {
+      standaloneQuery: sanitizedQuestion.slice(0, retrievalDefaults.maxRewriteOutputChars),
+      rewrittenFromHistory: false,
+    };
+  }
+
   const anchorParts: string[] = [];
   const seenAnchors = new Set<string>(questionTokens);
 
@@ -107,11 +139,17 @@ function deterministicFollowUpRewrite(question: string, boundedHistory: Conversa
   }
 
   if (anchorParts.length === 0) {
-    return sanitizedQuestion.slice(0, retrievalDefaults.maxRewriteOutputChars);
+    return {
+      standaloneQuery: sanitizedQuestion.slice(0, retrievalDefaults.maxRewriteOutputChars),
+      rewrittenFromHistory: false,
+    };
   }
 
   const combined = `${sanitizedQuestion} (${anchorParts.join(" ")})`;
-  return combined.slice(0, retrievalDefaults.maxRewriteOutputChars).trim();
+  return {
+    standaloneQuery: combined.slice(0, retrievalDefaults.maxRewriteOutputChars).trim(),
+    rewrittenFromHistory: true,
+  };
 }
 
 export type RewriteQueryResult = {
@@ -149,10 +187,11 @@ export async function rewriteRetrievalQuery(
   }
 
   if (configuration.mode === "synthetic_fixture") {
+    const rewritten = deterministicFollowUpRewrite(normalizedQuestion, boundedHistory);
     return {
-      standaloneQuery: deterministicFollowUpRewrite(normalizedQuestion, boundedHistory),
-      rewrittenFromHistory: true,
-      historyTurnsUsed: boundedHistory.length,
+      standaloneQuery: rewritten.standaloneQuery,
+      rewrittenFromHistory: rewritten.rewrittenFromHistory,
+      historyTurnsUsed: rewritten.rewrittenFromHistory ? boundedHistory.length : 0,
       rewriteModel: configuration.rewriteModel,
     };
   }

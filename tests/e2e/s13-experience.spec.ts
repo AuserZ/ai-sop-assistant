@@ -239,7 +239,7 @@ test("S13 Phase 3 integrated desktop and mobile experience: 3-menu shell, invite
   expect(staffDesktopMenus).toEqual(["Chat", "List Document SOP"]);
 
   await page.goto("/users");
-  await expect(page.getByRole("alert")).toHaveText("Admin access required.");
+  await expect(page.getByRole("main").getByRole("alert")).toHaveText("Admin access required.");
   expect((await page.request.get("/api/users")).status()).toBe(403);
 
   // 5. Staff finds and downloads SOP in List Document SOP, zero Admin controls.

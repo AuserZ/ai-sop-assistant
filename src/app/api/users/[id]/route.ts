@@ -1,9 +1,9 @@
-import { updateAccountAccess } from "@/server/auth/accounts";
-import { requireCurrentAccount, requireRole } from "@/server/auth/authorization";
-import { AuthFailure, authErrorResponse } from "@/server/auth/errors";
-import { readAuthBody, requireMutationOrigin } from "@/server/auth/http";
-import { authLimits, consumeRateLimit } from "@/server/auth/rate-limit";
-import { accountAccessInput, targetUserIdInput } from "@/server/auth/validation";
+import { updateAccountAccess } from "../../../../server/auth/accounts";
+import { requireCurrentAccount, requireRole } from "../../../../server/auth/authorization";
+import { AuthFailure, authErrorResponse } from "../../../../server/auth/errors";
+import { readAuthBody, requireMutationOrigin } from "../../../../server/auth/http";
+import { authLimits, consumeRateLimit } from "../../../../server/auth/rate-limit";
+import { accountAccessInput, targetUserIdInput } from "../../../../server/auth/validation";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";

@@ -1,7 +1,7 @@
-import { listDirectoryUsers } from "@/server/auth/accounts";
-import { requireCurrentAccount, requireRole } from "@/server/auth/authorization";
-import { AuthFailure, authErrorResponse } from "@/server/auth/errors";
-import { authLimits, consumeRateLimit } from "@/server/auth/rate-limit";
+import { listDirectoryUsers } from "../../../server/auth/accounts";
+import { requireCurrentAccount, requireRole } from "../../../server/auth/authorization";
+import { AuthFailure, authErrorResponse } from "../../../server/auth/errors";
+import { authLimits, consumeRateLimit } from "../../../server/auth/rate-limit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";

@@ -672,6 +672,21 @@ describe("S09 bounded follow-up query rewriting and prompt-injection neutralizat
     } finally {
       parseSpy.mockRestore();
     }
+    // Unrelated self-contained new-topic questions must not inherit prior-turn SOP anchors.
+    const unrelated = await rewriteRetrievalQuery(
+      "What is the visitor cafeteria lunch voucher reimbursement policy?",
+      [
+        { role: "user", content: "What are the SOP-711 valve calibration steps and regulator pressure?" },
+        { role: "assistant", content: "1. Set line regulator V-14 to 2.75 bar." },
+      ],
+      retrievalConfiguration(fixtureEnv),
+    );
+    expect(unrelated.rewrittenFromHistory).toBe(false);
+    expect(unrelated.standaloneQuery).toBe(
+      "What is the visitor cafeteria lunch voucher reimbursement policy?",
+    );
+    expect(unrelated.standaloneQuery).not.toContain("SOP-711");
+    expect(unrelated.standaloneQuery).not.toContain("valve");
   });
 });
 

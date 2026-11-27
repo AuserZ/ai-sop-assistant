@@ -41,7 +41,7 @@ test("S12 Admin manages user directory, roles, invitations and deactivation whil
   expect(staffHomeNavLinks).toEqual(["Chat", "List Document SOP"]);
 
   await page.goto("/users");
-  await expect(page.getByRole("alert")).toHaveText("Admin access required.");
+  await expect(page.getByRole("main").getByRole("alert")).toHaveText("Admin access required.");
   await expect(page.getByTestId("users-directory-list")).toHaveCount(0);
   expect((await page.request.get("/api/users")).status()).toBe(403);
 

@@ -135,7 +135,7 @@ test("S11 Staff chat streams progress-only before validation, renders cited step
   const firstSseResponse = await firstSseResponsePromise;
   expect(firstSseResponse.status()).toBe(200);
   expect(firstSseResponse.headers()["content-type"]).toContain("text/event-stream");
-  expect(firstSseResponse.headers()["x-accel-buffering"]).toBe("no");
+  expect(firstSseResponse.headers()["cache-control"]).toContain("no-store");
 
   const assistantMessage = page.locator('[data-message-role="assistant"][data-outcome="completed"]').first();
   await expect(assistantMessage).toBeVisible({ timeout: 60_000 });

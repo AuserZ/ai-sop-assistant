@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { and, asc, desc, eq, gt, inArray, ne, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, inArray, lte, ne, sql } from "drizzle-orm";
 import { answerConfiguration } from "../answers/config";
 import { buildBackendSourcePath, resolveVerifiedCitations } from "../answers/citations";
 import {
@@ -764,7 +764,7 @@ export async function retrieveChatStage(
           eq(chatMessages.conversationId, job.conversationId!),
           eq(chatMessages.ownerId, job.ownerId),
           ne(chatMessages.id, userMessage.id),
-          sql`${chatMessages.createdAt} <= ${userMessage.createdAt}`,
+          lte(chatMessages.createdAt, userMessage.createdAt),
         ),
       )
       .orderBy(desc(chatMessages.createdAt), desc(chatMessages.id))

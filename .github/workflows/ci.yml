@@ -181,7 +181,7 @@ jobs:
           echo "DRILL_DIR=$DRILL_DIR" >> "$GITHUB_ENV"
           chmod 755 "$DRILL_DIR"
           mkdir -p "$DRILL_DIR/backup-out"
-          sudo chown -R 1000:1000 "$DRILL_DIR/backup-out"
+          sudo chown -R 1000:1000 "$DRILL_DIR"
 
           docker compose -p ai-sop-dr-source up --wait --wait-timeout 180 postgres
           docker compose -p ai-sop-dr-source run --rm --no-deps migrate
@@ -197,22 +197,29 @@ jobs:
             --local-dir /tmp/backup-out
 
           EXPECTED_FP="$(tr -d '\r\n' < .local-secrets/n8n-encryption-key-fingerprint)"
-          node infra/backup/escrow-keys.mjs --create \
-            --n8n-key-file .local-secrets/n8n-encryption-key \
-            --passphrase-file .local-secrets/backup-escrow-passphrase \
-            --backup-key-file .local-secrets/backup-encryption-key \
-            --output "$DRILL_DIR/escrow.bundle.json"
-          node infra/backup/escrow-keys.mjs --verify \
-            --input "$DRILL_DIR/escrow.bundle.json" \
-            --passphrase-file .local-secrets/backup-escrow-passphrase \
-            --expected-fingerprint "$EXPECTED_FP"
-          node infra/backup/escrow-keys.mjs --recover \
-            --input "$DRILL_DIR/escrow.bundle.json" \
-            --passphrase-file .local-secrets/backup-escrow-passphrase \
-            --expected-fingerprint "$EXPECTED_FP" \
-            --output-key-file "$DRILL_DIR/recovered-n8n-key"
-          cmp -s .local-secrets/n8n-encryption-key "$DRILL_DIR/recovered-n8n-key"
-          sudo chown 1000:1000 "$DRILL_DIR/recovered-n8n-key"
+          docker compose -p ai-sop-dr-source -f docker-compose.yml -f infra/backup/compose.backup.yml --profile backup \
+            run --rm --no-deps \
+            -v "$DRILL_DIR:/tmp/drill" \
+            -v "$PWD/.local-secrets/n8n-encryption-key:/tmp/src-n8n-key:ro" \
+            -v "$PWD/.local-secrets/backup-escrow-passphrase:/tmp/escrow-pass:ro" \
+            --entrypoint sh backup-scheduler -c "
+              set -eu
+              node infra/backup/escrow-keys.mjs --create \
+                --n8n-key-file /tmp/src-n8n-key \
+                --passphrase-file /tmp/escrow-pass \
+                --backup-key-file /run/secrets/backup-encryption-key \
+                --output /tmp/drill/escrow.bundle.json
+              node infra/backup/escrow-keys.mjs --verify \
+                --input /tmp/drill/escrow.bundle.json \
+                --passphrase-file /tmp/escrow-pass \
+                --expected-fingerprint '$EXPECTED_FP'
+              node infra/backup/escrow-keys.mjs --recover \
+                --input /tmp/drill/escrow.bundle.json \
+                --passphrase-file /tmp/escrow-pass \
+                --expected-fingerprint '$EXPECTED_FP' \
+                --output-key-file /tmp/drill/recovered-n8n-key
+            "
+          sudo cmp -s .local-secrets/n8n-encryption-key "$DRILL_DIR/recovered-n8n-key"
 
           docker compose -p ai-sop-dr-drill-ci up --wait --wait-timeout 180 postgres
           docker compose -p ai-sop-dr-drill-ci -f docker-compose.yml -f infra/backup/compose.backup.yml --profile backup \

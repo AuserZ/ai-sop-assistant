@@ -209,6 +209,7 @@ async function seedUploadedJob(storage: MemoryStorage, title: string) {
 }
 
 beforeAll(async () => {
+  process.env.DOCUMENT_UPLOAD_QUOTA_BYTES ??= String(500 * 1024 * 1024);
   const adminUser = await seedSyntheticAccount(
     database,
     "ADMIN",
