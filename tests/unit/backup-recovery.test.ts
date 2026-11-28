@@ -501,7 +501,7 @@ describe("S15 encrypted 6-hour backup runner and safe alerting", () => {
 
     expect(receipt.ok).toBe(true);
     expect(receipt.n8nKeyFingerprint).toBe(expectedFp);
-    expect(receipt.migrationHead).toBe("0007_chat_conversations");
+    expect(receipt.migrationHead).toBe("0008_chat_conversation_archive");
     expect(Object.keys(receipt.workflowVersions).length).toBeGreaterThanOrEqual(3);
     expect(mock.store.size).toBe(3);
 

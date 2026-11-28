@@ -85,9 +85,9 @@ function buildSseFrame(id: string, event: string, data: Record<string, unknown>)
 describe("S16 immutable release manifest and rollback compatibility (ADR 09/14)", () => {
   it("collects real repo migrations, managed workflows, and tracked config digests", () => {
     const artifacts = collectRepoArtifacts(process.cwd());
-    expect(artifacts.migrations.headTag).toBe("0007_chat_conversations");
-    expect(artifacts.migrations.count).toBe(8);
-    expect(artifacts.migrations.entries).toHaveLength(8);
+    expect(artifacts.migrations.headTag).toBe("0008_chat_conversation_archive");
+    expect(artifacts.migrations.count).toBe(9);
+    expect(artifacts.migrations.entries).toHaveLength(9);
     expect(artifacts.workflows.map((wf: { id: string }) => wf.id)).toEqual([
       "sop-s03-probe-v1",
       "sop-s05-ingestion-v1",

@@ -233,3 +233,137 @@ test("S11 Staff chat streams progress-only before validation, renders cited step
   expect(navLinks.length).toBeLessThanOrEqual(3);
   expect(pageErrors).toEqual([]);
 });
+
+test("S17 C7 multi-conversation history: create multiple threads, reopen/switch, search, rename, soft-archive, cross-user 404, and 320px drawer/3-menu bounds", async ({
+  page,
+}) => {
+  test.setTimeout(240_000);
+  const pageErrors: string[] = [];
+  page.on("pageerror", (error) => pageErrors.push(error.name));
+
+  const tag = `S17E2E${randomUUID().slice(0, 6).toUpperCase()}`;
+  const sopTitle = `${tag} SOP-717 Filter Replacement`;
+  const pdfBytes = buildProceduralPdf([
+    `Section 3.2 ${tag} Filter Replacement Procedure`,
+    `1. Isolate housing F-09 and confirm gauge reads 0.0 bar for ${tag}.`,
+    `2. Replace 0.22 micron cartridge and torque clamp to 18 Nm.`,
+  ]);
+
+  await signIn(page, "admin");
+  await uploadAndActivatePdf(page, sopTitle, "s17-filter-replacement.pdf", pdfBytes);
+
+  await signIn(page, "staff");
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto("/chat");
+
+  // 1. Create Conversation 1
+  await page
+    .getByLabel("Ask an SOP question", { exact: true })
+    .fill(`What are the ${tag} filter replacement steps?`);
+  await page.getByRole("button", { name: "Send", exact: true }).click();
+  await expect(
+    page.locator('[data-message-role="assistant"][data-outcome="completed"]').first(),
+  ).toBeVisible({ timeout: 60_000 });
+  const conv1Id = await page.locator('[data-chat-workspace="ready"]').getAttribute("data-conversation-id");
+  expect(z.uuid().safeParse(conv1Id).success).toBe(true);
+
+  // 2. Start New chat and create Conversation 2 (with XSS-like payload in question/title)
+  await page.getByRole("button", { name: "New chat", exact: true }).click();
+  await expect(page.getByTestId("chat-empty-state")).toBeVisible();
+  await page
+    .getByLabel("Ask an SOP question", { exact: true })
+    .fill(`<img src=x onerror=window.__s17Xss=1> What torque applies for ${tag} filter clamp?`);
+  await page.getByRole("button", { name: "Send", exact: true }).click();
+  await expect(
+    page.locator('[data-message-role="assistant"][data-outcome="completed"]').first(),
+  ).toBeVisible({ timeout: 60_000 });
+  const conv2Id = await page.locator('[data-chat-workspace="ready"]').getAttribute("data-conversation-id");
+  expect(z.uuid().safeParse(conv2Id).success).toBe(true);
+  expect(conv2Id).not.toBe(conv1Id);
+
+  // 3. Reload -> both conversations appear in history rail; switch back to Conversation 1
+  await page.reload();
+  const historyPanel = page.getByTestId("conversation-history-panel");
+  await expect(historyPanel).toBeVisible({ timeout: 15_000 });
+  await expect(historyPanel.getByTestId(`conversation-item-${conv1Id}`)).toBeVisible();
+  await expect(historyPanel.getByTestId(`conversation-item-${conv2Id}`)).toBeVisible();
+
+  await historyPanel.getByTestId(`conversation-item-${conv1Id}`).click();
+  await expect(page.locator('[data-chat-workspace="ready"]')).toHaveAttribute(
+    "data-conversation-id",
+    conv1Id!,
+  );
+  await expect(page.locator('[data-message-role="user"]').first()).toContainText(
+    `What are the ${tag} filter replacement steps?`,
+  );
+
+  // 4. Rename Conversation 2 inline and verify persistence after reload
+  const renamedTitle = `${tag} Clamp Torque Thread`;
+  await historyPanel.getByTestId(`conversation-rename-btn-${conv2Id}`).click();
+  const editBox = historyPanel.getByTestId(`conversation-edit-${conv2Id}`);
+  await editBox.getByLabel("Rename conversation", { exact: true }).fill(renamedTitle);
+  await editBox.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(historyPanel.getByTestId(`conversation-item-${conv2Id}`)).toContainText(renamedTitle);
+
+  // 5. Search conversations by renamed title, then clear search
+  const searchInput = historyPanel.getByLabel("Search conversations", { exact: true });
+  await searchInput.fill(renamedTitle);
+  await searchInput.press("Enter");
+  await expect(historyPanel.getByTestId(`conversation-item-${conv2Id}`)).toBeVisible();
+  await expect(historyPanel.getByTestId(`conversation-item-${conv1Id}`)).toHaveCount(0);
+  await historyPanel.getByRole("button", { name: "Clear conversation search", exact: true }).click();
+  await expect(historyPanel.getByTestId(`conversation-item-${conv1Id}`)).toBeVisible();
+
+  // 6. Soft-archive Conversation 2 -> removed from list & API returns 404
+  await historyPanel.getByTestId(`conversation-archive-btn-${conv2Id}`).click();
+  await historyPanel
+    .getByTestId(`conversation-archive-confirm-${conv2Id}`)
+    .getByRole("button", { name: "Archive", exact: true })
+    .click();
+  await expect(historyPanel.getByTestId(`conversation-item-${conv2Id}`)).toHaveCount(0);
+  expect((await page.request.get(`/api/chat/conversations/${conv2Id}`)).status()).toBe(404);
+
+  expect(await page.evaluate(() => (window as unknown as { __s17Xss?: unknown }).__s17Xss)).toBeUndefined();
+
+  // 7. 320px mobile drawer opens, preserves >= 44px buttons, zero horizontal overflow, Escape closes, and <= 3 nav links
+  await page.setViewportSize({ width: 320, height: 720 });
+  await page.getByTestId("mobile-history-toggle").click();
+  const mobileDrawer = page.getByTestId("conversation-history-drawer");
+  await expect(mobileDrawer).toBeVisible();
+  await expect(mobileDrawer.getByTestId(`conversation-item-${conv1Id}`)).toBeVisible();
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= document.documentElement.clientWidth,
+    ),
+  ).toBe(true);
+  for (const button of await page.getByRole("button").all()) {
+    const box = await button.boundingBox();
+    if (box) {
+      expect(box.height).toBeGreaterThanOrEqual(44);
+    }
+  }
+  await page.keyboard.press("Escape");
+  await expect(mobileDrawer).toHaveCount(0);
+  expect(await page.getByRole("link").allTextContents()).toEqual(["Chat", "List Document SOP"]);
+
+  // 8. Cross-user API isolation: Admin cannot read, rename, or archive Staff's conversation
+  await signIn(page, "admin");
+  expect((await page.request.get(`/api/chat/conversations/${conv1Id}`)).status()).toBe(404);
+  expect(
+    (
+      await page.request.patch(`/api/chat/conversations/${conv1Id}`, {
+        headers: { Origin: fixture.baseURL },
+        data: { title: "Cross-user hijack" },
+      })
+    ).status(),
+  ).toBe(404);
+  expect(
+    (
+      await page.request.delete(`/api/chat/conversations/${conv1Id}`, {
+        headers: { Origin: fixture.baseURL },
+      })
+    ).status(),
+  ).toBe(404);
+
+  expect(pageErrors).toEqual([]);
+});

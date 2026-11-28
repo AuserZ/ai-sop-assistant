@@ -44,14 +44,36 @@ export const chatMessageSchema = z.object({
 
 export type ChatMessageItem = z.infer<typeof chatMessageSchema>;
 
+export const conversationSummarySchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+
+export type ConversationSummary = z.infer<typeof conversationSummarySchema>;
+
+export const conversationListSchema = z.object({
+  conversations: z.array(conversationSummarySchema),
+  nextCursor: z.string().nullable(),
+});
+
+export type ConversationListResult = z.infer<typeof conversationListSchema>;
+
+export const conversationRenameSchema = z.object({
+  conversation: conversationSummarySchema,
+});
+
+export const conversationArchiveSchema = z.object({
+  archived: z.literal(true),
+  conversationId: z.string(),
+  archivedAt: z.string(),
+});
+
 export const conversationDetailSchema = z.object({
-  conversation: z.object({
-    id: z.string(),
-    title: z.string(),
-    createdAt: z.string(),
-    updatedAt: z.string(),
-  }),
+  conversation: conversationSummarySchema,
   messages: z.array(chatMessageSchema),
+  activeJobId: z.string().nullable().optional(),
 });
 
 export type ConversationDetail = z.infer<typeof conversationDetailSchema>;
@@ -200,6 +222,78 @@ const sourceAuthorizationSchema = z.object({
     ttlSeconds: z.number().int().positive(),
   }),
 });
+
+export async function fetchConversations(
+  options: { limit?: number; cursor?: string | null; query?: string } = {},
+  signal?: AbortSignal,
+): Promise<ConversationListResult> {
+  const params = new URLSearchParams();
+  if (options.limit !== undefined) params.set("limit", String(options.limit));
+  if (options.cursor) params.set("cursor", options.cursor);
+  const trimmedQuery = options.query?.trim() ?? "";
+  if (trimmedQuery) params.set("q", trimmedQuery);
+  const queryString = params.toString();
+  const url = queryString ? `/api/chat/conversations?${queryString}` : "/api/chat/conversations";
+
+  const response = await fetch(url, {
+    credentials: "same-origin",
+    cache: "no-store",
+    signal,
+  });
+  if (response.status === 401) throw new Error("UNAUTHENTICATED");
+  const payload: unknown = await response.json().catch(() => null);
+  const parsed = conversationListSchema.safeParse(payload);
+  if (!response.ok || !parsed.success) {
+    throw new Error("Could not load saved conversations.");
+  }
+  return parsed.data;
+}
+
+export async function renameConversation(
+  conversationId: string,
+  title: string,
+  signal?: AbortSignal,
+): Promise<ConversationSummary> {
+  const response = await fetch(`/api/chat/conversations/${encodeURIComponent(conversationId)}`, {
+    method: "PATCH",
+    credentials: "same-origin",
+    cache: "no-store",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ title }),
+    signal,
+  });
+  if (response.status === 401) throw new Error("UNAUTHENTICATED");
+  if (response.status === 404) throw new Error("Conversation not found.");
+  const payload: unknown = await response.json().catch(() => null);
+  const parsed = conversationRenameSchema.safeParse(payload);
+  if (!response.ok || !parsed.success) {
+    throw new Error("Could not rename this conversation.");
+  }
+  return parsed.data.conversation;
+}
+
+export async function archiveConversation(
+  conversationId: string,
+  signal?: AbortSignal,
+): Promise<{ conversationId: string; archivedAt: string }> {
+  const response = await fetch(`/api/chat/conversations/${encodeURIComponent(conversationId)}`, {
+    method: "DELETE",
+    credentials: "same-origin",
+    cache: "no-store",
+    signal,
+  });
+  if (response.status === 401) throw new Error("UNAUTHENTICATED");
+  if (response.status === 404) throw new Error("Conversation not found.");
+  const payload: unknown = await response.json().catch(() => null);
+  const parsed = conversationArchiveSchema.safeParse(payload);
+  if (!response.ok || !parsed.success) {
+    throw new Error("Could not archive this conversation.");
+  }
+  return {
+    conversationId: parsed.data.conversationId,
+    archivedAt: parsed.data.archivedAt,
+  };
+}
 
 export async function fetchConversationDetail(
   conversationId: string,
@@ -368,5 +462,38 @@ export async function streamChatTurn(
 
   if (!signal.aborted) {
     throw new Error("Verification is still running or timed out. Please retry.");
+  }
+}
+
+export async function resumeChatJobStream(
+  jobId: string,
+  onEvent: (event: ParsedChatSseEvent) => void,
+  signal: AbortSignal,
+): Promise<void> {
+  let lastEventId: string | null = null;
+  const maxReconnects = 4;
+
+  for (let attempt = 0; attempt < maxReconnects; attempt++) {
+    if (signal.aborted) return;
+    const headers = new Headers({ Accept: "text/event-stream" });
+    if (lastEventId) headers.set("Last-Event-ID", lastEventId);
+
+    const response = await fetch(`/api/chat/jobs/${encodeURIComponent(jobId)}/events`, {
+      credentials: "same-origin",
+      cache: "no-store",
+      headers,
+      signal,
+    });
+
+    if (response.status === 401) throw new Error("UNAUTHENTICATED");
+    if (response.status === 404) return;
+    if (!response.ok) {
+      throw new Error("Connection interrupted while checking SOP verification. Please try again.");
+    }
+
+    const pass = await readEventStreamResponse(response, onEvent);
+    if (pass.lastEventId) lastEventId = pass.lastEventId;
+    if (pass.terminal || signal.aborted) return;
+    if (!pass.timedOut) break;
   }
 }

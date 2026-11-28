@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { and, asc, desc, eq, gt, inArray, lte, ne, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, inArray, isNull, lte, ne, sql, type SQL } from "drizzle-orm";
 import { answerConfiguration } from "../answers/config";
 import { buildBackendSourcePath, resolveVerifiedCitations } from "../answers/citations";
 import {
@@ -52,15 +52,20 @@ import {
 import {
   chatApiBounds,
   chatIdInput,
+  encodeConversationCursor,
   noEvidenceFallbackMessage,
+  renameChatConversationInput,
   sendChatMessageInput,
+  type ChatConversationArchiveResult,
   type ChatConversationDetailDto,
-  type ChatConversationSummaryDto,
+  type ChatConversationListDto,
+  type ChatConversationRenameResult,
   type ChatHistoricalSourceDto,
   type ChatMessageDto,
   type ChatSafeErrorCode,
   type ChatStageCallbackResponse,
   type ChatTurnCreationResult,
+  type ConversationListCursor,
 } from "./contracts";
 import {
   logEvent,
@@ -353,6 +358,17 @@ export async function createChatTurn(
       if (existingJob.inputHash !== inputHash || !existingJob.conversationId) {
         throw new AuthFailure("IDEMPOTENCY_CONFLICT", 409);
       }
+      const [activeExistingConversation] = await transaction
+        .select({ id: chatConversations.id })
+        .from(chatConversations)
+        .where(
+          and(
+            eq(chatConversations.id, existingJob.conversationId),
+            eq(chatConversations.ownerId, account.id),
+            isNull(chatConversations.archivedAt),
+          ),
+        );
+      if (!activeExistingConversation) throw new AuthFailure("NOT_FOUND", 404);
       const [existingMessage] = await transaction
         .select({ id: chatMessages.id })
         .from(chatMessages)
@@ -375,6 +391,7 @@ export async function createChatTurn(
     }
 
     let conversationId: string;
+    const createdNewConversation = !parsed.data.conversationId;
     if (parsed.data.conversationId) {
       const [ownedConversation] = await transaction
         .select({ id: chatConversations.id })
@@ -383,6 +400,7 @@ export async function createChatTurn(
           and(
             eq(chatConversations.id, parsed.data.conversationId),
             eq(chatConversations.ownerId, account.id),
+            isNull(chatConversations.archivedAt),
           ),
         )
         .for("update");
@@ -431,6 +449,11 @@ export async function createChatTurn(
       .returning();
 
     if (!createdJob) {
+      if (createdNewConversation) {
+        await transaction
+          .delete(chatConversations)
+          .where(eq(chatConversations.id, conversationId));
+      }
       const [raced] = await transaction
         .select()
         .from(workflowJobs)
@@ -444,6 +467,17 @@ export async function createChatTurn(
       if (!raced || raced.inputHash !== inputHash || !raced.conversationId) {
         throw new AuthFailure("IDEMPOTENCY_CONFLICT", 409);
       }
+      const [activeRacedConversation] = await transaction
+        .select({ id: chatConversations.id })
+        .from(chatConversations)
+        .where(
+          and(
+            eq(chatConversations.id, raced.conversationId),
+            eq(chatConversations.ownerId, account.id),
+            isNull(chatConversations.archivedAt),
+          ),
+        );
+      if (!activeRacedConversation) throw new AuthFailure("NOT_FOUND", 404);
       const [racedMessage] = await transaction
         .select({ id: chatMessages.id })
         .from(chatMessages)
@@ -507,8 +541,13 @@ export async function createChatTurn(
 
 export async function listOwnedConversations(
   account: CurrentAccount,
-  options: { database?: JobDatabase; limit?: number } = {},
-): Promise<{ conversations: ChatConversationSummaryDto[] }> {
+  options: {
+    database?: JobDatabase;
+    limit?: number;
+    cursor?: ConversationListCursor;
+    query?: string;
+  } = {},
+): Promise<ChatConversationListDto> {
   const database = options.database ?? getDatabase();
   const limit = Math.max(
     1,
@@ -517,28 +556,58 @@ export async function listOwnedConversations(
       chatApiBounds.maximumConversationListLimit,
     ),
   );
+  const trimmedQuery = options.query?.trim() ?? "";
+  if (trimmedQuery.length > chatApiBounds.maximumConversationSearchChars) {
+    throw new AuthFailure("INVALID_INPUT", 400);
+  }
 
   return database.transaction(async (transaction) => {
     await lockCurrentAccount(transaction, account);
+
+    const conditions: SQL[] = [
+      eq(chatConversations.ownerId, account.id),
+      isNull(chatConversations.archivedAt),
+    ];
+
+    if (trimmedQuery.length > 0) {
+      const escapedQuery = trimmedQuery.replace(/[\\%_]/g, "\\$&");
+      conditions.push(sql`${chatConversations.title} ilike ${`%${escapedQuery}%`} escape '\\'`);
+    }
+
+    if (options.cursor) {
+      conditions.push(
+        sql`(${chatConversations.updatedAt}, ${chatConversations.id}) < (${options.cursor.updatedAt}::timestamptz, ${options.cursor.id}::uuid)`,
+      );
+    }
+
     const rows = await transaction
       .select({
         id: chatConversations.id,
         title: chatConversations.title,
         createdAt: chatConversations.createdAt,
         updatedAt: chatConversations.updatedAt,
+        cursorUpdatedAt: sql<string>`to_char(${chatConversations.updatedAt} at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`,
       })
       .from(chatConversations)
-      .where(eq(chatConversations.ownerId, account.id))
+      .where(and(...conditions))
       .orderBy(desc(chatConversations.updatedAt), desc(chatConversations.id))
-      .limit(limit);
+      .limit(limit + 1);
+
+    const hasMore = rows.length > limit;
+    const pageRows = hasMore ? rows.slice(0, limit) : rows;
+    const lastRow = pageRows[pageRows.length - 1];
 
     return {
-      conversations: rows.map((row) => ({
+      conversations: pageRows.map((row) => ({
         id: row.id,
         title: row.title,
         createdAt: row.createdAt.toISOString(),
         updatedAt: row.updatedAt.toISOString(),
       })),
+      nextCursor:
+        hasMore && lastRow
+          ? encodeConversationCursor({ updatedAt: lastRow.cursorUpdatedAt, id: lastRow.id })
+          : null,
     };
   });
 }
@@ -558,7 +627,11 @@ export async function getOwnedConversation(
       .select()
       .from(chatConversations)
       .where(
-        and(eq(chatConversations.id, conversationId), eq(chatConversations.ownerId, account.id)),
+        and(
+          eq(chatConversations.id, conversationId),
+          eq(chatConversations.ownerId, account.id),
+          isNull(chatConversations.archivedAt),
+        ),
       )
       .for("share");
     if (!conversation) throw new AuthFailure("NOT_FOUND", 404);
@@ -573,6 +646,20 @@ export async function getOwnedConversation(
         ),
       )
       .orderBy(asc(chatMessages.createdAt), asc(chatMessages.id));
+
+    const [activeJob] = await transaction
+      .select({ id: workflowJobs.id })
+      .from(workflowJobs)
+      .where(
+        and(
+          eq(workflowJobs.conversationId, conversation.id),
+          eq(workflowJobs.ownerId, account.id),
+          eq(workflowJobs.kind, "chat_turn"),
+          inArray(workflowJobs.state, ["QUEUED", "RUNNING"]),
+        ),
+      )
+      .orderBy(desc(workflowJobs.createdAt), desc(workflowJobs.id))
+      .limit(1);
 
     const assistantMessageIds = rows
       .filter((row) => row.role === "assistant" && row.validationStatus === "PASSED")
@@ -654,6 +741,115 @@ export async function getOwnedConversation(
         updatedAt: conversation.updatedAt.toISOString(),
       },
       messages,
+      activeJobId: activeJob?.id ?? null,
+    };
+  });
+}
+
+export async function renameOwnedConversation(
+  account: CurrentAccount,
+  conversationId: string,
+  rawInput: unknown,
+  database: JobDatabase = getDatabase(),
+): Promise<ChatConversationRenameResult> {
+  if (!chatIdInput.safeParse(conversationId).success) {
+    throw new AuthFailure("NOT_FOUND", 404);
+  }
+  const parsed = renameChatConversationInput.safeParse(rawInput);
+  if (!parsed.success) throw new AuthFailure("INVALID_INPUT", 400);
+
+  return database.transaction(async (transaction) => {
+    await lockCurrentAccount(transaction, account);
+    const [updated] = await transaction
+      .update(chatConversations)
+      .set({ title: parsed.data.title })
+      .where(
+        and(
+          eq(chatConversations.id, conversationId),
+          eq(chatConversations.ownerId, account.id),
+          isNull(chatConversations.archivedAt),
+        ),
+      )
+      .returning({
+        id: chatConversations.id,
+        title: chatConversations.title,
+        createdAt: chatConversations.createdAt,
+        updatedAt: chatConversations.updatedAt,
+      });
+
+    if (!updated) throw new AuthFailure("NOT_FOUND", 404);
+
+    await transaction.insert(auditEvents).values({
+      actorId: account.id,
+      action: "chat.conversation_renamed",
+      targetId: updated.id,
+      outcome: "updated",
+      metadata: { titleLength: updated.title.length },
+    });
+
+    logEvent("info", "chat.conversation_renamed", {
+      conversationId: updated.id,
+      titleLength: updated.title.length,
+    });
+
+    return {
+      conversation: {
+        id: updated.id,
+        title: updated.title,
+        createdAt: updated.createdAt.toISOString(),
+        updatedAt: updated.updatedAt.toISOString(),
+      },
+    };
+  });
+}
+
+export async function archiveOwnedConversation(
+  account: CurrentAccount,
+  conversationId: string,
+  database: JobDatabase = getDatabase(),
+): Promise<ChatConversationArchiveResult> {
+  if (!chatIdInput.safeParse(conversationId).success) {
+    throw new AuthFailure("NOT_FOUND", 404);
+  }
+
+  return database.transaction(async (transaction) => {
+    await lockCurrentAccount(transaction, account);
+    const [archived] = await transaction
+      .update(chatConversations)
+      .set({
+        archivedAt: sql`clock_timestamp()`,
+        updatedAt: sql`clock_timestamp()`,
+      })
+      .where(
+        and(
+          eq(chatConversations.id, conversationId),
+          eq(chatConversations.ownerId, account.id),
+          isNull(chatConversations.archivedAt),
+        ),
+      )
+      .returning({
+        id: chatConversations.id,
+        archivedAt: chatConversations.archivedAt,
+      });
+
+    if (!archived || !archived.archivedAt) throw new AuthFailure("NOT_FOUND", 404);
+
+    await transaction.insert(auditEvents).values({
+      actorId: account.id,
+      action: "chat.conversation_archived",
+      targetId: archived.id,
+      outcome: "archived",
+      metadata: null,
+    });
+
+    logEvent("info", "chat.conversation_archived", {
+      conversationId: archived.id,
+    });
+
+    return {
+      archived: true,
+      conversationId: archived.id,
+      archivedAt: archived.archivedAt.toISOString(),
     };
   });
 }

@@ -14,15 +14,19 @@ import {
   chatEmptyStageBody,
   chatIdInput,
   chatRateLimits,
+  decodeConversationCursor,
+  renameChatConversationInput,
   sendChatMessageInput,
 } from "./contracts";
 import {
+  archiveOwnedConversation,
   claimChatStage,
   createChatTurn,
   failChatStage,
   generateChatStage,
   getOwnedConversation,
   listOwnedConversations,
+  renameOwnedConversation,
   retrieveChatStage,
   validateChatStage,
   type ChatStageOptions,
@@ -150,7 +154,26 @@ export async function handleListChatConversations(
       }
     }
 
-    const result = await listOwnedConversations(account, { database, limit });
+    const rawCursor = url.searchParams.get("cursor");
+    let cursor;
+    if (rawCursor !== null && rawCursor !== "") {
+      const decoded = decodeConversationCursor(rawCursor);
+      if (!decoded) throw new AuthFailure("INVALID_INPUT", 400);
+      cursor = decoded;
+    }
+
+    const rawQuery = url.searchParams.get("q");
+    const query = rawQuery !== null ? rawQuery.trim() : undefined;
+    if (query !== undefined && query.length > chatApiBounds.maximumConversationSearchChars) {
+      throw new AuthFailure("INVALID_INPUT", 400);
+    }
+
+    const result = await listOwnedConversations(account, {
+      database,
+      limit,
+      ...(cursor ? { cursor } : {}),
+      ...(query ? { query } : {}),
+    });
     return Response.json(result, {
       headers: { "Cache-Control": "private, no-store" },
     });
@@ -171,6 +194,51 @@ export async function handleGetChatConversation(
 
     const detail = await getOwnedConversation(account, conversationId, database);
     return Response.json(detail, {
+      headers: { "Cache-Control": "private, no-store" },
+    });
+  } catch (error) {
+    return authErrorResponse(error);
+  }
+}
+
+export async function handleRenameChatConversation(
+  request: Request,
+  conversationId: string,
+  options: { database?: JobDatabase } = {},
+) {
+  try {
+    requireMutationOrigin(request);
+    const database = options.database ?? getDatabase();
+    const account = await requireCurrentAccount(request.headers, database);
+    await consumeRateLimit("chat:mutate", account.id, chatRateLimits.mutate, database);
+
+    const body = await readBoundedJsonBody(
+      request,
+      renameChatConversationInput,
+      chatApiBounds.maximumBodyBytes,
+    );
+    const result = await renameOwnedConversation(account, conversationId, body, database);
+    return Response.json(result, {
+      headers: { "Cache-Control": "private, no-store" },
+    });
+  } catch (error) {
+    return authErrorResponse(error);
+  }
+}
+
+export async function handleArchiveChatConversation(
+  request: Request,
+  conversationId: string,
+  options: { database?: JobDatabase } = {},
+) {
+  try {
+    requireMutationOrigin(request);
+    const database = options.database ?? getDatabase();
+    const account = await requireCurrentAccount(request.headers, database);
+    await consumeRateLimit("chat:mutate", account.id, chatRateLimits.mutate, database);
+
+    const result = await archiveOwnedConversation(account, conversationId, database);
+    return Response.json(result, {
       headers: { "Cache-Control": "private, no-store" },
     });
   } catch (error) {

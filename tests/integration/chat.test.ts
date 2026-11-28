@@ -8,13 +8,16 @@ import { AnswerStageError } from "../../src/server/answers/contracts";
 import type { CurrentAccount } from "../../src/server/auth/authorization";
 import { AuthFailure } from "../../src/server/auth/errors";
 import {
+  archiveOwnedConversation,
   claimChatStage,
   createChatEventStream,
   createChatTurn,
+  decodeConversationCursor,
   generateChatStage,
   getOwnedConversation,
   listOwnedConversations,
   noEvidenceFallbackMessage,
+  renameOwnedConversation,
   retrieveChatStage,
   validateChatStage,
 } from "../../src/server/chat";
@@ -861,5 +864,183 @@ describe("S11 safe chat SSE, staged n8n callbacks, and persistence (PostgreSQL +
     expect(firstAssistant?.sources[0].available).toBe(false);
     expect(firstAssistant?.sources[0].reason).toBe("UNAVAILABLE");
     expect(firstAssistant?.sources[0].sourcePath).toBeUndefined();
+  });
+
+  it("supports S17 multi-conversation pagination, escaped title search, rename, soft-archive, DB immutability triggers, and isolation (C7)", async () => {
+    const historyOwner = await seedSyntheticSession(
+      database,
+      await seedSyntheticAccount(database, "STAFF"),
+    );
+    seededUserIds.push(historyOwner.id);
+
+    const turnA = await createChatTurn(
+      historyOwner,
+      { requestKey: randomUUID(), question: `${tag} Alpha 100% check procedure` },
+      { database, dispatchDelaySeconds: 60 },
+    );
+    const turnB = await createChatTurn(
+      historyOwner,
+      { requestKey: randomUUID(), question: `${tag} Beta valve_02 inspection` },
+      { database, dispatchDelaySeconds: 60 },
+    );
+    const turnC = await createChatTurn(
+      historyOwner,
+      { requestKey: randomUUID(), question: `${tag} Gamma pressure log` },
+      { database, dispatchDelaySeconds: 60 },
+    );
+    seededConversationIds.push(turnA.conversationId, turnB.conversationId, turnC.conversationId);
+
+    // 1. Keyset pagination returns newest-first without duplicates or skips
+    const page1 = await listOwnedConversations(historyOwner, { database, limit: 2 });
+    expect(page1.conversations).toHaveLength(2);
+    expect(page1.nextCursor).not.toBeNull();
+    const cursor1 = decodeConversationCursor(page1.nextCursor!);
+    expect(cursor1).not.toBeNull();
+
+    const page2 = await listOwnedConversations(historyOwner, {
+      database,
+      limit: 2,
+      cursor: cursor1!,
+    });
+    expect(page2.conversations).toHaveLength(1);
+    expect(page2.nextCursor).toBeNull();
+
+    const allListedIds = [...page1.conversations, ...page2.conversations].map((item) => item.id);
+    expect(new Set(allListedIds).size).toBe(3);
+    expect(allListedIds).toEqual([turnC.conversationId, turnB.conversationId, turnA.conversationId]);
+
+    // 2. Escaped ILIKE search treats % and _ literally
+    const percentSearch = await listOwnedConversations(historyOwner, {
+      database,
+      query: "100%",
+    });
+    expect(percentSearch.conversations.map((c) => c.id)).toEqual([turnA.conversationId]);
+
+    const underscoreSearch = await listOwnedConversations(historyOwner, {
+      database,
+      query: "valve_02",
+    });
+    expect(underscoreSearch.conversations.map((c) => c.id)).toEqual([turnB.conversationId]);
+
+    // 3. Detail reports activeJobId for QUEUED/RUNNING turn
+    const activeDetail = await getOwnedConversation(historyOwner, turnA.conversationId, database);
+    expect(activeDetail.activeJobId).toBe(turnA.jobId);
+
+    // 4. Rename updates title cleanly without exposing raw title in audit_events
+    const renamed = await renameOwnedConversation(
+      historyOwner,
+      turnB.conversationId,
+      { title: `${tag} Renamed Valve Inspection` },
+      database,
+    );
+    expect(renamed.conversation.title).toBe(`${tag} Renamed Valve Inspection`);
+    const [renameAudit] = await database
+      .select()
+      .from(schema.auditEvents)
+      .where(
+        and(
+          eq(schema.auditEvents.actorId, historyOwner.id),
+          eq(schema.auditEvents.action, "chat.conversation_renamed"),
+          eq(schema.auditEvents.targetId, turnB.conversationId),
+        ),
+      );
+    expect(renameAudit).toBeDefined();
+    expect(JSON.stringify(renameAudit.metadata)).not.toContain("Renamed Valve Inspection");
+
+    // 5. Cross-user list, rename, and archive denial (404 / empty)
+    const otherList = await listOwnedConversations(otherStaffAccount, {
+      database,
+      query: tag,
+    });
+    expect(otherList.conversations.some((c) => c.id === turnA.conversationId)).toBe(false);
+    await expect(
+      renameOwnedConversation(
+        otherStaffAccount,
+        turnA.conversationId,
+        { title: "Hijack" },
+        database,
+      ),
+    ).rejects.toMatchObject({ code: "NOT_FOUND", status: 404 });
+    await expect(
+      archiveOwnedConversation(otherStaffAccount, turnA.conversationId, database),
+    ).rejects.toMatchObject({ code: "NOT_FOUND", status: 404 });
+
+    // 6. Soft-archive removes conversation from list/get/send/rename/archive/SSE
+    const archived = await archiveOwnedConversation(historyOwner, turnA.conversationId, database);
+    expect(archived.archived).toBe(true);
+    expect(archived.conversationId).toBe(turnA.conversationId);
+
+    const afterArchiveList = await listOwnedConversations(historyOwner, { database });
+    expect(afterArchiveList.conversations.map((c) => c.id)).not.toContain(turnA.conversationId);
+
+    await expect(
+      getOwnedConversation(historyOwner, turnA.conversationId, database),
+    ).rejects.toMatchObject({ code: "NOT_FOUND", status: 404 });
+    await expect(
+      createChatTurn(
+        historyOwner,
+        { conversationId: turnA.conversationId, requestKey: randomUUID(), question: "After archive" },
+        { database, dispatchDelaySeconds: 60 },
+      ),
+    ).rejects.toMatchObject({ code: "NOT_FOUND", status: 404 });
+    await expect(
+      renameOwnedConversation(
+        historyOwner,
+        turnA.conversationId,
+        { title: "Cannot rename archived" },
+        database,
+      ),
+    ).rejects.toMatchObject({ code: "NOT_FOUND", status: 404 });
+    await expect(
+      archiveOwnedConversation(historyOwner, turnA.conversationId, database),
+    ).rejects.toMatchObject({ code: "NOT_FOUND", status: 404 });
+    await expect(
+      createChatEventStream(
+        new Request(`http://127.0.0.1:3000/api/chat/jobs/${turnA.jobId}/events`),
+        turnA.jobId,
+        { account: historyOwner, database },
+      ),
+    ).rejects.toMatchObject({ code: "NOT_FOUND", status: 404 });
+
+    // 7. DB triggers enforce archived conversation immutability and block new user messages
+    await expect(
+      database
+        .update(schema.chatConversations)
+        .set({ archivedAt: null })
+        .where(eq(schema.chatConversations.id, turnA.conversationId)),
+    ).rejects.toThrow();
+    await expect(
+      database
+        .update(schema.chatConversations)
+        .set({ title: "Mutated archived title" })
+        .where(eq(schema.chatConversations.id, turnA.conversationId)),
+    ).rejects.toThrow();
+    await expect(
+      database.insert(schema.chatMessages).values({
+        conversationId: turnA.conversationId,
+        ownerId: historyOwner.id,
+        role: "user",
+        content: "Bypass archive",
+        requestKey: randomUUID(),
+        validationStatus: "USER_INPUT",
+        isProcedural: false,
+      }),
+    ).rejects.toThrow();
+
+    // 8. Deactivated owner is blocked (401) from list, rename, and archive
+    await database
+      .update(schema.authUsers)
+      .set({ active: false })
+      .where(eq(schema.authUsers.id, historyOwner.id));
+    await expect(listOwnedConversations(historyOwner, { database })).rejects.toMatchObject({
+      code: "UNAUTHENTICATED",
+      status: 401,
+    });
+    await expect(
+      renameOwnedConversation(historyOwner, turnB.conversationId, { title: "Blocked" }, database),
+    ).rejects.toMatchObject({ code: "UNAUTHENTICATED", status: 401 });
+    await expect(
+      archiveOwnedConversation(historyOwner, turnB.conversationId, database),
+    ).rejects.toMatchObject({ code: "UNAUTHENTICATED", status: 401 });
   });
 });

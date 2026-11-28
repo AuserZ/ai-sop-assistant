@@ -38,6 +38,7 @@ Default execution order is S01–S16. Each sprint depends on the VERIFIED predec
 | S14 | Operational monitoring and security hardening | 4 | ADR 13/15; PRD sections 12–14 | IMPLEMENTED (load/policy gates) | [S14.md](docs/verification/S14.md) |
 | S15 | Encrypted backups and verified disaster recovery | 4 | ADR 16; PRD section 13 | IMPLEMENTED (offsite/policy gates) | [S15.md](docs/verification/S15.md) |
 | S16 | Approval-gated deployment and rollback capability | 4 | ADR 09/14; PRD sections 14/16 | IMPLEMENTED (rehearsal/owners) | [S16.md](docs/verification/S16.md) |
+| S17 | Multi-conversation history (list, reopen, search, rename, soft-archive) | 5 (P1, user-authorized 28 Nov 2026) | C7; ADR 18/20 | IMPLEMENTED (CI/DB/E2E pending) | [S17.md](docs/verification/S17.md) |
 
 ## Definition of done — applies to every sprint
 
@@ -245,9 +246,23 @@ Verify after development:
 - [ ] Measure weekly active pilot staff against the agreed eligible pilot roster and observation window; target at least 60%. Owner must define measurement/retention before collection; no analytics dashboard or fourth menu is implied.
 - [ ] Record product/QA/security/operations acceptance and unresolved risks with owners. Do not claim universal correctness from benchmark or pilot results.
 
-## Phase 5 — deferred feature backlog
+## Phase 5 — deferred feature backlog & authorized P1 sprints
 
-Only after P0 acceptance and an explicit request, plan separate feature sprints for C6 thumbs feedback, C7 reopening past chats, D6 immutable file replacement/reverification, and U5 password-reset enhancements. No P1 sprint is scheduled or authorized now. D7 owner/review metadata and U6 SSO remain P2. Excluded integrations, AI SOP drafting, formal approval chains, dashboards and native apps remain out of scope.
+Only by explicit user authorization, plan and implement P1 sprints without amending the protected PRDs or waiving open P0/`V01` external gates. `C6` thumbs feedback, `D6` immutable file replacement/reverification, and `U5` password-reset enhancements remain unscheduled P1 backlog; `D7` owner/review metadata and `U6` SSO remain P2. Excluded integrations, AI SOP drafting, formal approval chains, dashboards and native apps remain out of scope.
+
+### S17 — multi-conversation history (reopen, paginate, search, rename, soft-archive)
+**Status:** `IMPLEMENTED` (explicitly authorized by user on 28 November 2026, Scope 3; local checks, `next build --webpack`, and Pass 1 QA **PASS** 5/5 findings closed in [S17.md](docs/verification/S17.md); `test:db`, Playwright E2E, hosted CI, Security review, and Pass 2 QA pending before `VERIFIED`). **Depends on:** `S11`, `S13`. **Mapping:** `C7` (P1), preserving `C1`–`C5`, `U4`, `ADR 18/19/20`.
+
+Development scope:
+- Add Drizzle migration `0008_chat_conversation_archive.sql` with nullable `archived_at`, active owner index, immutability/no-new-user-turn DB triggers, and least-privilege `GRANT UPDATE (archived_at)` for `sop_runtime` (preserving job/audit history until PRD §16 retention policy is finalized).
+- Extend `GET /api/chat/conversations` with keyset cursor pagination (`limit`, `cursor`) and escaped title search (`q`), filtering `archived_at IS NULL`; add owner-scoped `PATCH /api/chat/conversations/[id]` (rename) and `DELETE /api/chat/conversations/[id]` (soft-archive) with CSRF origin checks, rate limits, bounded body parsing, and redacted audit events.
+- Add Clinical Precision conversation history rail (desktop) and slide-over drawer (mobile) inside `/chat` without adding a fourth primary menu; support reopen/switch with race-safe SSE/fetch aborting, `New chat`, search, `Load more`, inline rename, soft-archive confirmation, and live citation availability recheck.
+
+Verify after development:
+- [ ] One user creates, lists (newest-first with pagination & search), reopens, switches, renames, and soft-archives multiple conversations; archived threads cannot be reopened or appended to.
+- [ ] Cross-user list/detail/rename/archive attempts return `404`; deactivated accounts return `401`; CSRF/rate-limit/invalid-input checks fail safely.
+- [ ] Switching conversations mid-stream aborts cleanly without cross-conversation message bleed; reopened follow-ups still use fresh `ACTIVE`-only retrieval and mark deleted SOP citations `Source unavailable`.
+- [ ] Desktop & `320px` mobile layouts keep zero horizontal overflow, `>= 44px` interactive targets, keyboard accessibility, XSS-safe titles, and strictly `<= 3` primary nav menus.
 
 ## Requirement map
 

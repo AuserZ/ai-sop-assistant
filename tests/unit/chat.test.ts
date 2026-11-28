@@ -1,6 +1,15 @@
 import { generateKeyPairSync, randomUUID } from "node:crypto";
-import { describe, expect, it } from "vitest";
-import { parseRawSseFrame } from "../../src/components/chat/client";
+import { describe, expect, it, vi } from "vitest";
+import {
+  archiveConversation,
+  conversationArchiveSchema,
+  conversationDetailSchema,
+  conversationListSchema,
+  conversationRenameSchema,
+  fetchConversations,
+  parseRawSseFrame,
+  renameConversation,
+} from "../../src/components/chat/client";
 import {
   parseSafeInlineTokens,
   parseSafeMarkdownBlocks,
@@ -8,8 +17,15 @@ import {
 import type { CurrentAccount } from "../../src/server/auth/authorization";
 import { AuthFailure } from "../../src/server/auth/errors";
 import {
+  chatApiBounds,
   createChatEventStream,
+  decodeConversationCursor,
+  encodeConversationCursor,
+  handleArchiveChatConversation,
+  handleRenameChatConversation,
   noEvidenceFallbackMessage,
+  readBoundedJsonBody,
+  renameChatConversationInput,
   resolveSafeChatError,
   sendChatMessageInput,
   serializeChatEvent,
@@ -473,5 +489,200 @@ describe("S11 chat SSE serialization, safety, and contracts (C1-C5, ADR 18/19)",
     expect(() =>
       chatDispatchUrl({ CHAT_DISPATCH_URL: "http://n8n:5678/webhook/wrong-path" }),
     ).toThrow();
+  });
+
+  it("validates S17 conversation cursor codec, rename bounds, CSRF mutation guards, and client helpers (C7)", async () => {
+    const convId = randomUUID();
+    const microTimestamp = "2026-11-28T04:15:30.123456Z";
+    const encoded = encodeConversationCursor({ updatedAt: microTimestamp, id: convId });
+    expect(decodeConversationCursor(encoded)).toEqual({ updatedAt: microTimestamp, id: convId });
+
+    // Malformed / tampered / calendar-rollover cursors must fail closed to null (QA-S17-01)
+    expect(decodeConversationCursor("")).toBeNull();
+    expect(decodeConversationCursor("not-valid-json")).toBeNull();
+    expect(decodeConversationCursor("a".repeat(300))).toBeNull();
+    expect(decodeConversationCursor("abc+def/=")).toBeNull();
+    expect(
+      decodeConversationCursor(
+        Buffer.from(JSON.stringify({ updatedAt: "not-a-date", id: convId })).toString("base64url"),
+      ),
+    ).toBeNull();
+    expect(
+      decodeConversationCursor(
+        Buffer.from(
+          JSON.stringify({ updatedAt: "2026-02-31T00:00:00.000000Z", id: convId }),
+        ).toString("base64url"),
+      ),
+    ).toBeNull();
+    expect(
+      decodeConversationCursor(
+        Buffer.from(JSON.stringify({ updatedAt: "0000-01-01T00:00:00Z", id: convId })).toString(
+          "base64url",
+        ),
+      ),
+    ).toBeNull();
+    expect(
+      decodeConversationCursor(
+        Buffer.from(
+          JSON.stringify({ updatedAt: microTimestamp, id: convId, extra: true }),
+        ).toString("base64url"),
+      ),
+    ).toBeNull();
+
+    // Rename schema bounds
+    expect(renameChatConversationInput.safeParse({ title: "  Valve calibration  " })).toMatchObject({
+      success: true,
+      data: { title: "Valve calibration" },
+    });
+    expect(renameChatConversationInput.safeParse({ title: "   " }).success).toBe(false);
+    expect(renameChatConversationInput.safeParse({ title: "x".repeat(121) }).success).toBe(false);
+    expect(
+      renameChatConversationInput.safeParse({ title: "Valid", ownerId: "forged" }).success,
+    ).toBe(false);
+
+    // Cross-origin PATCH / DELETE rejected before touching database (CSRF guard)
+    const previousAuthBaseUrl = process.env.AUTH_BASE_URL;
+    const previousAuthSecret = process.env.AUTH_SECRET;
+    process.env.AUTH_BASE_URL = "http://127.0.0.1:3000";
+    process.env.AUTH_SECRET = "s17-unit-synthetic-secret-value-at-least-32-chars";
+    try {
+      const crossOriginPatch = await handleRenameChatConversation(
+        new Request(`http://127.0.0.1:3000/api/chat/conversations/${convId}`, {
+          method: "PATCH",
+          headers: {
+            Host: "127.0.0.1:3000",
+            Origin: "https://evil.example",
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ title: "Hijacked" }),
+        }),
+        convId,
+      );
+      expect(crossOriginPatch.status).toBe(403);
+
+      const nonJsonPatch = await handleRenameChatConversation(
+        new Request(`http://127.0.0.1:3000/api/chat/conversations/${convId}`, {
+          method: "PATCH",
+          headers: {
+            Host: "127.0.0.1:3000",
+            Origin: "http://127.0.0.1:3000",
+            "Content-Type": "text/plain",
+          },
+          body: "plain text",
+        }),
+        convId,
+      );
+      expect(nonJsonPatch.status).toBe(415);
+
+      const crossOriginDelete = await handleArchiveChatConversation(
+        new Request(`http://127.0.0.1:3000/api/chat/conversations/${convId}`, {
+          method: "DELETE",
+          headers: {
+            Host: "127.0.0.1:3000",
+            Origin: "https://evil.example",
+          },
+        }),
+        convId,
+      );
+      expect(crossOriginDelete.status).toBe(403);
+
+      const nonJsonDelete = await handleArchiveChatConversation(
+        new Request(`http://127.0.0.1:3000/api/chat/conversations/${convId}`, {
+          method: "DELETE",
+          headers: {
+            Host: "127.0.0.1:3000",
+            Origin: "http://127.0.0.1:3000",
+            "Content-Type": "text/plain",
+          },
+        }),
+        convId,
+      );
+      expect(nonJsonDelete.status).toBe(415);
+
+      await expect(
+        readBoundedJsonBody(
+          new Request(`http://127.0.0.1:3000/api/chat/conversations/${convId}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ title: "x".repeat(chatApiBounds.maximumBodyBytes + 100) }),
+          }),
+          renameChatConversationInput,
+          chatApiBounds.maximumBodyBytes,
+        ),
+      ).rejects.toMatchObject({ code: "INVALID_BODY", status: 413 });
+    } finally {
+      if (previousAuthBaseUrl === undefined) delete process.env.AUTH_BASE_URL;
+      else process.env.AUTH_BASE_URL = previousAuthBaseUrl;
+      if (previousAuthSecret === undefined) delete process.env.AUTH_SECRET;
+      else process.env.AUTH_SECRET = previousAuthSecret;
+    }
+
+    // Client schemas & helpers
+    const summary = {
+      id: convId,
+      title: "SOP-101 Valve Check",
+      createdAt: "2026-11-28T04:00:00.000Z",
+      updatedAt: "2026-11-28T04:15:30.123Z",
+    };
+    expect(
+      conversationListSchema.parse({ conversations: [summary], nextCursor: encoded }).nextCursor,
+    ).toBe(encoded);
+    expect(conversationRenameSchema.parse({ conversation: summary }).conversation.id).toBe(convId);
+    expect(
+      conversationArchiveSchema.parse({
+        archived: true,
+        conversationId: convId,
+        archivedAt: "2026-11-28T04:20:00.000Z",
+      }).archived,
+    ).toBe(true);
+    expect(
+      conversationDetailSchema.parse({
+        conversation: summary,
+        messages: [],
+        activeJobId: null,
+      }).activeJobId,
+    ).toBeNull();
+
+    const originalFetch = globalThis.fetch;
+    try {
+      const fetchSpy = vi.fn<typeof fetch>(async (input, init) => {
+        const url = String(input);
+        if (url.startsWith("/api/chat/conversations?")) {
+          return Response.json({ conversations: [summary], nextCursor: encoded });
+        }
+        if (init?.method === "PATCH") {
+          return Response.json({ conversation: { ...summary, title: "Updated Title" } });
+        }
+        if (init?.method === "DELETE") {
+          return Response.json({
+            archived: true,
+            conversationId: convId,
+            archivedAt: "2026-11-28T04:20:00.000Z",
+          });
+        }
+        return new Response(null, { status: 404 });
+      });
+      globalThis.fetch = fetchSpy;
+
+      const listRes = await fetchConversations({ limit: 10, cursor: encoded, query: "Valve" });
+      expect(listRes.conversations).toHaveLength(1);
+      expect(listRes.nextCursor).toBe(encoded);
+      expect(String(fetchSpy.mock.calls[0]?.[0])).toContain("limit=10");
+      expect(String(fetchSpy.mock.calls[0]?.[0])).toContain("q=Valve");
+
+      const renamed = await renameConversation(convId, "Updated Title");
+      expect(renamed.title).toBe("Updated Title");
+
+      const archived = await archiveConversation(convId);
+      expect(archived.conversationId).toBe(convId);
+
+      // 401 maps to UNAUTHENTICATED
+      globalThis.fetch = vi.fn<typeof fetch>(async () => new Response(null, { status: 401 }));
+      await expect(fetchConversations()).rejects.toThrow("UNAUTHENTICATED");
+      await expect(renameConversation(convId, "X")).rejects.toThrow("UNAUTHENTICATED");
+      await expect(archiveConversation(convId)).rejects.toThrow("UNAUTHENTICATED");
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
   });
 });

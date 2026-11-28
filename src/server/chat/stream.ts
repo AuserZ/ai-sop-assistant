@@ -1,11 +1,12 @@
 import { randomUUID } from "node:crypto";
-import { and, asc, eq, gt, inArray } from "drizzle-orm";
+import { and, asc, eq, gt, inArray, isNull } from "drizzle-orm";
 import { buildBackendSourcePath } from "../answers/citations";
 import { supportedAnswerSourceSchema, type SupportedAnswerSource } from "../answers/contracts";
 import { requireCurrentAccount, type CurrentAccount } from "../auth/authorization";
 import { AuthFailure } from "../auth/errors";
 import { getDatabase } from "../db/client";
 import {
+  chatConversations,
   chatMessages,
   chatMessageSources,
   sopDocuments,
@@ -210,6 +211,20 @@ export async function withOwnedChatEvents<T>(
       .for("share");
 
     if (!job || !job.conversationId) {
+      throw new AuthFailure("NOT_FOUND", 404);
+    }
+    const [activeConversation] = await transaction
+      .select({ id: chatConversations.id })
+      .from(chatConversations)
+      .where(
+        and(
+          eq(chatConversations.id, job.conversationId),
+          eq(chatConversations.ownerId, account.id),
+          isNull(chatConversations.archivedAt),
+        ),
+      )
+      .for("share");
+    if (!activeConversation) {
       throw new AuthFailure("NOT_FOUND", 404);
     }
     if (after > job.eventSequence) {

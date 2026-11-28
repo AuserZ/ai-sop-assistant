@@ -1,13 +1,16 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import {
   AlertCircle,
   BookOpen,
   ExternalLink,
   FileText,
+  History,
   Loader2,
+  PanelLeftClose,
+  PanelLeftOpen,
   RotateCcw,
   SendHorizontal,
   ShieldCheck,
@@ -18,16 +21,22 @@ import { accountSchema, buttonClassName, type Account } from "@/components/auth/
 import { AppShell } from "@/components/layout/app-shell";
 import { BrandMark, buttonClass, StatusBadge } from "@/components/ui/primitives";
 import {
+  archiveConversation,
   authorizeCitationSource,
   chatNoEvidenceText,
   chatStageLabels,
   fetchConversationDetail,
+  fetchConversations,
+  renameConversation,
+  resumeChatJobStream,
   streamChatTurn,
   type ChatMessageItem,
   type ChatSourceItem,
   type ChatStage,
+  type ConversationSummary,
   type ParsedChatSseEvent,
 } from "./client";
+import { ConversationHistoryPanel } from "./conversation-history-panel";
 import { SafeMarkdown } from "./safe-markdown";
 
 const sessionStorageKey = "sop-chat-current-conversation";
@@ -119,13 +128,38 @@ function formatPageLabel(source: ChatSourceItem): string | null {
   return `Page ${source.pageStart}`;
 }
 
+function deriveClientConversationTitle(question: string): string {
+  const singleLine = question.replace(/\s+/g, " ").trim();
+  const limit = 120;
+  if (singleLine.length <= limit) return singleLine;
+  return `${singleLine.slice(0, limit - 1).trimEnd()}…`;
+}
+
+function upsertConversationSummary(
+  list: ConversationSummary[],
+  summary: ConversationSummary,
+): ConversationSummary[] {
+  const remaining = list.filter((item) => item.id !== summary.id);
+  return [summary, ...remaining];
+}
+
 export function ChatWorkspace() {
   const [auth, setAuth] = useState<AuthState>({ kind: "loading" });
   const [authRefresh, setAuthRefresh] = useState(0);
   const [conversationId, setConversationId] = useState<string | null>(null);
+  const [conversationTitle, setConversationTitle] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessageItem[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [historyError, setHistoryError] = useState<string | null>(null);
+  const [conversations, setConversations] = useState<ConversationSummary[]>([]);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [loadingList, setLoadingList] = useState(false);
+  const [loadingMoreList, setLoadingMoreList] = useState(false);
+  const [listError, setListError] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [appliedSearchQuery, setAppliedSearchQuery] = useState("");
+  const [desktopHistoryOpen, setDesktopHistoryOpen] = useState(true);
+  const [mobileHistoryOpen, setMobileHistoryOpen] = useState(false);
   const [questionInput, setQuestionInput] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [activeStage, setActiveStage] = useState<ChatStage | null>(null);
@@ -140,6 +174,210 @@ export function ChatWorkspace() {
 
   const streamAbortRef = useRef<AbortController | null>(null);
   const sourceAbortRef = useRef<AbortController | null>(null);
+  const detailAbortRef = useRef<AbortController | null>(null);
+  const listAbortRef = useRef<AbortController | null>(null);
+  const mobileHistoryTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const conversationIdRef = useRef<string | null>(null);
+  const selectionSeqRef = useRef(0);
+
+  const setActiveConversationId = useCallback((nextId: string | null) => {
+    conversationIdRef.current = nextId;
+    setConversationId(nextId);
+  }, []);
+
+  const loadConversationList = useCallback(
+    async (options: { query?: string; cursor?: string | null; append?: boolean } = {}) => {
+      const append = options.append ?? false;
+      const query = options.query ?? appliedSearchQuery;
+      listAbortRef.current?.abort();
+      const controller = new AbortController();
+      listAbortRef.current = controller;
+
+      if (append) {
+        setLoadingMoreList(true);
+      } else {
+        setLoadingList(true);
+      }
+      setListError(null);
+
+      try {
+        const result = await fetchConversations(
+          {
+            query,
+            cursor: append ? (options.cursor ?? nextCursor) : null,
+          },
+          controller.signal,
+        );
+        if (controller.signal.aborted) return;
+        setConversations((previous) => {
+          if (!append) return result.conversations;
+          const seen = new Set(previous.map((item) => item.id));
+          return [...previous, ...result.conversations.filter((item) => !seen.has(item.id))];
+        });
+        setNextCursor(result.nextCursor);
+      } catch (error: unknown) {
+        if (controller.signal.aborted) return;
+        if (error instanceof Error && error.message === "UNAUTHENTICATED") {
+          setAuth({ kind: "anonymous" });
+          return;
+        }
+        setListError("Could not load saved conversations.");
+      } finally {
+        if (!controller.signal.aborted) {
+          setLoadingList(false);
+          setLoadingMoreList(false);
+        }
+      }
+    },
+    [appliedSearchQuery, nextCursor],
+  );
+
+  const openConversation = useCallback((targetId: string) => {
+    const requestSeq = ++selectionSeqRef.current;
+    streamAbortRef.current?.abort();
+    streamAbortRef.current = null;
+    sourceAbortRef.current?.abort();
+    sourceAbortRef.current = null;
+    detailAbortRef.current?.abort();
+
+    const controller = new AbortController();
+    detailAbortRef.current = controller;
+
+    setActiveConversationId(null);
+    setConversationTitle(null);
+    setMessages([]);
+    setSubmitting(false);
+    setActiveStage(null);
+    setStreamFailure(null);
+    setHistoryError(null);
+    setInspectedCitation(null);
+    setMetrics({ firstProgressMs: null, firstAnswerMs: null, completedMs: null });
+    setLoadingHistory(true);
+
+    void (async () => {
+      try {
+        const detail = await fetchConversationDetail(targetId, controller.signal);
+        if (controller.signal.aborted || selectionSeqRef.current !== requestSeq) return;
+        setLoadingHistory(false);
+        if (!detail) {
+          persistCurrentConversationId(null);
+          setActiveConversationId(null);
+          setConversationTitle(null);
+          setMessages([]);
+          setConversations((previous) => previous.filter((item) => item.id !== targetId));
+          return;
+        }
+
+        persistCurrentConversationId(detail.conversation.id);
+        setActiveConversationId(detail.conversation.id);
+        setConversationTitle(detail.conversation.title);
+        setMessages(detail.messages);
+        setHistoryError(null);
+
+        if (detail.activeJobId) {
+          const streamController = new AbortController();
+          streamAbortRef.current = streamController;
+          setSubmitting(true);
+          setActiveStage("accepted");
+          try {
+            await resumeChatJobStream(
+              detail.activeJobId,
+              (event) => {
+                if (streamController.signal.aborted || selectionSeqRef.current !== requestSeq) return;
+                if (event.type === "progress") {
+                  setActiveStage(event.data.stage);
+                  return;
+                }
+                if (event.type === "completed") {
+                  setMessages((previous) => {
+                    const filtered = previous.filter((item) => item.id !== event.data.messageId);
+                    return [
+                      ...filtered,
+                      {
+                        id: event.data.messageId,
+                        role: "assistant",
+                        content: event.data.answer,
+                        requestKey: event.data.requestId,
+                        jobId: event.data.jobId,
+                        validationStatus: "PASSED",
+                        isProcedural: event.data.isProcedural,
+                        sources: event.data.sources.map((source) => ({
+                          ...source,
+                          available: true,
+                        })),
+                        timings: event.data.timings,
+                        createdAt: new Date().toISOString(),
+                      },
+                    ];
+                  });
+                  setActiveStage(null);
+                  return;
+                }
+                if (event.type === "no_evidence") {
+                  const messageId = event.data.messageId ?? `no-evidence-${event.data.requestId}`;
+                  setMessages((previous) => {
+                    const filtered = previous.filter((item) => item.id !== messageId);
+                    return [
+                      ...filtered,
+                      {
+                        id: messageId,
+                        role: "assistant",
+                        content: chatNoEvidenceText,
+                        requestKey: event.data.requestId,
+                        jobId: event.data.jobId,
+                        validationStatus: "NO_EVIDENCE",
+                        isProcedural: false,
+                        sources: [],
+                        timings: event.data.timings,
+                        createdAt: new Date().toISOString(),
+                      },
+                    ];
+                  });
+                  setActiveStage(null);
+                  return;
+                }
+                if (event.type === "failed") {
+                  const lastUserMessage = detail.messages
+                    .filter((item) => item.role === "user")
+                    .at(-1);
+                  setStreamFailure({
+                    question: lastUserMessage?.content ?? "",
+                    errorCode: event.data.errorCode,
+                    message: event.data.message,
+                    retryable: event.data.retryable,
+                  });
+                  setActiveStage(null);
+                }
+              },
+              streamController.signal,
+            );
+          } catch (resumeError: unknown) {
+            if (streamController.signal.aborted || selectionSeqRef.current !== requestSeq) return;
+            if (resumeError instanceof Error && resumeError.message === "UNAUTHENTICATED") {
+              setAuth({ kind: "anonymous" });
+              return;
+            }
+          } finally {
+            if (!streamController.signal.aborted && selectionSeqRef.current === requestSeq) {
+              setSubmitting(false);
+              setActiveStage(null);
+            }
+          }
+        }
+      } catch (error: unknown) {
+        if (controller.signal.aborted || selectionSeqRef.current !== requestSeq) return;
+        if (error instanceof Error && error.message === "UNAUTHENTICATED") {
+          setAuth({ kind: "anonymous" });
+          return;
+        }
+        setHistoryError("Could not load this conversation. Start a new chat or retry.");
+      } finally {
+        if (!controller.signal.aborted && selectionSeqRef.current === requestSeq) {
+          setLoadingHistory(false);
+        }
+      }
+    })();
+  }, [setActiveConversationId]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -151,53 +389,41 @@ export function ChatWorkspace() {
 
   useEffect(() => {
     if (auth.kind !== "signed-in") return;
+    void loadConversationList({ query: "", append: false });
     const storedId = readStoredConversationId();
-    if (!storedId) return;
-    const controller = new AbortController();
-    void (async () => {
-      setLoadingHistory(true);
-      try {
-        const detail = await fetchConversationDetail(storedId, controller.signal);
-        if (controller.signal.aborted) return;
-        if (!detail) {
-          persistCurrentConversationId(null);
-          setConversationId(null);
-          setMessages([]);
-          return;
-        }
-        persistCurrentConversationId(detail.conversation.id);
-        setConversationId(detail.conversation.id);
-        setMessages(detail.messages);
-        setHistoryError(null);
-      } catch (error: unknown) {
-        if (controller.signal.aborted) return;
-        if (error instanceof Error && error.message === "UNAUTHENTICATED") {
-          setAuth({ kind: "anonymous" });
-          return;
-        }
-        setHistoryError("Could not load your current session messages. Start a new chat or retry.");
-      } finally {
-        if (!controller.signal.aborted) setLoadingHistory(false);
-      }
-    })();
-    return () => controller.abort();
+    if (storedId) {
+      openConversation(storedId);
+    }
+    return () => {
+      detailAbortRef.current?.abort();
+      listAbortRef.current?.abort();
+    };
+    // Initial sign-in hydration runs once per signed-in transition.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [auth.kind]);
 
   useEffect(() => {
     return () => {
       streamAbortRef.current?.abort();
       sourceAbortRef.current?.abort();
+      detailAbortRef.current?.abort();
+      listAbortRef.current?.abort();
     };
   }, []);
 
   function startNewChat() {
+    selectionSeqRef.current += 1;
     streamAbortRef.current?.abort();
     streamAbortRef.current = null;
     sourceAbortRef.current?.abort();
     sourceAbortRef.current = null;
+    detailAbortRef.current?.abort();
+    detailAbortRef.current = null;
     persistCurrentConversationId(null);
-    setConversationId(null);
+    setActiveConversationId(null);
+    setConversationTitle(null);
     setMessages([]);
+    setLoadingHistory(false);
     setSubmitting(false);
     setActiveStage(null);
     setStreamFailure(null);
@@ -206,17 +432,52 @@ export function ChatWorkspace() {
     setMetrics({ firstProgressMs: null, firstAnswerMs: null, completedMs: null });
   }
 
+  async function handleRenameConversation(targetId: string, nextTitle: string) {
+    try {
+      const updated = await renameConversation(targetId, nextTitle);
+      setConversations((previous) =>
+        previous.map((item) => (item.id === targetId ? updated : item)),
+      );
+      if (conversationIdRef.current === targetId) {
+        setConversationTitle(updated.title);
+      }
+    } catch (error: unknown) {
+      if (error instanceof Error && error.message === "UNAUTHENTICATED") {
+        setAuth({ kind: "anonymous" });
+      }
+      throw error;
+    }
+  }
+
+  async function handleArchiveConversation(targetId: string) {
+    try {
+      await archiveConversation(targetId);
+      setConversations((previous) => previous.filter((item) => item.id !== targetId));
+      if (conversationIdRef.current === targetId) {
+        startNewChat();
+      }
+    } catch (error: unknown) {
+      if (error instanceof Error && error.message === "UNAUTHENTICATED") {
+        setAuth({ kind: "anonymous" });
+      }
+      throw error;
+    }
+  }
+
   async function submitQuestion(rawQuestion: string) {
     const trimmed = rawQuestion.trim();
-    if (!trimmed || submitting) return;
+    if (!trimmed || submitting || loadingHistory) return;
 
+    const requestSeq = ++selectionSeqRef.current;
     streamAbortRef.current?.abort();
+    detailAbortRef.current?.abort();
     const controller = new AbortController();
     streamAbortRef.current = controller;
 
     const requestKey = crypto.randomUUID();
     const optimisticUserId = `pending-${requestKey}`;
     const startedAt = performance.now();
+    const derivedTitle = conversationTitle ?? deriveClientConversationTitle(trimmed);
     let firstProgressMs: number | null = null;
     let firstAnswerMs: number | null = null;
 
@@ -243,8 +504,26 @@ export function ChatWorkspace() {
       },
     ]);
 
+    const syncConversationListItem = (id: string) => {
+      const nowIso = new Date().toISOString();
+      setActiveConversationId(id);
+      setConversationTitle((existing) => existing ?? derivedTitle);
+      persistCurrentConversationId(id);
+      if (appliedSearchQuery.trim().length === 0) {
+        setConversations((previous) => {
+          const existing = previous.find((item) => item.id === id);
+          return upsertConversationSummary(previous, {
+            id,
+            title: existing?.title ?? derivedTitle,
+            createdAt: existing?.createdAt ?? nowIso,
+            updatedAt: nowIso,
+          });
+        });
+      }
+    };
+
     const handleSseEvent = (event: ParsedChatSseEvent) => {
-      if (controller.signal.aborted) return;
+      if (controller.signal.aborted || selectionSeqRef.current !== requestSeq) return;
 
       if (event.type === "progress") {
         if (firstProgressMs === null) {
@@ -252,8 +531,7 @@ export function ChatWorkspace() {
           setMetrics((current) => ({ ...current, firstProgressMs }));
         }
         setActiveStage(event.data.stage);
-        setConversationId(event.data.conversationId);
-        persistCurrentConversationId(event.data.conversationId);
+        syncConversationListItem(event.data.conversationId);
         return;
       }
 
@@ -265,8 +543,7 @@ export function ChatWorkspace() {
           firstAnswerMs,
           completedMs: nowElapsed,
         });
-        setConversationId(event.data.conversationId);
-        persistCurrentConversationId(event.data.conversationId);
+        syncConversationListItem(event.data.conversationId);
         setMessages((previous) => {
           const filtered = previous.filter((item) => item.id !== event.data.messageId);
           return [
@@ -300,8 +577,7 @@ export function ChatWorkspace() {
           firstAnswerMs,
           completedMs: nowElapsed,
         });
-        setConversationId(event.data.conversationId);
-        persistCurrentConversationId(event.data.conversationId);
+        syncConversationListItem(event.data.conversationId);
         const messageId = event.data.messageId ?? `no-evidence-${event.data.requestId}`;
         setMessages((previous) => {
           const filtered = previous.filter((item) => item.id !== messageId);
@@ -332,8 +608,7 @@ export function ChatWorkspace() {
           firstAnswerMs: null,
           completedMs: nowElapsed,
         });
-        setConversationId(event.data.conversationId);
-        persistCurrentConversationId(event.data.conversationId);
+        syncConversationListItem(event.data.conversationId);
         setStreamFailure({
           question: trimmed,
           errorCode: event.data.errorCode,
@@ -355,7 +630,7 @@ export function ChatWorkspace() {
         controller.signal,
       );
     } catch (error) {
-      if (controller.signal.aborted) return;
+      if (controller.signal.aborted || selectionSeqRef.current !== requestSeq) return;
       if (error instanceof Error && error.message === "UNAUTHENTICATED") {
         setAuth({ kind: "anonymous" });
         return;
@@ -370,7 +645,7 @@ export function ChatWorkspace() {
         retryable: true,
       });
     } finally {
-      if (!controller.signal.aborted) {
+      if (!controller.signal.aborted && selectionSeqRef.current === requestSeq) {
         setSubmitting(false);
         setActiveStage(null);
       }
@@ -423,6 +698,8 @@ export function ChatWorkspace() {
   async function openInspectedSource() {
     if (!inspectedCitation || !inspectedCitation.source.sourcePath || openingSource) return;
     setOpeningSource(true);
+    const previewWindow = typeof window !== "undefined" ? window.open("", "_blank") : null;
+    if (previewWindow) previewWindow.opener = null;
     try {
       const authorized = await authorizeCitationSource(inspectedCitation.source.sourcePath);
       setInspectedCitation((current) =>
@@ -436,8 +713,16 @@ export function ChatWorkspace() {
             }
           : current,
       );
-      window.open(authorized.url, "_blank", "noopener,noreferrer");
+      const targetUrl = inspectedCitation.source.pageStart
+        ? `${authorized.url}#page=${inspectedCitation.source.pageStart}`
+        : authorized.url;
+      if (previewWindow && !previewWindow.closed) {
+        previewWindow.location.replace(targetUrl);
+      } else {
+        window.open(targetUrl, "_blank", "noopener,noreferrer");
+      }
     } catch (error) {
+      previewWindow?.close();
       setInspectedCitation((current) =>
         current && current.key === inspectedCitation.key
           ? {
@@ -503,7 +788,15 @@ export function ChatWorkspace() {
     <AppShell
       user={auth.user}
       activeMenu="chat"
-      onSignedOut={() => setAuth({ kind: "anonymous" })}
+      onSignedOut={() => {
+        startNewChat();
+        setConversations([]);
+        setNextCursor(null);
+        setSearchQuery("");
+        setAppliedSearchQuery("");
+        setMobileHistoryOpen(false);
+        setAuth({ kind: "anonymous" });
+      }}
       mainDataAttributes={{
         "data-chat-workspace": "ready",
         "data-conversation-id": conversationId ?? "",
@@ -512,24 +805,55 @@ export function ChatWorkspace() {
         "data-first-answer-ms": metrics.firstAnswerMs ?? "",
         "data-completed-ms": metrics.completedMs ?? "",
       }}
-      mainClassName="mx-auto flex w-full min-w-0 max-w-6xl flex-1 flex-col px-4 py-6 outline-none sm:px-6 sm:py-8"
+      mainClassName="mx-auto flex w-full min-w-0 max-w-7xl flex-1 flex-col px-4 py-6 outline-none sm:px-6 sm:py-8"
     >
       <header className="flex flex-wrap items-center justify-between gap-3 border-b border-[#e2e8f0] pb-4">
         <div className="min-w-0">
           <h1 className="text-2xl font-semibold text-[#0f172a]">SOP Assistant</h1>
-          <p className="mt-1 text-sm text-[#475569]">
-            Current session answers are verified strictly against active SOP documents.
+          <p className="mt-1 truncate text-sm text-[#475569]">
+            {conversationTitle
+              ? conversationTitle
+              : "Answers are verified strictly against active SOP documents."}
           </p>
         </div>
 
-        <button
-          type="button"
-          onClick={startNewChat}
-          className={buttonClass("secondary")}
-        >
-          <RotateCcw className="h-4 w-4 shrink-0" strokeWidth={1.5} aria-hidden="true" />
-          <span>New chat</span>
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            ref={mobileHistoryTriggerRef}
+            type="button"
+            onClick={() => setMobileHistoryOpen(true)}
+            aria-expanded={mobileHistoryOpen}
+            data-testid="mobile-history-toggle"
+            className={buttonClass("secondary", "default", "lg:hidden")}
+          >
+            <History className="h-4 w-4 shrink-0" strokeWidth={1.5} aria-hidden="true" />
+            <span>History</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setDesktopHistoryOpen((open) => !open)}
+            aria-expanded={desktopHistoryOpen}
+            data-testid="desktop-history-toggle"
+            className={buttonClass("secondary", "default", "hidden lg:inline-flex")}
+          >
+            {desktopHistoryOpen ? (
+              <PanelLeftClose className="h-4 w-4 shrink-0" strokeWidth={1.5} aria-hidden="true" />
+            ) : (
+              <PanelLeftOpen className="h-4 w-4 shrink-0" strokeWidth={1.5} aria-hidden="true" />
+            )}
+            <span>{desktopHistoryOpen ? "Hide history" : "History"}</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={startNewChat}
+            className={buttonClass("secondary")}
+          >
+            <RotateCcw className="h-4 w-4 shrink-0" strokeWidth={1.5} aria-hidden="true" />
+            <span>New chat</span>
+          </button>
+        </div>
       </header>
 
       {historyError && (
@@ -542,7 +866,51 @@ export function ChatWorkspace() {
         </div>
       )}
 
-      <div className="mt-6 flex min-w-0 flex-1 flex-col gap-6 xl:flex-row xl:items-start">
+      <div className="mt-6 flex min-w-0 flex-1 flex-col gap-6 lg:flex-row lg:items-start">
+        <ConversationHistoryPanel
+          conversations={conversations}
+          activeConversationId={conversationId}
+          loading={loadingList}
+          loadingMore={loadingMoreList}
+          hasMore={nextCursor !== null}
+          error={listError}
+          searchQuery={searchQuery}
+          onSearchQueryChange={setSearchQuery}
+          onSearchSubmit={(value) => {
+            const trimmed = value.trim();
+            setAppliedSearchQuery(trimmed);
+            void loadConversationList({ query: trimmed, cursor: null, append: false });
+          }}
+          onSelectConversation={(id) => {
+            if (id === conversationId && !loadingHistory) return;
+            openConversation(id);
+          }}
+          onNewChat={startNewChat}
+          onLoadMore={() => {
+            if (!nextCursor || loadingMoreList) return;
+            void loadConversationList({
+              query: appliedSearchQuery,
+              cursor: nextCursor,
+              append: true,
+            });
+          }}
+          onRetry={() => {
+            void loadConversationList({
+              query: appliedSearchQuery,
+              cursor: null,
+              append: false,
+            });
+          }}
+          onRenameConversation={handleRenameConversation}
+          onArchiveConversation={handleArchiveConversation}
+          mobileOpen={mobileHistoryOpen}
+          onCloseMobile={() => {
+            setMobileHistoryOpen(false);
+            mobileHistoryTriggerRef.current?.focus();
+          }}
+          desktopOpen={desktopHistoryOpen}
+        />
+
         <div className="flex min-w-0 flex-1 flex-col">
           <section
             aria-label="Current session messages"
@@ -559,14 +927,20 @@ export function ChatWorkspace() {
             {!loadingHistory && messages.length === 0 && !submitting && !streamFailure && (
               <div
                 data-testid="chat-empty-state"
-                className="rounded-[var(--radius-lg)] border border-[#e2e8f0] bg-white p-5 text-sm text-[#475569]"
+                className="flex flex-col items-center px-4 py-12 text-center"
               >
-                <div className="flex items-start gap-3">
-                  <BookOpen className="mt-0.5 h-5 w-5 shrink-0 text-[#1d4ed8]" strokeWidth={1.5} aria-hidden="true" />
-                  <p className="min-w-0 leading-relaxed">
-                    Ask a procedural or specification question from an active company SOP to begin.
-                  </p>
-                </div>
+                <span
+                  aria-hidden="true"
+                  className="flex h-11 w-11 items-center justify-center rounded-[var(--radius-lg)] border border-[#bfdbfe] bg-[#eff6ff] text-[#1d4ed8]"
+                >
+                  <BookOpen className="h-5 w-5" strokeWidth={1.5} />
+                </span>
+                <h2 className="mt-4 text-base font-semibold text-[#0f172a]">
+                  Ask about any active SOP
+                </h2>
+                <p className="mt-1.5 max-w-[46ch] text-sm leading-relaxed text-[#475569]">
+                  Ask a procedural or specification question from an active company SOP to begin.
+                </p>
               </div>
             )}
 
@@ -576,7 +950,7 @@ export function ChatWorkspace() {
                   <article
                     key={message.id}
                     data-message-role="user"
-                    className="ml-auto max-w-[68ch] rounded-[var(--radius-lg)] border border-[#bfdbfe] bg-[#eff6ff] p-4 text-sm text-[#0f172a] sm:text-base"
+                    className="ml-auto max-w-[88%] rounded-[var(--radius-lg)] border border-[#bfdbfe] bg-[#eff6ff] px-4 py-3.5 text-sm text-[#0f172a] shadow-[var(--shadow-surface)] sm:max-w-[54ch] sm:text-base"
                   >
                     <p className="text-xs font-medium text-[#1e40af]">You</p>
                     <p className="mt-1 whitespace-pre-wrap break-words leading-relaxed">
@@ -592,7 +966,7 @@ export function ChatWorkspace() {
                     key={message.id}
                     data-message-role="assistant"
                     data-outcome="no_evidence"
-                    className="max-w-[68ch] rounded-[var(--radius-lg)] border border-[#e2e8f0] bg-white p-4 text-[#0f172a]"
+                    className="max-w-[68ch] rounded-[var(--radius-lg)] border border-[#e2e8f0] bg-white p-4 text-[#0f172a] shadow-[var(--shadow-surface)]"
                   >
                     <p className="text-xs font-medium text-[#475569]">SOP Assistant</p>
                     <p className="mt-2 text-sm font-medium text-[#0f172a] sm:text-base">
@@ -607,7 +981,7 @@ export function ChatWorkspace() {
                   key={message.id}
                   data-message-role="assistant"
                   data-outcome="completed"
-                  className="max-w-[68ch] rounded-[var(--radius-lg)] border border-[#e2e8f0] bg-white p-4 sm:p-5"
+                  className="max-w-[68ch] rounded-[var(--radius-lg)] border border-[#e2e8f0] bg-white p-4 shadow-[var(--shadow-surface)] sm:p-5"
                 >
                   <div className="flex flex-wrap items-center gap-2">
                     <ShieldCheck className="h-4 w-4 shrink-0 text-[#065f46]" strokeWidth={1.5} aria-hidden="true" />
@@ -720,19 +1094,21 @@ export function ChatWorkspace() {
                   <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" strokeWidth={1.5} aria-hidden="true" />
                   <p className="font-medium">{streamFailure.message}</p>
                 </div>
-                <div className="mt-3">
-                  <button
-                    type="button"
-                    onClick={() => void submitQuestion(streamFailure.question)}
-                    className={buttonClass(
-                      "secondary",
-                      "default",
-                      "border-[#fecaca] text-[#991b1b] hover:border-[#fca5a5] hover:bg-[#fee2e2]",
-                    )}
-                  >
-                    Retry question
-                  </button>
-                </div>
+                {streamFailure.question.trim().length > 0 && (
+                  <div className="mt-3">
+                    <button
+                      type="button"
+                      onClick={() => void submitQuestion(streamFailure.question)}
+                      className={buttonClass(
+                        "secondary",
+                        "default",
+                        "border-[#fecaca] text-[#991b1b] hover:border-[#fca5a5] hover:bg-[#fee2e2]",
+                      )}
+                    >
+                      Retry question
+                    </button>
+                  </div>
+                )}
               </div>
             )}
           </section>
@@ -742,7 +1118,7 @@ export function ChatWorkspace() {
               event.preventDefault();
               void submitQuestion(questionInput);
             }}
-            className="mx-auto mt-6 w-full max-w-[68ch] border-t border-[#e2e8f0] pt-4"
+            className="sticky bottom-16 z-10 mx-auto mt-6 w-full max-w-[68ch] border-t border-[#e2e8f0] bg-[#f8fafc]/95 pt-3 pb-2 backdrop-blur-sm lg:bottom-0 lg:pb-1"
           >
             <label
               htmlFor="chat-question-input"
@@ -750,7 +1126,7 @@ export function ChatWorkspace() {
             >
               Ask an SOP question
             </label>
-            <div className="mt-2 flex flex-col gap-3 sm:flex-row sm:items-end">
+            <div className="mt-2 flex flex-col gap-2 rounded-[var(--radius-lg)] border border-[#cbd5e1] bg-white p-2 shadow-[var(--shadow-surface)] focus-within:border-[#1d4ed8] sm:flex-row sm:items-end">
               <textarea
                 id="chat-question-input"
                 name="question"
@@ -764,13 +1140,13 @@ export function ChatWorkspace() {
                     void submitQuestion(questionInput);
                   }
                 }}
-                disabled={submitting}
+                disabled={submitting || loadingHistory}
                 placeholder="Ask a question about an active SOP procedure or specification..."
-                className="cp-control min-h-11 w-full min-w-0 flex-1 resize-y rounded-[var(--radius-md)] border border-[#cbd5e1] bg-white px-3 py-2 text-sm text-[#0f172a] placeholder:text-[#64748b] hover:border-[#94a3b8] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#1d4ed8] disabled:cursor-not-allowed disabled:bg-[#f1f5f9]"
+                className="cp-control min-h-11 w-full min-w-0 flex-1 resize-y rounded-[var(--radius-sm)] border-0 bg-transparent px-2.5 py-2 text-sm text-[#0f172a] placeholder:text-[#64748b] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#1d4ed8] disabled:cursor-not-allowed disabled:bg-[#f1f5f9]"
               />
               <button
                 type="submit"
-                disabled={submitting || questionInput.trim().length === 0}
+                disabled={submitting || loadingHistory || questionInput.trim().length === 0}
                 className={buttonClass("primary", "default", "shrink-0")}
               >
                 {submitting ? (
@@ -781,6 +1157,9 @@ export function ChatWorkspace() {
                 <span>{submitting ? "Checking..." : "Send"}</span>
               </button>
             </div>
+            <p className="mt-1.5 hidden text-xs text-[#64748b] sm:block">
+              Press Enter to send · Shift+Enter for a new line
+            </p>
           </form>
         </div>
 
@@ -788,7 +1167,7 @@ export function ChatWorkspace() {
           <aside
             aria-label="Citation inspector"
             data-testid="citation-inspector"
-            className="cp-drawer w-full shrink-0 rounded-[var(--radius-lg)] border border-[#e2e8f0] bg-white p-4 xl:sticky xl:top-6 xl:w-80"
+            className="cp-drawer w-full shrink-0 rounded-[var(--radius-lg)] border border-[#e2e8f0] bg-white p-4 shadow-[var(--shadow-elevated)] xl:sticky xl:top-6 xl:w-80"
           >
             <div className="flex items-start justify-between gap-2 border-b border-[#e2e8f0] pb-3">
               <div className="min-w-0">

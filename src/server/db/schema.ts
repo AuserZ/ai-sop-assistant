@@ -392,10 +392,14 @@ export const chatConversations = appSchema.table("chat_conversations", {
   id: uuid().defaultRandom().primaryKey(),
   ownerId: text("owner_id").notNull().references(() => authUsers.id),
   title: text().notNull(),
+  archivedAt: timestamp("archived_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
   index("chat_conversations_owner_updated").on(table.ownerId, table.updatedAt.desc()),
+  index("chat_conversations_owner_active_updated")
+    .on(table.ownerId, table.updatedAt.desc(), table.id.desc())
+    .where(sql`${table.archivedAt} is null`),
   check("chat_conversations_title_nonempty", sql`length(btrim(${table.title})) > 0`),
 ]);
 

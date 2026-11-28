@@ -16,6 +16,8 @@ export const chatWireVersion = 1 as const;
 export const chatApiBounds = {
   maximumBodyBytes: 16_384,
   maximumConversationTitleChars: 120,
+  maximumConversationSearchChars: 100,
+  maximumConversationCursorChars: 256,
   defaultConversationListLimit: 20,
   maximumConversationListLimit: 50,
   historyWindowTurns: retrievalDefaults.historyMaxTurns,
@@ -25,6 +27,7 @@ export const chatRateLimits = {
   send: { maximum: 30, windowSeconds: 60 },
   stream: { maximum: 60, windowSeconds: 60 },
   read: { maximum: 120, windowSeconds: 60 },
+  mutate: { maximum: 60, windowSeconds: 60 },
 } as const;
 
 export const sendChatMessageInput = z
@@ -36,6 +39,48 @@ export const sendChatMessageInput = z
   .strict();
 
 export type SendChatMessageInput = z.infer<typeof sendChatMessageInput>;
+
+export const renameChatConversationInput = z
+  .object({
+    title: z.string().trim().min(1).max(chatApiBounds.maximumConversationTitleChars),
+  })
+  .strict();
+
+export type RenameChatConversationInput = z.infer<typeof renameChatConversationInput>;
+
+const conversationCursorSchema = z
+  .object({
+    updatedAt: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?Z$/)
+      .refine((value) => {
+        const parsed = Date.parse(value);
+        if (Number.isNaN(parsed)) return false;
+        const date = new Date(parsed);
+        return date.getUTCFullYear() >= 1 && date.toISOString().slice(0, 19) === value.slice(0, 19);
+      }, "Invalid calendar timestamp"),
+    id: z.uuid(),
+  })
+  .strict();
+
+export type ConversationListCursor = z.infer<typeof conversationCursorSchema>;
+
+export function encodeConversationCursor(cursor: ConversationListCursor): string {
+  const validated = conversationCursorSchema.parse(cursor);
+  return Buffer.from(JSON.stringify(validated), "utf8").toString("base64url");
+}
+
+export function decodeConversationCursor(raw: string): ConversationListCursor | null {
+  if (!raw || raw.length > chatApiBounds.maximumConversationCursorChars) return null;
+  if (!/^[A-Za-z0-9_-]+$/.test(raw)) return null;
+  try {
+    const parsedJson: unknown = JSON.parse(Buffer.from(raw, "base64url").toString("utf8"));
+    const parsed = conversationCursorSchema.safeParse(parsedJson);
+    return parsed.success ? parsed.data : null;
+  } catch {
+    return null;
+  }
+}
 
 export const chatEmptyStageBody = z.object({}).strict();
 export const chatIdInput = z.uuid();
@@ -192,6 +237,21 @@ export type ChatConversationSummaryDto = {
   updatedAt: string;
 };
 
+export type ChatConversationListDto = {
+  conversations: ChatConversationSummaryDto[];
+  nextCursor: string | null;
+};
+
+export type ChatConversationRenameResult = {
+  conversation: ChatConversationSummaryDto;
+};
+
+export type ChatConversationArchiveResult = {
+  archived: true;
+  conversationId: string;
+  archivedAt: string;
+};
+
 export type ChatMessageDto = {
   id: string;
   role: "user" | "assistant";
@@ -208,6 +268,7 @@ export type ChatMessageDto = {
 export type ChatConversationDetailDto = {
   conversation: ChatConversationSummaryDto;
   messages: ChatMessageDto[];
+  activeJobId: string | null;
 };
 
 export type ChatTurnCreationResult = {
