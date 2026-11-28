@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 import { maxProviderResponseBytes } from "../../src/server/ai/bounded-response";
+import { buildOpenAiJsonChatBody } from "../../src/server/ai/chat-request";
 import {
   answerConfiguration,
   AnswerStageError,
@@ -126,13 +127,27 @@ describe("S10/ADR12 answer & judge fail-closed configuration and SSRF protection
         OPENAI_JUDGE_MODEL: "gpt-4.1-nano",
       }),
     ).toThrow(AnswerStageError);
-    expect(() =>
-      answerConfiguration({
-        OPENAI_API_KEY: "sk-test",
-        OPENAI_ANSWER_MODEL: "gpt-4.1-mini",
-        OPENAI_JUDGE_MODEL: "gpt-6-luna",
-      }),
-    ).toThrow(AnswerStageError);
+
+    const verifiedLuna = answerConfiguration({
+      OPENAI_API_KEY: "sk-test",
+      OPENAI_ANSWER_MODEL: "gpt-6-luna",
+      OPENAI_JUDGE_MODEL: "gpt-6-luna",
+    });
+    expect(verifiedLuna).toMatchObject({
+      mode: "openai",
+      answerModel: "gpt-6-luna",
+      judgeModel: "gpt-6-luna",
+    });
+
+    expect(
+      buildOpenAiJsonChatBody("gpt-4.1-mini", [{ role: "user", content: "hi" }]),
+    ).toMatchObject({ model: "gpt-4.1-mini", temperature: 0 });
+    expect(
+      buildOpenAiJsonChatBody("gpt-6-luna", [{ role: "user", content: "hi" }]),
+    ).not.toHaveProperty("temperature");
+    expect(
+      buildOpenAiJsonChatBody("gpt-5-mini", [{ role: "user", content: "hi" }]),
+    ).not.toHaveProperty("temperature");
   });
 
   it("enforces loopback-only fixture gating and blocks non-loopback OPENAI_BASE_URL SSRF", () => {
@@ -1086,6 +1101,32 @@ describe("S10/C2/C3/C4/C5/ADR12 end-to-end service orchestration, judge gating a
       ),
     ).toThrow(AnswerStageError);
 
+    // Descriptive live-provider reasonCode (>80 chars, <=400 chars) still validates; >400 chars fails closed.
+    const descriptivePass = validateJudgeOutput(
+      {
+        overallVerdict: "PASS",
+        claimVerdicts: [
+          {
+            claimIndex: 0,
+            verdict: "SUPPORTED",
+            reasonCode:
+              "The cited passage explicitly states the exact procedure, quantities, and role boundaries with no invented details.",
+          },
+        ],
+      },
+      1,
+    );
+    expect(descriptivePass.passed).toBe(true);
+    expect(() =>
+      validateJudgeOutput(
+        {
+          overallVerdict: "PASS",
+          claimVerdicts: [{ claimIndex: 0, verdict: "SUPPORTED", reasonCode: "x".repeat(401) }],
+        },
+        1,
+      ),
+    ).toThrow(AnswerStageError);
+
     // Judge timeout/rate-limit -> service_error JUDGE_PROVIDER_TRANSIENT retryable: true
     const judgeTimeout = await generateValidatedSopAnswer(
       { question: "SOP-101?" },
@@ -1249,5 +1290,43 @@ describe("S10/C2/C3/C4/C5/ADR12 end-to-end service orchestration, judge gating a
       sources: [],
       reason: "SOURCE_ELIGIBILITY_REVOKED",
     });
+  });
+
+  it("validates non-step claims inside mixed chunks that also contain numbered lists and trailing sections", () => {
+    const mixedChunk = makePassage({
+      chunkId: "chk-mixed-1",
+      documentTitle: "Access Control SOP",
+      sectionPath: "Section 3 > Access Rules",
+      contentType: "mixed",
+      text: [
+        "U4   Email and password login; menus and actions   P0",
+        "     follow the role",
+        "",
+        "How it works",
+        "",
+        "1. Admin uploads an SOP file.",
+        "2. If passages are weak, return no evidence.",
+        "",
+        "Non-functional",
+        "Answer starts within 3 seconds and finishes within 10 seconds.",
+      ].join("\n"),
+    });
+
+    const result = validateCandidateDeterministically(
+      {
+        status: "supported",
+        isProcedural: false,
+        claims: [
+          {
+            stepNumber: 1,
+            text: "Email and password login; menus and actions follow the role.",
+            chunkIds: [mixedChunk.chunkId],
+          },
+        ],
+      },
+      [mixedChunk],
+    );
+
+    expect(result).toEqual({ ok: true });
   });
 });

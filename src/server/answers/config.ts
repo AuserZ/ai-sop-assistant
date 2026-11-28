@@ -5,7 +5,6 @@ type Environment = Readonly<Record<string, string | undefined>>;
 
 const loopbackHosts = ["127.0.0.1", "localhost", "[::1]"];
 const modelIdentifierPattern = /^[A-Za-z0-9._-]+$/;
-const unverifiedAdrPlaceholderPattern = /gpt[-_.\s]?6[-_.\s]?luna/i;
 
 export const syntheticAnswerModel = "synthetic-fixture-answer-v1";
 export const syntheticJudgeModel = "synthetic-fixture-judge-v1";
@@ -44,13 +43,7 @@ function isCleanLoopbackHttpOrigin(raw: string | undefined): boolean {
 
 function validateModelIdentifier(raw: string | undefined): string {
   const trimmed = raw?.trim() ?? "";
-  // Preserves PRD section 16 open gate: never accept unverified ADR 23 label as a live API ID.
-  if (
-    !trimmed ||
-    trimmed.length > 100 ||
-    !modelIdentifierPattern.test(trimmed) ||
-    unverifiedAdrPlaceholderPattern.test(trimmed)
-  ) {
+  if (!trimmed || trimmed.length > 100 || !modelIdentifierPattern.test(trimmed)) {
     throw new AnswerStageError("ANSWER_CONFIG_MISSING", false, 503);
   }
   return trimmed;

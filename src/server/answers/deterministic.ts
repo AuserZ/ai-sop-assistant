@@ -223,7 +223,14 @@ export function extractNumberedSteps(text: string): Array<{ stepNumber: number; 
   return sequential
     .map((entry, index) => {
       const next = sequential[index + 1];
-      const sliceEnd = next ? next.matchIndex : text.length;
+      let sliceEnd = next ? next.matchIndex : text.length;
+      if (!next) {
+        // Stop the final numbered step at a blank-line paragraph break so trailing non-step sections are not swallowed.
+        const trailingBreak = /\r?\n\s*\r?\n/.exec(text.slice(entry.contentStart));
+        if (trailingBreak) {
+          sliceEnd = entry.contentStart + trailingBreak.index;
+        }
+      }
       const body = text
         .slice(entry.contentStart, sliceEnd)
         .replace(/\s+/g, " ")
@@ -598,21 +605,66 @@ function validateTableRowConsistency(
   return rowsPerNumber.every((set) => Array.from(set).some((rowIndex) => namedRowIndices.has(rowIndex)));
 }
 
+function extractSentenceUnits(
+  segment: string,
+  baseOffset: number,
+): Array<{ text: string; offset: number }> {
+  const units: Array<{ text: string; offset: number }> = [];
+  const paragraphRegex = /[^\r\n]+(?:\r?\n(?![ \t]*\r?\n)[^\r\n]+)*/g;
+  let paragraphMatch: RegExpExecArray | null;
+
+  while ((paragraphMatch = paragraphRegex.exec(segment)) !== null) {
+    const paragraph = paragraphMatch[0];
+    const paragraphOffset = baseOffset + paragraphMatch.index;
+    const hasSentenceBoundary = /\.(?:\s|$)/.test(paragraph);
+    const lineCount = paragraph.split(/\r?\n/).length;
+
+    // Keep short wrapped table/heading blocks without sentence periods intact as a single unit.
+    if (!hasSentenceBoundary && lineCount <= 3 && paragraph.length <= 320) {
+      const collapsed = paragraph.replace(/\s+/g, " ").trim();
+      if (collapsed.length >= 6) {
+        units.push({ text: collapsed, offset: paragraphOffset });
+      }
+      continue;
+    }
+
+    const sentenceRegex = /[^.\n]+(?:\.(?=\d)[^.\n]*)*\.?/g;
+    let sentenceMatch: RegExpExecArray | null;
+    while ((sentenceMatch = sentenceRegex.exec(paragraph)) !== null) {
+      const trimmed = sentenceMatch[0].trim();
+      if (trimmed.length >= 6) {
+        units.push({ text: trimmed, offset: paragraphOffset + sentenceMatch.index });
+      }
+    }
+  }
+
+  return units;
+}
+
 function splitSourceUnits(text: string): Array<{ text: string; offset: number }> {
   const steps = extractNumberedSteps(text);
   if (steps.length > 0) {
-    return steps.map((step) => ({ text: step.text, offset: step.offset }));
+    const units: Array<{ text: string; offset: number }> = [];
+    const firstStepOffset = steps[0].offset;
+    const lastStep = steps[steps.length - 1];
+    const trailingBreak = /\r?\n\s*\r?\n/.exec(text.slice(lastStep.offset));
+    const afterStepsOffset = trailingBreak
+      ? lastStep.offset + trailingBreak.index + trailingBreak[0].length
+      : text.length;
+
+    if (firstStepOffset > 0) {
+      units.push(...extractSentenceUnits(text.slice(0, firstStepOffset), 0));
+    }
+    for (const step of steps) {
+      units.push({ text: step.text, offset: step.offset });
+    }
+    if (afterStepsOffset < text.length) {
+      units.push(...extractSentenceUnits(text.slice(afterStepsOffset), afterStepsOffset));
+    }
+    return units;
   }
 
-  const units: Array<{ text: string; offset: number }> = [];
-  const sentenceRegex = /[^.\n]+(?:\.(?=\d)[^.\n]*)*\.?/g;
-  let match: RegExpExecArray | null;
-  while ((match = sentenceRegex.exec(text)) !== null) {
-    const trimmed = match[0].trim();
-    if (trimmed.length >= 6) {
-      units.push({ text: trimmed, offset: match.index });
-    }
-  }
+  const units = extractSentenceUnits(text, 0);
   return units.length > 0 ? units : [{ text, offset: 0 }];
 }
 

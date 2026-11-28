@@ -361,7 +361,7 @@ export function UploadPanel() {
         </header>
 
         <section
-          className="space-y-5 rounded-[var(--radius-lg)] border border-[#e2e8f0] bg-white p-4 sm:p-6"
+          className="space-y-5 rounded-[var(--radius-lg)] border border-[#e2e8f0] bg-white p-4 shadow-[var(--shadow-surface)] sm:p-6"
           aria-label="SOP upload"
           aria-busy={busy}
         >
@@ -528,7 +528,7 @@ export function UploadPanel() {
                   type="file"
                   accept=".pdf,.docx"
                   disabled={busy}
-                  className={`${inputClassName} min-w-0 cursor-pointer file:mr-3 file:cursor-pointer file:rounded-[var(--radius-sm)] file:border-0 file:bg-[#eff6ff] file:px-3 file:py-1 file:text-xs file:font-medium file:text-[#1d4ed8]`}
+                  className={`${inputClassName} min-w-0 cursor-pointer py-1.5 file:mr-3 file:min-h-8 file:cursor-pointer file:rounded-[var(--radius-sm)] file:border file:border-[#bfdbfe] file:bg-[#eff6ff] file:px-3 file:py-1 file:text-xs file:font-medium file:text-[#1d4ed8] hover:file:bg-[#dbeafe]`}
                   aria-invalid={Boolean(fileError)}
                   aria-describedby={`sop-file-help${fileError ? " sop-file-error" : ""}`}
                   onChange={(event) => {

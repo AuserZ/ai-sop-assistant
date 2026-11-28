@@ -245,6 +245,11 @@ export function LibraryPanel({
         `Authorizing ${disposition === "inline" ? "original view" : "download"} for ${item.title}...`,
       );
 
+      // Open synchronously inside the click gesture so browser popup blockers allow the new tab.
+      const previewWindow =
+        disposition === "inline" && typeof window !== "undefined" ? window.open("", "_blank") : null;
+      if (previewWindow) previewWindow.opener = null;
+
       try {
         const authorized = await requestDocumentSource(
           item.id,
@@ -255,7 +260,10 @@ export function LibraryPanel({
           },
           controller.signal,
         );
-        if (controller.signal.aborted) return;
+        if (controller.signal.aborted) {
+          previewWindow?.close();
+          return;
+        }
 
         const contentResponse = await fetch(authorized.source.url, {
           method: "GET",
@@ -278,7 +286,36 @@ export function LibraryPanel({
           throw new DocumentRequestError(code);
         }
         const blob = await contentResponse.blob();
-        if (controller.signal.aborted) return;
+        if (controller.signal.aborted) {
+          previewWindow?.close();
+          return;
+        }
+
+        const shouldOpenInlinePdf =
+          disposition === "inline" && authorized.source.mimeType === "application/pdf";
+
+        if (shouldOpenInlinePdf) {
+          const targetUrl = authorized.source.context.page
+            ? `${authorized.source.url}#page=${authorized.source.context.page}`
+            : authorized.source.url;
+          if (previewWindow && !previewWindow.closed) {
+            previewWindow.location.replace(targetUrl);
+          } else {
+            window.open(targetUrl, "_blank", "noopener,noreferrer");
+          }
+        } else {
+          previewWindow?.close();
+          const objectUrl = URL.createObjectURL(blob);
+          const anchor = document.createElement("a");
+          anchor.href = objectUrl;
+          anchor.download = authorized.source.fileName;
+          anchor.rel = "noopener noreferrer";
+          anchor.style.display = "none";
+          document.body.appendChild(anchor);
+          anchor.click();
+          anchor.remove();
+          window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
+        }
 
         setActiveSource({
           documentId: authorized.source.documentId,
@@ -293,6 +330,7 @@ export function LibraryPanel({
         });
         setSourcePhase(null);
       } catch (failure) {
+        previewWindow?.close();
         if (controller.signal.aborted) return;
         setSourcePhase(null);
         setError(
@@ -586,7 +624,7 @@ export function LibraryPanel({
 
       <form
         noValidate
-        className="rounded-[var(--radius-lg)] border border-[#e2e8f0] bg-white p-4"
+        className="rounded-[var(--radius-lg)] border border-[#e2e8f0] bg-white p-4 shadow-[var(--shadow-surface)]"
         onSubmit={(event) => {
           event.preventDefault();
           void fetchLibrary(searchInput);
@@ -707,7 +745,7 @@ export function LibraryPanel({
               : "No active SOP documents are available yet."}
         </p>
       ) : (
-        <div className="min-w-0 max-w-full md:overflow-hidden md:rounded-[var(--radius-lg)] md:border md:border-[#e2e8f0] md:bg-white">
+        <div className="min-w-0 max-w-full md:overflow-hidden md:rounded-[var(--radius-lg)] md:border md:border-[#e2e8f0] md:bg-white md:shadow-[var(--shadow-surface)]">
           <table className="block w-full md:table md:table-fixed" aria-label="SOP documents">
             <thead className="hidden border-b border-[#e2e8f0] bg-[#f8fafc] text-left text-xs font-medium text-[#475569] md:table-header-group">
               {table.getHeaderGroups().map((headerGroup) => (

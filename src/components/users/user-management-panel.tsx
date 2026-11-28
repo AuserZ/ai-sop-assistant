@@ -346,7 +346,7 @@ export function UserManagementPanel() {
   if (access.kind !== "signed-in") {
     return (
       <main className="mx-auto flex min-h-screen w-full max-w-md flex-col justify-center px-4 py-10 sm:px-6">
-        <div className="rounded-[var(--radius-lg)] border border-[#e2e8f0] bg-white p-6">
+        <div className="rounded-[var(--radius-lg)] border border-[#e2e8f0] border-t-2 border-t-[#1d4ed8] bg-white p-6 shadow-[var(--shadow-elevated)]">
           <BrandMark />
           <h1 className="mt-5 text-2xl font-semibold text-[#0f172a]">User Management</h1>
           {access.kind === "loading" && (
@@ -431,50 +431,50 @@ export function UserManagementPanel() {
 
         <section
           aria-label="Directory summary"
-          className="grid grid-cols-2 gap-3 sm:grid-cols-5"
+          className="grid grid-cols-2 divide-y divide-[#e2e8f0] overflow-hidden rounded-[var(--radius-lg)] border border-[#e2e8f0] bg-white shadow-[var(--shadow-surface)] sm:grid-cols-5 sm:divide-x sm:divide-y-0"
         >
           <div
             data-testid="summary-total-users"
-            className="rounded-[var(--radius-lg)] border border-[#e2e8f0] bg-white p-4 text-sm text-[#0f172a]"
+            className="p-4 text-sm text-[#0f172a]"
           >
-            <span className="block text-xs text-[#475569]">Total users</span>
-            <span className="tabular-nums mt-1 block font-mono text-lg font-semibold">
+            <span className="block text-xs font-medium text-[#475569]">Total users</span>
+            <span className="tabular-nums mt-1 block font-mono text-xl font-semibold">
               {summary.totalUsers}
             </span>
           </div>
           <div
             data-testid="summary-active-users"
-            className="rounded-[var(--radius-lg)] border border-[#e2e8f0] bg-white p-4 text-sm text-[#0f172a]"
+            className="border-l border-[#e2e8f0] p-4 text-sm text-[#0f172a] sm:border-l-0"
           >
-            <span className="block text-xs text-[#475569]">Active</span>
-            <span className="tabular-nums mt-1 block font-mono text-lg font-semibold text-[#065f46]">
+            <span className="block text-xs font-medium text-[#475569]">Active</span>
+            <span className="tabular-nums mt-1 block font-mono text-xl font-semibold text-[#065f46]">
               {summary.activeUsers}
             </span>
           </div>
           <div
             data-testid="summary-inactive-users"
-            className="rounded-[var(--radius-lg)] border border-[#e2e8f0] bg-white p-4 text-sm text-[#0f172a]"
+            className="p-4 text-sm text-[#0f172a]"
           >
-            <span className="block text-xs text-[#475569]">Inactive</span>
-            <span className="tabular-nums mt-1 block font-mono text-lg font-semibold text-[#991b1b]">
+            <span className="block text-xs font-medium text-[#475569]">Inactive</span>
+            <span className="tabular-nums mt-1 block font-mono text-xl font-semibold text-[#991b1b]">
               {summary.inactiveUsers}
             </span>
           </div>
           <div
             data-testid="summary-active-admins"
-            className="rounded-[var(--radius-lg)] border border-[#e2e8f0] bg-white p-4 text-sm text-[#0f172a]"
+            className="border-l border-[#e2e8f0] p-4 text-sm text-[#0f172a] sm:border-l-0"
           >
-            <span className="block text-xs text-[#475569]">Active Admins</span>
-            <span className="tabular-nums mt-1 block font-mono text-lg font-semibold text-[#1d4ed8]">
+            <span className="block text-xs font-medium text-[#475569]">Active Admins</span>
+            <span className="tabular-nums mt-1 block font-mono text-xl font-semibold text-[#1d4ed8]">
               {summary.activeAdmins}
             </span>
           </div>
           <div
             data-testid="summary-pending-invitations"
-            className="col-span-2 rounded-[var(--radius-lg)] border border-[#e2e8f0] bg-white p-4 text-sm text-[#0f172a] sm:col-span-1"
+            className="col-span-2 p-4 text-sm text-[#0f172a] sm:col-span-1"
           >
-            <span className="block text-xs text-[#475569]">Pending invites</span>
-            <span className="tabular-nums mt-1 block font-mono text-lg font-semibold text-[#92400e]">
+            <span className="block text-xs font-medium text-[#475569]">Pending invites</span>
+            <span className="tabular-nums mt-1 block font-mono text-xl font-semibold text-[#92400e]">
               {summary.pendingInvitations}
             </span>
           </div>
@@ -482,7 +482,7 @@ export function UserManagementPanel() {
 
         <section
           aria-labelledby="invite-user-heading"
-          className="rounded-[var(--radius-lg)] border border-[#e2e8f0] bg-white p-4 sm:p-6"
+          className="rounded-[var(--radius-lg)] border border-[#e2e8f0] bg-white p-4 shadow-[var(--shadow-surface)] sm:p-6"
         >
           <h2 id="invite-user-heading" className="text-lg font-semibold text-[#0f172a]">
             Invite user
@@ -563,7 +563,7 @@ export function UserManagementPanel() {
         {pendingInvitations.length > 0 && (
           <section
             aria-labelledby="pending-invitations-heading"
-            className="rounded-[var(--radius-lg)] border border-[#e2e8f0] bg-white p-4 sm:p-6"
+            className="rounded-[var(--radius-lg)] border border-[#e2e8f0] bg-white p-4 shadow-[var(--shadow-surface)] sm:p-6"
           >
             <h2 id="pending-invitations-heading" className="text-lg font-semibold text-[#0f172a]">
               Pending invitations
@@ -604,7 +604,7 @@ export function UserManagementPanel() {
               event.preventDefault();
               triggerFilterFetch({ q: searchInput, role: roleFilter, status: statusFilter });
             }}
-            className="rounded-[var(--radius-lg)] border border-[#e2e8f0] bg-white p-4"
+            className="rounded-[var(--radius-lg)] border border-[#e2e8f0] bg-white p-4 shadow-[var(--shadow-surface)]"
           >
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_10rem_10rem_auto_auto] sm:items-end">
               <div className="min-w-0 space-y-1.5">
@@ -741,7 +741,7 @@ export function UserManagementPanel() {
               No user accounts match the current filter.
             </div>
           ) : (
-            <div className="min-w-0 max-w-full md:overflow-hidden md:rounded-[var(--radius-lg)] md:border md:border-[#e2e8f0] md:bg-white">
+            <div className="min-w-0 max-w-full md:overflow-hidden md:rounded-[var(--radius-lg)] md:border md:border-[#e2e8f0] md:bg-white md:shadow-[var(--shadow-surface)]">
               <table
                 data-testid="users-directory-list"
                 aria-label="User directory"

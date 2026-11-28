@@ -139,6 +139,7 @@ export async function handleDocumentSourceContentRequest(
         "X-Frame-Options": "DENY",
         "Cross-Origin-Resource-Policy": "same-origin",
         "Referrer-Policy": "no-referrer",
+        "Content-Security-Policy": "default-src 'none'; object-src 'self'; frame-ancestors 'none'",
       },
     });
   } catch (error) {

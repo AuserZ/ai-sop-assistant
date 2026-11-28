@@ -15,9 +15,9 @@ export const buttonSizeClassNames: Readonly<Record<ButtonSize, string>> = {
 };
 
 export const buttonVariantClassNames: Readonly<Record<ButtonVariant, string>> = {
-  primary: `${buttonBaseClassName} border border-transparent bg-[#1d4ed8] text-white hover:bg-[#1e40af]`,
-  secondary: `${buttonBaseClassName} border border-[#cbd5e1] bg-white text-[#0f172a] hover:border-[#94a3b8] hover:bg-[#f1f5f9]`,
-  destructive: `${buttonBaseClassName} border border-[#991b1b] bg-[#991b1b] text-white hover:bg-[#7f1d1d] focus-visible:outline-[#991b1b]`,
+  primary: `${buttonBaseClassName} border border-transparent bg-[#1d4ed8] text-white shadow-[0_1px_1px_rgba(15,23,42,0.08)] hover:bg-[#1e40af]`,
+  secondary: `${buttonBaseClassName} border border-[#cbd5e1] bg-white text-[#0f172a] shadow-[var(--shadow-surface)] hover:border-[#94a3b8] hover:bg-[#f8fafc]`,
+  destructive: `${buttonBaseClassName} border border-[#991b1b] bg-[#991b1b] text-white shadow-[0_1px_1px_rgba(15,23,42,0.08)] hover:bg-[#7f1d1d] focus-visible:outline-[#991b1b]`,
   ghost: `${buttonBaseClassName} border border-transparent bg-transparent text-[#0f172a] hover:bg-[#f1f5f9]`,
 };
 
@@ -145,7 +145,7 @@ export function SurfaceCard({
     <section
       aria-label={ariaLabel}
       aria-labelledby={ariaLabelledBy}
-      className={`rounded-[var(--radius-lg)] border border-[#e2e8f0] bg-white p-4 sm:p-6${className ? ` ${className}` : ""}`}
+      className={`rounded-[var(--radius-lg)] border border-[#e2e8f0] bg-white p-4 shadow-[var(--shadow-surface)] sm:p-6${className ? ` ${className}` : ""}`}
     >
       {children}
     </section>

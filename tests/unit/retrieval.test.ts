@@ -89,7 +89,7 @@ function unitVector(seed: number): number[] {
 }
 
 describe("S09/C2/ADR10/ADR23 retrieval configuration, guardrails and tunable defaults", () => {
-  it("fails closed when live OpenAI model IDs or credentials are missing and never substitutes 'GPT-6 Luna'", () => {
+  it("fails closed when live OpenAI model IDs or credentials are missing and rejects invalid display labels", () => {
     expect(() => retrievalConfiguration({})).toThrowError(
       expect.objectContaining({ code: "RETRIEVAL_CONFIG_MISSING", transient: false, status: 503 }),
     );
@@ -102,21 +102,28 @@ describe("S09/C2/ADR10/ADR23 retrieval configuration, guardrails and tunable def
       expect.objectContaining({ code: "RETRIEVAL_CONFIG_MISSING", transient: false, status: 503 }),
     );
 
-    for (const placeholder of [
-      "GPT-6 Luna",
-      "gpt-6-luna",
-      "gpt-6-luna-preview",
-      "gpt.6.luna-2026",
-    ]) {
+    for (const invalidModel of ["GPT-6 Luna", "gpt-6 luna", "model/with/slash", ""]) {
       expect(() =>
         retrievalConfiguration({
           OPENAI_API_KEY: "sk-synthetic-test",
-          OPENAI_RERANKER_MODEL: placeholder,
+          OPENAI_RERANKER_MODEL: invalidModel,
         }),
       ).toThrowError(
         expect.objectContaining({ code: "RETRIEVAL_CONFIG_MISSING", transient: false, status: 503 }),
       );
     }
+
+    expect(
+      retrievalConfiguration({
+        OPENAI_API_KEY: "sk-synthetic-test",
+        OPENAI_RERANKER_MODEL: "gpt-6-luna",
+        OPENAI_REWRITE_MODEL: "gpt-6-luna",
+      }),
+    ).toMatchObject({
+      mode: "openai",
+      rerankerModel: "gpt-6-luna",
+      rewriteModel: "gpt-6-luna",
+    });
 
     expect(() =>
       retrievalConfiguration(

@@ -283,7 +283,7 @@ export function ReviewWorkspace({ documentId }: { documentId: string }) {
   if (access.kind !== "signed-in") {
     return (
       <main className="mx-auto flex min-h-screen w-full max-w-md flex-col justify-center px-4 py-10 sm:px-6">
-        <div className="rounded-[var(--radius-lg)] border border-[#e2e8f0] bg-white p-6">
+        <div className="rounded-[var(--radius-lg)] border border-[#e2e8f0] border-t-2 border-t-[#1d4ed8] bg-white p-6 shadow-[var(--shadow-elevated)]">
           <BrandMark />
           <h1 className="mt-5 text-2xl font-semibold text-[#0f172a]">Verify SOP</h1>
           {access.kind === "loading" && (
@@ -411,7 +411,7 @@ export function ReviewWorkspace({ documentId }: { documentId: string }) {
           </Link>
         </div>
 
-        <header className="min-w-0 space-y-2 rounded-[var(--radius-lg)] border border-[#e2e8f0] bg-white p-4 sm:p-5">
+        <header className="min-w-0 space-y-2 rounded-[var(--radius-lg)] border border-[#e2e8f0] bg-white p-4 shadow-[var(--shadow-surface)] sm:p-5">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h1 className="min-w-0 break-words text-xl font-semibold text-[#0f172a] sm:text-2xl">
               {doc.title}
@@ -471,7 +471,7 @@ export function ReviewWorkspace({ documentId }: { documentId: string }) {
 
           <section
             aria-label="Extracted content and verification"
-            className="min-w-0 space-y-5 rounded-[var(--radius-lg)] border border-[#e2e8f0] bg-white p-4"
+            className="min-w-0 space-y-5 rounded-[var(--radius-lg)] border border-[#e2e8f0] bg-white p-4 shadow-[var(--shadow-surface)]"
           >
             <div className="space-y-1.5">
               <label htmlFor="review-search" className="block text-sm font-medium text-[#0f172a]">

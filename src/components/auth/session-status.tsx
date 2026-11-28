@@ -126,19 +126,29 @@ export function SessionStatus() {
 
         <section
           aria-label="Your account"
-          className="rounded-[var(--radius-lg)] border border-[#e2e8f0] bg-white p-4 sm:p-6"
+          className="rounded-[var(--radius-lg)] border border-[#e2e8f0] bg-white p-4 shadow-[var(--shadow-surface)] sm:p-6"
         >
           <div className="flex flex-wrap items-start justify-between gap-4">
-            <div className="min-w-0 space-y-2">
+            <div className="min-w-0 flex-1 space-y-4">
               <div className="flex flex-wrap items-center gap-2">
                 <ShieldCheck className="h-4 w-4 shrink-0 text-[#1d4ed8]" strokeWidth={1.5} aria-hidden="true" />
                 <h2 className="text-base font-semibold text-[#0f172a]">Account session</h2>
                 <StatusBadge label="Active" tone="active" />
               </div>
-              <p className="break-words text-sm text-[#0f172a]">
-                Signed in as {session.user.name} ({session.user.email}).
-              </p>
-              <p className="text-sm font-medium text-[#475569]">Role: {roleLabel}</p>
+              <dl className="grid grid-cols-1 gap-3 border-t border-[#e2e8f0] pt-4 text-sm sm:grid-cols-3">
+                <div className="min-w-0">
+                  <dt className="text-xs font-medium text-[#64748b]">Name</dt>
+                  <dd className="mt-0.5 break-words font-medium text-[#0f172a]">{session.user.name}</dd>
+                </div>
+                <div className="min-w-0">
+                  <dt className="text-xs font-medium text-[#64748b]">Email</dt>
+                  <dd className="mt-0.5 break-all font-mono text-xs text-[#475569]">{session.user.email}</dd>
+                </div>
+                <div className="min-w-0">
+                  <dt className="text-xs font-medium text-[#64748b]">Role</dt>
+                  <dd className="mt-0.5 font-medium text-[#0f172a]">{roleLabel}</dd>
+                </div>
+              </dl>
             </div>
 
             <button
@@ -158,20 +168,6 @@ export function SessionStatus() {
             </p>
           )}
         </section>
-
-        <p className="text-xs text-[#64748b]">
-          Use the navigation menu to open{" "}
-          <span className="font-medium text-[#0f172a]">Chat</span> or{" "}
-          <span className="font-medium text-[#0f172a]">List Document SOP</span>
-          {session.user.role === "ADMIN" ? (
-            <>
-              , or manage accounts in{" "}
-              <span className="font-medium text-[#0f172a]">User Management</span>.
-            </>
-          ) : (
-            "."
-          )}
-        </p>
       </div>
     </AppShell>
   );

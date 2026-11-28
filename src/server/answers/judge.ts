@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { ProviderResponseTooLargeError, readBoundedResponseText } from "../ai/bounded-response";
+import { buildOpenAiJsonChatBody } from "../ai/chat-request";
 import type { RerankedPassage } from "../retrieval/contracts";
 import { extractKeywordTokens } from "../retrieval/search";
 import type { AnswerConfiguration } from "./config";
@@ -43,7 +44,7 @@ const judgeSystemPrompt = [
   'Mark a claim "SUPPORTED" ONLY if the cited passages fully entail its exact procedure order, numbers, decimals, units, ranges, conditions, prohibitions, and table bindings with zero invented details.',
   'Mark "UNCERTAIN" if evidence is ambiguous or partially supported; mark "UNSUPPORTED" if contradicted, altered, or ungrounded.',
   'Set overallVerdict to "PASS" ONLY when EVERY claim is "SUPPORTED". Otherwise set "FAIL" or "UNCERTAIN".',
-  'Return strictly valid JSON: {"overallVerdict":"PASS"|"FAIL"|"UNCERTAIN","claimVerdicts":[{"claimIndex":0,"verdict":"SUPPORTED"|"UNSUPPORTED"|"UNCERTAIN","reasonCode":"..."}]}.',
+  'Return strictly valid JSON with no extra keys: {"overallVerdict":"PASS"|"FAIL"|"UNCERTAIN","claimVerdicts":[{"claimIndex":0,"verdict":"SUPPORTED"|"UNSUPPORTED"|"UNCERTAIN","reasonCode":"ENTAILED"}]} where reasonCode is a short uppercase snake_case code (<= 60 characters, e.g. ENTAILED, NUMERIC_MISMATCH, UNSUPPORTED_CLAIM, AMBIGUOUS_EVIDENCE).',
 ].join(" ");
 
 export type JudgeDecision = {
@@ -268,15 +269,12 @@ export async function judgeAnswerCandidate(
         "Content-Type": "application/json",
         Authorization: `Bearer ${configuration.apiKey}`,
       },
-      body: JSON.stringify({
-        model: configuration.judgeModel,
-        temperature: 0,
-        response_format: { type: "json_object" },
-        messages: [
+      body: JSON.stringify(
+        buildOpenAiJsonChatBody(configuration.judgeModel, [
           { role: "system", content: judgeSystemPrompt },
           { role: "user", content: userMessage },
-        ],
-      }),
+        ]),
+      ),
       signal,
     });
   } catch {

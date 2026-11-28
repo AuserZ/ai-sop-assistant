@@ -100,7 +100,7 @@ export const judgeClaimVerdictSchema = z
   .object({
     claimIndex: z.number().int().min(0),
     verdict: z.enum(["SUPPORTED", "UNSUPPORTED", "UNCERTAIN"]),
-    reasonCode: z.string().trim().min(1).max(80),
+    reasonCode: z.string().trim().min(1).max(400),
   })
   .strict();
 

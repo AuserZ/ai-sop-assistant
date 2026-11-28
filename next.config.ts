@@ -79,6 +79,16 @@ const config: NextConfig = {
           { key: "Content-Security-Policy", value: buildContentSecurityPolicy(process.env) },
         ],
       },
+      {
+        // Permit browser built-in PDF viewer (<embed>) on authorized same-origin PDFs only.
+        source: "/api/documents/:id/source/content",
+        headers: [
+          {
+            key: "Content-Security-Policy",
+            value: "default-src 'none'; object-src 'self'; frame-ancestors 'none'",
+          },
+        ],
+      },
     ];
   },
 };

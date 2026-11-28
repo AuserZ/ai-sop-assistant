@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { ProviderResponseTooLargeError, readBoundedResponseText } from "../ai/bounded-response";
+import { buildOpenAiJsonChatBody } from "../ai/chat-request";
 import type { RetrievalConfiguration } from "./config";
 import {
   rerankerOutputSchema,
@@ -218,15 +219,12 @@ export async function rerankCandidates(
         "Content-Type": "application/json",
         Authorization: `Bearer ${configuration.apiKey}`,
       },
-      body: JSON.stringify({
-        model: configuration.rerankerModel,
-        temperature: 0,
-        response_format: { type: "json_object" },
-        messages: [
+      body: JSON.stringify(
+        buildOpenAiJsonChatBody(configuration.rerankerModel, [
           { role: "system", content: rerankSystemPrompt },
           { role: "user", content: userMessage },
-        ],
-      }),
+        ]),
+      ),
       signal,
     });
   } catch {

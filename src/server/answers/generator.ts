@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { ProviderResponseTooLargeError, readBoundedResponseText } from "../ai/bounded-response";
+import { buildOpenAiJsonChatBody } from "../ai/chat-request";
 import type { RerankedPassage } from "../retrieval/contracts";
 import { stripPromptInjectionDirectives } from "../retrieval/rewrite";
 import { extractKeywordTokens } from "../retrieval/search";
@@ -375,15 +376,12 @@ export async function generateAnswerCandidate(
         "Content-Type": "application/json",
         Authorization: `Bearer ${configuration.apiKey}`,
       },
-      body: JSON.stringify({
-        model: configuration.answerModel,
-        temperature: 0,
-        response_format: { type: "json_object" },
-        messages: [
+      body: JSON.stringify(
+        buildOpenAiJsonChatBody(configuration.answerModel, [
           { role: "system", content: generatorSystemPrompt },
           { role: "user", content: userMessage },
-        ],
-      }),
+        ]),
+      ),
       signal,
     });
   } catch {

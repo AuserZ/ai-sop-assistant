@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { ProviderResponseTooLargeError, readBoundedResponseText } from "../ai/bounded-response";
+import { buildOpenAiJsonChatBody } from "../ai/chat-request";
 import type { RetrievalConfiguration } from "./config";
 import {
   retrievalDefaults,
@@ -222,15 +223,12 @@ export async function rewriteRetrievalQuery(
         "Content-Type": "application/json",
         Authorization: `Bearer ${configuration.apiKey}`,
       },
-      body: JSON.stringify({
-        model: configuration.rewriteModel,
-        temperature: 0,
-        response_format: { type: "json_object" },
-        messages: [
+      body: JSON.stringify(
+        buildOpenAiJsonChatBody(configuration.rewriteModel, [
           { role: "system", content: rewriteSystemPrompt },
           { role: "user", content: userPayload },
-        ],
-      }),
+        ]),
+      ),
       signal,
     });
   } catch {

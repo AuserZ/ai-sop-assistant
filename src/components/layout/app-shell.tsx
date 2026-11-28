@@ -110,7 +110,7 @@ export function AppShell({
                 aria-current={isActive ? "page" : undefined}
                 className={`cp-instant flex min-h-11 items-center gap-2.5 rounded-[var(--radius-md)] border px-3 py-2 text-sm ${
                   isActive
-                    ? "border-[#bfdbfe] bg-[#eff6ff] font-medium text-[#1d4ed8]"
+                    ? "border-[#bfdbfe] bg-[#eff6ff] font-medium text-[#1d4ed8] shadow-[inset_2px_0_0_0_#1d4ed8]"
                     : "border-transparent text-[#475569] hover:bg-[#f1f5f9] hover:text-[#0f172a]"
                 }`}
               >
@@ -156,7 +156,7 @@ export function AppShell({
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col pb-20 lg:pb-0">
-        <header className="sticky top-0 z-20 flex items-center justify-between gap-2 border-b border-[#e2e8f0] bg-white px-4 py-2 lg:hidden">
+        <header className="sticky top-0 z-20 flex items-center justify-between gap-2 border-b border-[#e2e8f0] bg-white/95 px-4 py-2 backdrop-blur-md lg:hidden">
           <BrandMark compact />
           <div className="flex shrink-0 items-center gap-2">
             <span className="rounded-[var(--radius-sm)] border border-[#e2e8f0] bg-[#f8fafc] px-2 py-1 text-xs font-medium text-[#475569]">
@@ -196,7 +196,7 @@ export function AppShell({
           {children}
         </main>
 
-        <div className="fixed inset-x-0 bottom-0 z-30 border-t border-[#e2e8f0] bg-white lg:hidden">
+        <div className="fixed inset-x-0 bottom-0 z-30 border-t border-[#e2e8f0] bg-white/95 backdrop-blur-md lg:hidden">
           <nav aria-label="Primary" className="flex w-full items-stretch">
             {items.map((item) => {
               const isActive = resolvedActive === item.key;

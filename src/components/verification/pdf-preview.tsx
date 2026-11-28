@@ -151,7 +151,7 @@ export function PdfPreview({
   return (
     <section
       aria-label="Document preview"
-      className="min-w-0 space-y-4 rounded-[var(--radius-lg)] border border-[#e2e8f0] bg-white p-4"
+      className="min-w-0 space-y-4 rounded-[var(--radius-lg)] border border-[#e2e8f0] bg-white p-4 shadow-[var(--shadow-surface)]"
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 className="text-lg font-semibold text-[#0f172a]">Original preview</h2>
