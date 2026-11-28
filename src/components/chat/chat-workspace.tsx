@@ -185,6 +185,40 @@ export function ChatWorkspace() {
     setConversationId(nextId);
   }, []);
 
+  const startNewChat = useCallback(() => {
+    selectionSeqRef.current += 1;
+    streamAbortRef.current?.abort();
+    streamAbortRef.current = null;
+    sourceAbortRef.current?.abort();
+    sourceAbortRef.current = null;
+    detailAbortRef.current?.abort();
+    detailAbortRef.current = null;
+    persistCurrentConversationId(null);
+    setActiveConversationId(null);
+    setConversationTitle(null);
+    setMessages([]);
+    setLoadingHistory(false);
+    setSubmitting(false);
+    setActiveStage(null);
+    setStreamFailure(null);
+    setHistoryError(null);
+    setInspectedCitation(null);
+    setMetrics({ firstProgressMs: null, firstAnswerMs: null, completedMs: null });
+  }, [setActiveConversationId]);
+
+  const clearChatSessionState = useCallback(() => {
+    startNewChat();
+    listAbortRef.current?.abort();
+    listAbortRef.current = null;
+    setConversations([]);
+    setNextCursor(null);
+    setSearchQuery("");
+    setAppliedSearchQuery("");
+    setQuestionInput("");
+    setMobileHistoryOpen(false);
+    setAuth({ kind: "anonymous" });
+  }, [startNewChat]);
+
   const loadConversationList = useCallback(
     async (options: { query?: string; cursor?: string | null; append?: boolean } = {}) => {
       const append = options.append ?? false;
@@ -218,7 +252,7 @@ export function ChatWorkspace() {
       } catch (error: unknown) {
         if (controller.signal.aborted) return;
         if (error instanceof Error && error.message === "UNAUTHENTICATED") {
-          setAuth({ kind: "anonymous" });
+          clearChatSessionState();
           return;
         }
         setListError("Could not load saved conversations.");
@@ -229,7 +263,7 @@ export function ChatWorkspace() {
         }
       }
     },
-    [appliedSearchQuery, nextCursor],
+    [appliedSearchQuery, clearChatSessionState, nextCursor],
   );
 
   const openConversation = useCallback((targetId: string) => {
@@ -354,7 +388,7 @@ export function ChatWorkspace() {
           } catch (resumeError: unknown) {
             if (streamController.signal.aborted || selectionSeqRef.current !== requestSeq) return;
             if (resumeError instanceof Error && resumeError.message === "UNAUTHENTICATED") {
-              setAuth({ kind: "anonymous" });
+              clearChatSessionState();
               return;
             }
           } finally {
@@ -367,7 +401,7 @@ export function ChatWorkspace() {
       } catch (error: unknown) {
         if (controller.signal.aborted || selectionSeqRef.current !== requestSeq) return;
         if (error instanceof Error && error.message === "UNAUTHENTICATED") {
-          setAuth({ kind: "anonymous" });
+          clearChatSessionState();
           return;
         }
         setHistoryError("Could not load this conversation. Start a new chat or retry.");
@@ -377,7 +411,7 @@ export function ChatWorkspace() {
         }
       }
     })();
-  }, [setActiveConversationId]);
+  }, [clearChatSessionState, setActiveConversationId]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -411,27 +445,6 @@ export function ChatWorkspace() {
     };
   }, []);
 
-  function startNewChat() {
-    selectionSeqRef.current += 1;
-    streamAbortRef.current?.abort();
-    streamAbortRef.current = null;
-    sourceAbortRef.current?.abort();
-    sourceAbortRef.current = null;
-    detailAbortRef.current?.abort();
-    detailAbortRef.current = null;
-    persistCurrentConversationId(null);
-    setActiveConversationId(null);
-    setConversationTitle(null);
-    setMessages([]);
-    setLoadingHistory(false);
-    setSubmitting(false);
-    setActiveStage(null);
-    setStreamFailure(null);
-    setHistoryError(null);
-    setInspectedCitation(null);
-    setMetrics({ firstProgressMs: null, firstAnswerMs: null, completedMs: null });
-  }
-
   async function handleRenameConversation(targetId: string, nextTitle: string) {
     try {
       const updated = await renameConversation(targetId, nextTitle);
@@ -443,7 +456,7 @@ export function ChatWorkspace() {
       }
     } catch (error: unknown) {
       if (error instanceof Error && error.message === "UNAUTHENTICATED") {
-        setAuth({ kind: "anonymous" });
+        clearChatSessionState();
       }
       throw error;
     }
@@ -458,7 +471,7 @@ export function ChatWorkspace() {
       }
     } catch (error: unknown) {
       if (error instanceof Error && error.message === "UNAUTHENTICATED") {
-        setAuth({ kind: "anonymous" });
+        clearChatSessionState();
       }
       throw error;
     }
@@ -632,7 +645,7 @@ export function ChatWorkspace() {
     } catch (error) {
       if (controller.signal.aborted || selectionSeqRef.current !== requestSeq) return;
       if (error instanceof Error && error.message === "UNAUTHENTICATED") {
-        setAuth({ kind: "anonymous" });
+        clearChatSessionState();
         return;
       }
       setStreamFailure({
@@ -788,15 +801,7 @@ export function ChatWorkspace() {
     <AppShell
       user={auth.user}
       activeMenu="chat"
-      onSignedOut={() => {
-        startNewChat();
-        setConversations([]);
-        setNextCursor(null);
-        setSearchQuery("");
-        setAppliedSearchQuery("");
-        setMobileHistoryOpen(false);
-        setAuth({ kind: "anonymous" });
-      }}
+      onSignedOut={clearChatSessionState}
       mainDataAttributes={{
         "data-chat-workspace": "ready",
         "data-conversation-id": conversationId ?? "",

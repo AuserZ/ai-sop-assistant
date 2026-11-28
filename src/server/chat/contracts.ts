@@ -40,9 +40,16 @@ export const sendChatMessageInput = z
 
 export type SendChatMessageInput = z.infer<typeof sendChatMessageInput>;
 
+export const chatControlCharacterPattern = /[\u0000-\u001f\u007f]/;
+
 export const renameChatConversationInput = z
   .object({
-    title: z.string().trim().min(1).max(chatApiBounds.maximumConversationTitleChars),
+    title: z
+      .string()
+      .trim()
+      .min(1)
+      .max(chatApiBounds.maximumConversationTitleChars)
+      .refine((value) => !chatControlCharacterPattern.test(value)),
   })
   .strict();
 

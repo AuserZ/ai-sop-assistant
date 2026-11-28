@@ -18,6 +18,7 @@ import type { CurrentAccount } from "../../src/server/auth/authorization";
 import { AuthFailure } from "../../src/server/auth/errors";
 import {
   chatApiBounds,
+  chatControlCharacterPattern,
   createChatEventStream,
   decodeConversationCursor,
   encodeConversationCursor,
@@ -529,16 +530,21 @@ describe("S11 chat SSE serialization, safety, and contracts (C1-C5, ADR 18/19)",
       ),
     ).toBeNull();
 
-    // Rename schema bounds
+    // Rename schema bounds & control-character rejection (SEC-S17-02)
     expect(renameChatConversationInput.safeParse({ title: "  Valve calibration  " })).toMatchObject({
       success: true,
       data: { title: "Valve calibration" },
     });
     expect(renameChatConversationInput.safeParse({ title: "   " }).success).toBe(false);
     expect(renameChatConversationInput.safeParse({ title: "x".repeat(121) }).success).toBe(false);
+    expect(renameChatConversationInput.safeParse({ title: "sop\u0000null" }).success).toBe(false);
+    expect(renameChatConversationInput.safeParse({ title: "sop\u001besc" }).success).toBe(false);
     expect(
       renameChatConversationInput.safeParse({ title: "Valid", ownerId: "forged" }).success,
     ).toBe(false);
+    expect(chatControlCharacterPattern.test("sop\u0000search")).toBe(true);
+    expect(chatControlCharacterPattern.test("sop\u001bsearch")).toBe(true);
+    expect(chatControlCharacterPattern.test("SOP-101 Valve Check")).toBe(false);
 
     // Cross-origin PATCH / DELETE rejected before touching database (CSRF guard)
     const previousAuthBaseUrl = process.env.AUTH_BASE_URL;

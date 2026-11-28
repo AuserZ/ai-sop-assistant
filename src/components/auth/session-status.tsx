@@ -134,8 +134,9 @@ export function SessionStatus() {
                 <ShieldCheck className="h-4 w-4 shrink-0 text-[#1d4ed8]" strokeWidth={1.5} aria-hidden="true" />
                 <h2 className="text-base font-semibold text-[#0f172a]">Account session</h2>
                 <StatusBadge label="Active" tone="active" />
+                <span className="text-sm font-medium text-[#475569]">Role: {roleLabel}</span>
               </div>
-              <dl className="grid grid-cols-1 gap-3 border-t border-[#e2e8f0] pt-4 text-sm sm:grid-cols-3">
+              <dl className="grid grid-cols-1 gap-3 border-t border-[#e2e8f0] pt-4 text-sm sm:grid-cols-2">
                 <div className="min-w-0">
                   <dt className="text-xs font-medium text-[#64748b]">Name</dt>
                   <dd className="mt-0.5 break-words font-medium text-[#0f172a]">{session.user.name}</dd>
@@ -143,10 +144,6 @@ export function SessionStatus() {
                 <div className="min-w-0">
                   <dt className="text-xs font-medium text-[#64748b]">Email</dt>
                   <dd className="mt-0.5 break-all font-mono text-xs text-[#475569]">{session.user.email}</dd>
-                </div>
-                <div className="min-w-0">
-                  <dt className="text-xs font-medium text-[#64748b]">Role</dt>
-                  <dd className="mt-0.5 font-medium text-[#0f172a]">{roleLabel}</dd>
                 </div>
               </dl>
             </div>

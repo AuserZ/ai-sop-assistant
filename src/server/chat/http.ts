@@ -11,6 +11,7 @@ import type { JobDatabase } from "../jobs/service";
 import { verifyChatCallback } from "../jobs/signatures";
 import {
   chatApiBounds,
+  chatControlCharacterPattern,
   chatEmptyStageBody,
   chatIdInput,
   chatRateLimits,
@@ -164,7 +165,11 @@ export async function handleListChatConversations(
 
     const rawQuery = url.searchParams.get("q");
     const query = rawQuery !== null ? rawQuery.trim() : undefined;
-    if (query !== undefined && query.length > chatApiBounds.maximumConversationSearchChars) {
+    if (
+      query !== undefined &&
+      (query.length > chatApiBounds.maximumConversationSearchChars ||
+        chatControlCharacterPattern.test(query))
+    ) {
       throw new AuthFailure("INVALID_INPUT", 400);
     }
 

@@ -51,6 +51,7 @@ import {
 } from "../retrieval/service";
 import {
   chatApiBounds,
+  chatControlCharacterPattern,
   chatIdInput,
   encodeConversationCursor,
   noEvidenceFallbackMessage,
@@ -557,7 +558,10 @@ export async function listOwnedConversations(
     ),
   );
   const trimmedQuery = options.query?.trim() ?? "";
-  if (trimmedQuery.length > chatApiBounds.maximumConversationSearchChars) {
+  if (
+    trimmedQuery.length > chatApiBounds.maximumConversationSearchChars ||
+    chatControlCharacterPattern.test(trimmedQuery)
+  ) {
     throw new AuthFailure("INVALID_INPUT", 400);
   }
 
